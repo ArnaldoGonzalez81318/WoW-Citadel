@@ -1,0 +1,2 @@
+# WoW-Citadel
+ WoW Citadel was created with a single purpose: providing World of Warcraft players with tools and information to make their gameplay more enjoyable. This website is our contribution to this wonderful game. We pride ourselves on our comprehensive database with helpful user comments, popular tools like the Dressing Room and Flying Tracker, lightning-fast datamining to uncover the latest test realm updates, and detailed guides written by professional players on all popular WoW topics including classes, collections, secrets, and raids.
