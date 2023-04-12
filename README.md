@@ -1,6 +1,6 @@
 # WoW-Citadel
- WoW Citadel was created with a single purpose: providing World of Warcraft players with tools and information to make their gameplay more enjoyable. This website is our contribution to this wonderful game. We pride ourselves on our comprehensive database with helpful user comments, popular tools like the Dressing Room and Flying Tracker, lightning-fast datamining to uncover the latest test realm updates, and detailed guides written by professional players on all popular WoW topics including classes, collections, secrets, and raids.
- 
+ WoW Citadel was created with a single purpose: providing World of Warcraft players with tools and information to make their gameplay more enjoyable. This website provide information about achievements, azerite essence, covenants, creatures, items, quests, spells, talents, and more. The website is built with React and uses the Blizzard API to retrieve data. The website is currently in development and is not yet complete.
+
 # Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
