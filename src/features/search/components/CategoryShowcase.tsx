@@ -2,26 +2,40 @@ import ArrowCircleDownRoundedIcon from "@mui/icons-material/ArrowCircleDownRound
 import UpcomingRoundedIcon from "@mui/icons-material/UpcomingRounded"
 import { Button, Chip, Grid, Paper, Stack, Typography } from "@mui/material"
 import { useCallback, useMemo } from "react"
+import { useNavigate } from "react-router-dom"
 import { NAV_SECTIONS } from "@/components/layout/navigation/navConfig"
 import { SEARCH_CATEGORIES } from "@/features/search/categories"
 
 const CategoryShowcase = (): JSX.Element => {
+  const navigate = useNavigate()
   const supportedAnchors = useMemo(
     () => new Set(SEARCH_CATEGORIES.map((category) => `category-${category.id}`)),
     []
   )
 
-  const handleJump = useCallback((anchorId: string) => {
-    const element = document.getElementById(anchorId)
+  const handleNavigate = useCallback(
+    (anchorId: string | undefined, path: string | undefined) => {
+      if (path) {
+        navigate(path)
+        return
+      }
 
-    if (element) {
-      element.scrollIntoView({ behavior: "smooth", block: "start" })
-      window.history.replaceState(null, "", `#${anchorId}`)
-      return
-    }
+      if (!anchorId) {
+        return
+      }
 
-    window.location.hash = anchorId
-  }, [])
+      const element = document.getElementById(anchorId)
+
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth", block: "start" })
+        window.history.replaceState(null, "", `#${anchorId}`)
+        return
+      }
+
+      window.location.hash = anchorId
+    },
+    [navigate]
+  )
 
   return (
     <Stack spacing={4}>
@@ -41,8 +55,9 @@ const CategoryShowcase = (): JSX.Element => {
             </Typography>
             <Grid container spacing={2} columns={{ xs: 1, sm: 6, md: 12 }}>
               {section.items.map((item) => {
-                const anchorId = item.href.replace("#", "")
-                const isSupported = supportedAnchors.has(anchorId)
+                const anchorId = item.href.startsWith("#") ? item.href.replace("#", "") : undefined
+                const hasRoute = Boolean(item.path)
+                const isSupported = hasRoute || (anchorId ? supportedAnchors.has(anchorId) : false)
 
                 return (
                   <Grid item xs={1} sm={3} md={4} key={item.id}>
@@ -73,13 +88,13 @@ const CategoryShowcase = (): JSX.Element => {
                       </Stack>
                       {isSupported ? (
                         <Button
-                          variant="text"
+                          variant={hasRoute ? "contained" : "text"}
                           color="primary"
-                          endIcon={<ArrowCircleDownRoundedIcon fontSize="small" />}
-                          onClick={() => handleJump(anchorId)}
+                          endIcon={hasRoute ? undefined : <ArrowCircleDownRoundedIcon fontSize="small" />}
+                          onClick={() => handleNavigate(anchorId, item.path)}
                           sx={{ alignSelf: "flex-start" }}
                         >
-                          Jump to live results
+                          {hasRoute ? "Open data explorer" : "Jump to live results"}
                         </Button>
                       ) : (
                         <Chip
