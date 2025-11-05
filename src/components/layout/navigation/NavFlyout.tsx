@@ -16,6 +16,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material"
+import { Link as RouterLink } from "react-router-dom"
 import type { NavFlyoutSection } from "@/components/layout/navigation/navConfig"
 import { NAV_SECTIONS } from "@/components/layout/navigation/navConfig"
 
@@ -79,7 +80,12 @@ const NavFlyout = (): JSX.Element => {
     if (!element || !target) {
       return false
     }
-    return element.contains(target as Node)
+
+    if (target instanceof Node) {
+      return element.contains(target)
+    }
+
+    return false
   }, [])
 
   const handleNavBlur = useCallback(
@@ -187,6 +193,8 @@ const NavFlyout = (): JSX.Element => {
         onClose={handleClose}
         anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
         transformOrigin={{ vertical: "top", horizontal: "left" }}
+        disableAutoFocus
+        disableEnforceFocus
         disableRestoreFocus
         slotProps={{
           paper: {
@@ -221,7 +229,9 @@ const NavFlyout = (): JSX.Element => {
               {activeSection.items.map((item) => (
                 <Grid item xs={1} sm={1} key={item.id}>
                   <Link
-                    href={item.href}
+                    {...(item.path
+                      ? { component: RouterLink, to: item.path }
+                      : { href: item.href })}
                     underline="none"
                     sx={{
                       display: "block",
@@ -235,6 +245,7 @@ const NavFlyout = (): JSX.Element => {
                         backgroundColor: "rgba(20, 32, 56, 0.85)",
                       },
                     }}
+                    onClick={item.path ? handleClose : undefined}
                   >
                     <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                       {item.label}
