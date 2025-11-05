@@ -3,6 +3,7 @@ export type NavFlyoutItem = {
   label: string
   description: string
   href: string
+  path?: string
 }
 
 export type NavFlyoutSection = {
@@ -35,7 +36,7 @@ export const NAV_SECTIONS: NavFlyoutSection[] = [
     label: "Character Progression",
     description: "Talents, specializations, and player power",
     items: [
-      { id: "achievement", label: "Achievement", description: "Feats of strength, progress, and points", href: hrefFor("achievements") },
+      { id: "achievement", label: "Achievement", description: "Feats of strength, progress, and points", href: hrefFor("achievements"), path: "/achievements" },
       { id: "spell", label: "Spell", description: "Class abilities, quests, and gameplay effects", href: hrefFor("spells") },
       { id: "talent", label: "Talent", description: "Class and spec talent tree nodes", href: hrefFor("talent") },
       { id: "tech-talent", label: "Tech Talent", description: "Covenant, mission table, and renown talents", href: hrefFor("tech-talent") },
@@ -52,7 +53,7 @@ export const NAV_SECTIONS: NavFlyoutSection[] = [
     description: "Regions, realms, factions, and narrative systems",
     items: [
       { id: "realm", label: "Realm", description: "Realm status, rulesets, and connected clusters", href: hrefFor("realm") },
-      { id: "connected-realm", label: "Connected Realm", description: "Cross-realm groupings and queue states", href: hrefFor("connected-realm") },
+      { id: "connected-realm", label: "Connected Realm", description: "Cross-realm groupings and queue states", href: hrefFor("connected-realm"), path: "/connected-realms" },
       { id: "region", label: "Region", description: "Global region metadata and locales", href: hrefFor("region") },
       { id: "covenant", label: "Covenant", description: "Shadowlands convenants and soulbinds", href: hrefFor("covenant") },
       { id: "reputation", label: "Reputations", description: "Factions, renown tracks, and rewards", href: hrefFor("reputations") },
