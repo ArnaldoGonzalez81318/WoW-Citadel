@@ -1,11 +1,12 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { config as dotenvConfig } from 'dotenv'
+import { defineConfig } from "vite"
+import react from "@vitejs/plugin-react"
+import { resolve } from "path"
 
-// Load environment variables from .env file in root directory
-dotenvConfig()
-
-// https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()]
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": resolve(__dirname, "src"),
+    },
+  },
 })
