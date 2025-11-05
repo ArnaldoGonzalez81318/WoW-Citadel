@@ -1,14 +1,13 @@
-import { NextUIProvider } from "@nextui-org/react"
-import { darkTheme } from "./themes"
+import AppShell from "@/components/layout/AppShell"
+import SearchExperience from "@/features/search/components/SearchExperience"
+import { SearchProvider } from "@/features/search/context/SearchContext"
 
-import { AutocompleteWrapper } from "./components/ui"
-
-function App() {
-	return (
-		<NextUIProvider theme={darkTheme}>
-			<AutocompleteWrapper />
-		</NextUIProvider>
-	)
-}
+const App = (): JSX.Element => (
+	<SearchProvider>
+		<AppShell>
+			<SearchExperience />
+		</AppShell>
+	</SearchProvider>
+)
 
 export default App
