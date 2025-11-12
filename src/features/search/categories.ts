@@ -1,10 +1,12 @@
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded"
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded"
 import FlightRoundedIcon from "@mui/icons-material/FlightRounded"
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded"
 import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded"
 import { SearchCategory } from "@/features/search/types"
 import {
   searchAchievements,
+  searchCreatures,
   searchItems,
   searchMounts,
   searchSpells,
@@ -41,6 +43,14 @@ export const SEARCH_CATEGORIES: SearchCategory[] = [
     description: "Discover ground, flying, and special mounts with their sources",
     icon: FlightRoundedIcon,
     fetcher: searchMounts,
+    minQueryLength: 2,
+  },
+  {
+    id: "creatures",
+    label: "Creatures",
+    description: "NPCs, bosses, and denizens of Azeroth and beyond",
+    icon: GroupsRoundedIcon,
+    fetcher: searchCreatures,
     minQueryLength: 2,
   },
 ]
