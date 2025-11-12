@@ -14,6 +14,7 @@ const ACCENT_COLORS: Record<SearchCategoryId, string> = {
   spells: "#a78bfa",
   achievements: "#f5c045",
   mounts: "#6ee7b7",
+  creatures: "#f87171",
 }
 
 const SearchResults = ({ query, categoryStates, hasAnyResults }: SearchResultsProps): JSX.Element => {
