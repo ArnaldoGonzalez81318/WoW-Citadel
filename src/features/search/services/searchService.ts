@@ -75,6 +75,16 @@ type MountSearchResult = {
   is_flying_mount?: boolean
 }
 
+type CreatureSearchResult = {
+  id: number
+  name: LocalizedString
+  description?: LocalizedString
+  level?: number
+  type?: { name?: LocalizedString }
+  creature_type?: { name?: LocalizedString }
+  creature_family?: { name?: LocalizedString }
+}
+
 const nameParamKey = (): string => `name.${env.locale}`
 
 const mapResults = <T,>(
@@ -219,6 +229,44 @@ export const searchMounts = async (query: string): Promise<SearchResult[]> => {
         details: cleanMarkup(localized(data.description)),
         typeLabel: "Mount",
         tag: tag || affiliation || undefined,
+      }
+    })
+  })
+}
+
+export const searchCreatures = async (query: string): Promise<SearchResult[]> => {
+  if (!query.trim()) {
+    return []
+  }
+
+  return safeSearch(async () => {
+    const response = await blizzardClient.get<SearchResponse<CreatureSearchResult>>(
+      "/data/wow/search/creature",
+      {
+        namespace: namespace("static"),
+        orderby: "level:desc",
+        _pageSize: DEFAULT_PAGE_SIZE,
+        [nameParamKey()]: query,
+      }
+    )
+
+    return mapResults(response, ({ key, data }) => {
+      const type = localized(data.type?.name ?? data.creature_type?.name)
+      const family = localized(data.creature_family?.name)
+
+      const summaryParts = [
+        typeof data.level === "number" && data.level > 0 ? `Level ${data.level}` : undefined,
+        type,
+        family,
+      ].filter(Boolean) as string[]
+
+      return {
+        id: data.id,
+        name: localized(data.name),
+        href: key.href,
+        summary: summaryParts.join(" • ") || undefined,
+        details: cleanMarkup(localized(data.description)),
+        typeLabel: "Creature",
       }
     })
   })
