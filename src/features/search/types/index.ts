@@ -1,6 +1,6 @@
 import { SvgIconComponent } from "@mui/icons-material"
 
-export type SearchCategoryId = "items" | "spells" | "achievements" | "mounts" | "creatures"
+export type SearchCategoryId = "items" | "spells" | "mounts" | "creatures"
 
 export interface SearchResult {
   id: number
