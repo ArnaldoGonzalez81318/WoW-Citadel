@@ -1,4 +1,4 @@
-import { env, assertClientCredentials, getApiBaseUrl, hasStaticAccessToken } from "@/lib/env"
+import { env, getApiBaseUrl, hasStaticAccessToken, shouldUseBlizzardProxy } from "@/lib/env"
 
 export class BlizzardRequestError extends Error {
   public readonly status: number
@@ -19,16 +19,10 @@ type RequestOptions = Omit<RequestInit, "headers"> & {
   headers?: HeadersInit
 }
 
-type NodeBuffer = {
-  from(data: string, encoding?: string): { toString(encoding: string): string }
-}
-
-let cachedAccessToken = env.staticAccessToken
-let tokenExpiresAt = hasStaticAccessToken() ? Number.POSITIVE_INFINITY : 0
-let preferStaticToken = hasStaticAccessToken()
-
 const withLeadingSlash = (path: string): string =>
   path.startsWith("/") ? path : `/${path}`
+
+const trimTrailingSlash = (value: string): string => (value === "/" ? value : value.replace(/\/+$/, ""))
 
 const buildQuery = (params: QueryParams | undefined): string => {
   const searchParams = new URLSearchParams()
@@ -48,98 +42,46 @@ const buildQuery = (params: QueryParams | undefined): string => {
   return searchParams.toString()
 }
 
-const encodeCredentials = (value: string): string => {
-  if (typeof globalThis.btoa === "function") {
-    return globalThis.btoa(value)
-  }
-
-  const nodeBuffer = (globalThis as { Buffer?: NodeBuffer }).Buffer
-
-  if (nodeBuffer?.from) {
-    return nodeBuffer.from(value).toString("base64")
-  }
-
-  throw new Error("Unable to encode credentials; missing base64 encoder in current runtime")
-}
-
-const fetchAccessToken = async (): Promise<string> => {
-  if (preferStaticToken && hasStaticAccessToken()) {
-    cachedAccessToken = env.staticAccessToken
-    return cachedAccessToken
-  }
-
-  assertClientCredentials()
-
-  const now = Date.now()
-  if (cachedAccessToken && tokenExpiresAt - 60000 > now) {
-    return cachedAccessToken
-  }
-
-  const credentials = `${env.clientId}:${env.clientSecret}`
-  const response = await fetch(`${env.oauthBaseUrl}/token`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${encodeCredentials(credentials)}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({ grant_type: "client_credentials" }).toString(),
-  })
-
-  if (!response.ok) {
-    const body = await response.text()
-    throw new BlizzardRequestError(
-      `Unable to acquire Blizzard access token (${response.status})`,
-      response.status,
-      body
-    )
-  }
-
-  const data: { access_token: string; expires_in: number } = await response.json()
-  cachedAccessToken = data.access_token
-  tokenExpiresAt = Date.now() + Math.max(data.expires_in - 60, 60) * 1000
-
-  return cachedAccessToken
-}
-
-const request = async <T>(
-  path: string,
-  options: RequestOptions = {},
-  attempt = 0
-): Promise<T> => {
-  const { params, headers, ...init } = options
-  const token = await fetchAccessToken()
-  const url = new URL(withLeadingSlash(path), getApiBaseUrl())
+const buildRequestUrl = (path: string, params: QueryParams | undefined): string => {
   const query = buildQuery(params)
+
+  if (shouldUseBlizzardProxy()) {
+    const proxiedPath = `${trimTrailingSlash(env.proxyPath)}${withLeadingSlash(path)}`
+    return query.length > 0 ? `${proxiedPath}?${query}` : proxiedPath
+  }
+
+  const url = new URL(withLeadingSlash(path), getApiBaseUrl())
 
   if (query.length > 0) {
     url.search = query
   }
 
-  const defaultHeaders: HeadersInit = {
-    Authorization: `Bearer ${token}`,
+  return url.toString()
+}
+
+const buildHeaders = (headers: HeadersInit | undefined): HeadersInit => {
+  if (!hasStaticAccessToken()) {
+    return headers ?? {}
   }
 
-  const response = await fetch(url.toString(), {
+  return {
+    Authorization: `Bearer ${env.staticAccessToken}`,
+    ...headers,
+  }
+}
+
+const request = async <T>(
+  path: string,
+  options: RequestOptions = {}
+): Promise<T> => {
+  const { params, headers, ...init } = options
+  const response = await fetch(buildRequestUrl(path, params), {
     ...init,
     method: init.method ?? "GET",
-    headers: {
-      ...defaultHeaders,
-      ...headers,
-    },
+    headers: buildHeaders(headers),
   })
 
   if (!response.ok) {
-    if (response.status === 401 && attempt === 0) {
-      if (preferStaticToken) {
-        preferStaticToken = false
-      }
-
-      cachedAccessToken = ""
-      tokenExpiresAt = 0
-
-      return request<T>(path, options, attempt + 1)
-    }
-
     const body = await response.text()
     throw new BlizzardRequestError(
       `Blizzard API request failed with status ${response.status}`,
