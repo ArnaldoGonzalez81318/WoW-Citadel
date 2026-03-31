@@ -70,6 +70,7 @@ type GallerySectionBlockProps = {
 const SECTION_BATCH_SIZE = 30
 
 const GALLERY_SOURCE_ENDPOINT_IDS: Record<string, string[]> = {
+  achievement: ["achievement-index", "achievement-category-index"],
   "item-appearance": [
     "item-appearance-search",
     "item-appearance-set-index",
@@ -77,6 +78,9 @@ const GALLERY_SOURCE_ENDPOINT_IDS: Record<string, string[]> = {
   ],
   heirloom: ["heirloom-index"],
   pet: ["pet-index"],
+  spells: ["spell-search"],
+  talent: ["talent-tree-index", "talent-index", "pvp-talent-index"],
+  "tech-talent": ["tech-talent-tree-index", "tech-talent-index"],
   toy: ["toy-index"],
   "modified-crafting": [
     "modified-crafting-index",
@@ -89,6 +93,11 @@ const GALLERY_SOURCE_ENDPOINT_IDS: Record<string, string[]> = {
     "fixture-hook-index",
     "room-index",
   ],
+  "playable-class": ["playable-class-index"],
+  "playable-race": ["playable-race-index"],
+  "playable-specialization": ["playable-specialization-index"],
+  "power-type": ["power-type-index"],
+  title: ["title-index"],
 }
 
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
@@ -328,9 +337,37 @@ const buildMediaRequest = (
   slug: string,
   record: Record<string, unknown>
 ): { path: string; namespace: string | undefined } | undefined => {
+  if (slug === "achievement" && typeof record.id === "number") {
+    return {
+      path: `/data/wow/media/achievement/${record.id}`,
+      namespace: resolveNamespace("static"),
+    }
+  }
+
   if (slug === "pet" && typeof record.id === "number") {
     return {
       path: `/data/wow/media/pet/${record.id}`,
+      namespace: resolveNamespace("static"),
+    }
+  }
+
+  if (slug === "spells" && typeof record.id === "number") {
+    return {
+      path: `/data/wow/media/spell/${record.id}`,
+      namespace: resolveNamespace("static"),
+    }
+  }
+
+  if (slug === "playable-class" && typeof record.id === "number") {
+    return {
+      path: `/data/wow/media/playable-class/${record.id}`,
+      namespace: resolveNamespace("static"),
+    }
+  }
+
+  if (slug === "playable-specialization" && typeof record.id === "number") {
+    return {
+      path: `/data/wow/media/playable-specialization/${record.id}`,
       namespace: resolveNamespace("static"),
     }
   }
@@ -555,12 +592,16 @@ const ApiDatasetGalleryPage = ({ slug }: ApiDatasetGalleryPageProps): JSX.Elemen
         env.locale,
       ],
       queryFn: async () => {
-        const response = await blizzardClient.get<{ assets?: Array<{ key?: string; value?: string }> }>(
-          target.path,
-          { namespace: target.namespace }
-        )
+        try {
+          const response = await blizzardClient.get<{ assets?: Array<{ key?: string; value?: string }> }>(
+            target.path,
+            { namespace: target.namespace }
+          )
 
-        return response.assets?.find((asset) => asset.key === "icon")?.value ?? response.assets?.[0]?.value
+          return response.assets?.find((asset) => asset.key === "icon")?.value ?? response.assets?.[0]?.value
+        } catch {
+          return undefined
+        }
       },
       retry: false,
       staleTime: 300000,
