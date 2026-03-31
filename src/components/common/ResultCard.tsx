@@ -33,6 +33,26 @@ const ResultCard = ({
   const isSmallIconAsset = Boolean(result.mediaUrl && /\/icons\/56\//.test(result.mediaUrl))
   const smallIconSize = 56
   const resolvedMediaHeight = mediaHeight ?? (compact ? 104 : 180)
+  const cardInteractionSx = {
+    transition: "transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease",
+    "@media (hover: hover)": {
+      "&:hover": {
+        transform: "translateY(-4px)",
+        boxShadow: `0 18px 36px ${accentColor}22`,
+        borderColor: `${accentColor}66`,
+      },
+      "&:hover .result-card-media": {
+        transform: "scale(1.04)",
+      },
+    },
+    "&:focus-visible": {
+      outline: `2px solid ${accentColor}`,
+      outlineOffset: 2,
+    },
+    "& .result-card-media": {
+      transition: "transform 180ms ease",
+    },
+  }
   const interactiveProps = onClick
     ? {
       onClick,
@@ -61,6 +81,7 @@ const ResultCard = ({
           flexDirection: "column",
           borderColor: `${accentColor}33`,
           cursor: onClick ? "pointer" : "default",
+          ...cardInteractionSx,
         }}
       >
         {result.mediaUrl ? (
@@ -82,6 +103,7 @@ const ResultCard = ({
               component="img"
               src={result.mediaUrl}
               alt={result.name}
+              className="result-card-media"
               sx={{
                 width: isSmallIconAsset ? smallIconSize : "100%",
                 height: isSmallIconAsset ? smallIconSize : "100%",
@@ -190,6 +212,7 @@ const ResultCard = ({
         flexDirection: "column",
         borderColor: `${accentColor}33`,
         cursor: onClick ? "pointer" : "default",
+        ...cardInteractionSx,
       }}
     >
       {result.mediaUrl ? (
@@ -211,6 +234,7 @@ const ResultCard = ({
             component="img"
             src={result.mediaUrl}
             alt={result.name}
+            className="result-card-media"
             sx={{
               width: isSmallIconAsset ? smallIconSize : mediaMode === "framed" ? "auto" : "100%",
               height: isSmallIconAsset ? smallIconSize : mediaMode === "framed" ? "auto" : "100%",
