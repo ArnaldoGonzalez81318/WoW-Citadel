@@ -16,7 +16,7 @@ export type AchievementCategorySummary = {
 }
 
 export type AchievementCategoryIndexResponse = {
-  achievement_categories: AchievementCategorySummary[]
+  categories: AchievementCategorySummary[]
 }
 
 export type AchievementCategory = {
