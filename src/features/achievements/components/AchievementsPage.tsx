@@ -16,7 +16,7 @@ const AchievementsPage = (): JSX.Element => {
   const [renderedCount, setRenderedCount] = useState(0)
   const { data, isLoading, isError, error } = useAchievementCategoryIndex()
 
-  const categories = useMemo(() => data?.achievement_categories ?? [], [data])
+  const categories = useMemo(() => data?.categories ?? [], [data])
   const errorMessage = error instanceof Error ? error.message : undefined
 
   useEffect(() => {
