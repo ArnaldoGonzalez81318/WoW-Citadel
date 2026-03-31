@@ -12,7 +12,8 @@ import {
   Button,
   Grid,
   Link,
-  Popover,
+  Paper,
+  Popper,
   Stack,
   Typography,
 } from "@mui/material"
@@ -186,80 +187,82 @@ const NavFlyout = (): JSX.Element => {
         </Button>
       ))}
 
-      <Popover
+      <Popper
         id={popoverId}
         open={open}
         anchorEl={anchorEl}
-        onClose={handleClose}
-        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
-        transformOrigin={{ vertical: "top", horizontal: "left" }}
-        disableAutoFocus
-        disableEnforceFocus
-        disableRestoreFocus
-        slotProps={{
-          paper: {
-            onMouseEnter: clearCloseTimer,
-            onMouseLeave: handlePopoverMouseLeave,
-            onFocusCapture: clearCloseTimer,
-            onBlurCapture: handlePopoverBlur,
-            ref: registerPopoverRef,
-            sx: {
+        placement="bottom-start"
+        modifiers={[
+          {
+            name: "offset",
+            options: {
+              offset: [0, 12],
+            },
+          },
+        ]}
+        sx={{ zIndex: (theme) => theme.zIndex.appBar + 1 }}
+      >
+        {activeSection ? (
+          <Paper
+            onMouseEnter={clearCloseTimer}
+            onMouseLeave={handlePopoverMouseLeave}
+            onFocusCapture={clearCloseTimer}
+            onBlurCapture={handlePopoverBlur}
+            ref={registerPopoverRef}
+            sx={{
               pointerEvents: "auto",
               borderRadius: 3,
-              mt: 1,
               width: { xs: 320, sm: 420, md: 560 },
               backgroundColor: "rgba(10, 16, 32, 0.94)",
               border: "1px solid rgba(30, 155, 233, 0.18)",
               boxShadow: "0 32px 60px rgba(4, 8, 19, 0.6)",
-            },
-          },
-        }}
-      >
-        {activeSection ? (
-          <Box sx={{ p: { xs: 3, md: 4 } }}>
-            <Stack spacing={2} sx={{ mb: 2 }}>
-              <Typography variant="overline" sx={{ letterSpacing: "0.28em", color: "secondary.light" }}>
-                {activeSection.label}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {activeSection.description}
-              </Typography>
-            </Stack>
-            <Grid container spacing={2} columns={{ xs: 1, sm: 2 }}>
-              {activeSection.items.map((item) => (
-                <Grid item xs={1} sm={1} key={item.id}>
-                  <Link
-                    {...(item.path
-                      ? { component: RouterLink, to: item.path }
-                      : { href: item.href })}
-                    underline="none"
-                    sx={{
-                      display: "block",
-                      p: 1.5,
-                      borderRadius: 2,
-                      backgroundColor: "rgba(12, 18, 34, 0.75)",
-                      border: "1px solid transparent",
-                      transition: "all 0.18s ease",
-                      "&:hover": {
-                        borderColor: "rgba(30, 155, 233, 0.45)",
-                        backgroundColor: "rgba(20, 32, 56, 0.85)",
-                      },
-                    }}
-                    onClick={item.path ? handleClose : undefined}
-                  >
-                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                      {item.label}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {item.description}
-                    </Typography>
-                  </Link>
-                </Grid>
-              ))}
-            </Grid>
-          </Box>
+            }}
+          >
+            <Box sx={{ p: { xs: 3, md: 4 } }}>
+              <Stack spacing={2} sx={{ mb: 2 }}>
+                <Typography variant="overline" sx={{ letterSpacing: "0.28em", color: "secondary.light" }}>
+                  {activeSection.label}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {activeSection.description}
+                </Typography>
+              </Stack>
+              <Grid container spacing={2} columns={{ xs: 1, sm: 2 }}>
+                {activeSection.items.map((item) => (
+                  <Grid item xs={1} sm={1} key={item.id}>
+                    <Link
+                      {...(item.path
+                        ? { component: RouterLink, to: item.path }
+                        : { href: item.href })}
+                      underline="none"
+                      sx={{
+                        display: "block",
+                        p: 1.5,
+                        borderRadius: 2,
+                        backgroundColor: "rgba(12, 18, 34, 0.75)",
+                        border: "1px solid transparent",
+                        transition: "all 0.18s ease",
+                        "&:hover": {
+                          borderColor: "rgba(30, 155, 233, 0.45)",
+                          backgroundColor: "rgba(20, 32, 56, 0.85)",
+                        },
+                      }}
+                      onClick={item.path ? handleClose : undefined}
+                    >
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                        {item.label}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {item.description}
+                      </Typography>
+                    </Link>
+                  </Grid>
+                ))}
+              </Grid>
+            </Box>
+          </Paper>
         ) : null}
-      </Popover>
+      </Popper>
     </Box>
   )
 }
