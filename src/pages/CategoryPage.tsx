@@ -21,6 +21,16 @@ const SpellsPage = lazy(() => import("@/features/spells/components/SpellsPage"))
 const MountsPage = lazy(() => import("@/features/mounts/components/MountsPage"))
 const RealmsPage = lazy(() => import("@/features/realms/components/RealmsPage"))
 const SearchExperience = lazy(() => import("@/features/search/components/SearchExperience"))
+const ApiDatasetGalleryPage = lazy(() => import("@/features/apiExplorer/components/ApiDatasetGalleryPage"))
+
+const LIVE_API_DATASET_SLUGS = new Set([
+  "item-appearance",
+  "heirloom",
+  "pet",
+  "toy",
+  "modified-crafting",
+  "housing-decor",
+])
 
 const NAV_ITEM_INDEX: IndexedNavItem[] = NAV_SECTIONS.flatMap((section) =>
   section.items.map((item) => ({ ...item, section }))
@@ -105,6 +115,10 @@ const renderContentForSlug = (slug: string): ReactNode => {
         </Alert>
       </Stack>
     )
+  }
+
+  if (LIVE_API_DATASET_SLUGS.has(slug)) {
+    return renderLazyPage(<ApiDatasetGalleryPage slug={slug} />)
   }
 
   return withFamilyGallery(slug)
