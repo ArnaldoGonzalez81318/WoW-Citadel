@@ -146,15 +146,15 @@ const HomePage = (): JSX.Element => {
                     fontSize: { xs: "2.7rem", md: "4.5rem" },
                   }}
                 >
-                  Built to explore Azeroth, not overwhelm the homepage.
+                  Azeroth&apos;s data, forged into tools worthy of a raid leader.
                 </Typography>
                 <Typography
                   variant="body1"
                   color="text.secondary"
                   sx={{ maxWidth: 620, fontSize: { xs: "1rem", md: "1.05rem" } }}
                 >
-                  Start with a quick search, jump into a dedicated explorer, or check the token market.
-                  Everything else stays out of the way until you need it.
+                  Search fast, jump straight into dedicated explorers, and track live market signals without drowning in raw endpoint noise.
+                  Built for players who want answers quickly, whether they are chasing loot, planning builds, or scouting the economy.
                 </Typography>
               </Stack>
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
@@ -267,6 +267,8 @@ const HomePage = (): JSX.Element => {
         </Grid>
       </Paper>
 
+      <TokenTicker />
+
       <Grid container spacing={3}>
         {FEATURED_EXPLORERS.map((explorer) => (
           <Grid item xs={12} sm={6} md={3} key={explorer.path}>
@@ -311,8 +313,6 @@ const HomePage = (): JSX.Element => {
           </Grid>
         ))}
       </Grid>
-
-      <TokenTicker />
 
       <Paper
         variant="outlined"
