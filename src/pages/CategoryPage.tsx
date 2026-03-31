@@ -30,6 +30,13 @@ const LIVE_API_DATASET_SLUGS = new Set([
   "toy",
   "modified-crafting",
   "housing-decor",
+  "talent",
+  "tech-talent",
+  "playable-class",
+  "playable-race",
+  "playable-specialization",
+  "power-type",
+  "title",
 ])
 
 const NAV_ITEM_INDEX: IndexedNavItem[] = NAV_SECTIONS.flatMap((section) =>
