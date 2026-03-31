@@ -19,7 +19,10 @@ const extractAchievements = (category: AchievementCategory): AchievementSummary[
   category.achievements ?? category.root_achievements ?? []
 
 export const fetchAchievementCategoryIndex = async (): Promise<AchievementCategoryIndexResponse> => {
-  const response = await blizzardClient.get<AchievementCategoryIndexResponse>(
+  const response = await blizzardClient.get<{
+    categories?: AchievementCategorySummary[]
+    achievement_categories?: AchievementCategorySummary[]
+  }>(
     "/data/wow/achievement-category/index",
     {
       namespace: STATIC_NAMESPACE,
@@ -27,7 +30,7 @@ export const fetchAchievementCategoryIndex = async (): Promise<AchievementCatego
   )
 
   return {
-    achievement_categories: sortByName<AchievementCategorySummary>(response.achievement_categories),
+    categories: sortByName<AchievementCategorySummary>(response.categories ?? response.achievement_categories),
   }
 }
 
