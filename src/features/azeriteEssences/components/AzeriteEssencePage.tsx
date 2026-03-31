@@ -1,10 +1,18 @@
 import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded"
 import ReportProblemRoundedIcon from "@mui/icons-material/ReportProblemRounded"
+import CloseRoundedIcon from "@mui/icons-material/CloseRounded"
 import SearchInput from "@/features/search/components/SearchInput"
 import {
   Alert,
   Box,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   Grid,
+  IconButton,
+  Link,
   Paper,
   Skeleton,
   Stack,
@@ -16,6 +24,7 @@ import ResultCard from "@/components/common/ResultCard"
 import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid"
 import useInfiniteScrollTrigger from "@/hooks/useInfiniteScrollTrigger"
 import useIdlePrefetchWindow from "@/hooks/useIdlePrefetchWindow"
+import { SearchResult } from "@/features/search/types"
 import {
   fetchAzeriteEssenceDetail,
   fetchAzeriteEssenceIcon,
@@ -33,6 +42,7 @@ const AzeriteEssencePage = (): JSX.Element => {
   const [query, setQuery] = useState("")
   const [visiblePages, setVisiblePages] = useState(1)
   const [renderedCount, setRenderedCount] = useState(0)
+  const [selectedEssence, setSelectedEssence] = useState<SearchResult | null>(null)
 
   const indexQuery = useQuery({
     queryKey: ["azerite-essence-index", env.region],
@@ -88,6 +98,22 @@ const AzeriteEssencePage = (): JSX.Element => {
     })),
   })
 
+  const selectedEssenceDetailQuery = useQuery({
+    queryKey: ["azerite-essence-detail-dialog", selectedEssence?.id, env.region],
+    queryFn: () => fetchAzeriteEssenceDetail(Number(selectedEssence?.id)),
+    enabled: selectedEssence !== null,
+    staleTime: 300000,
+    retry: false,
+  })
+
+  const selectedEssenceMediaQuery = useQuery({
+    queryKey: ["azerite-essence-media-dialog", selectedEssence?.id, env.region],
+    queryFn: () => fetchAzeriteEssenceIcon(Number(selectedEssence?.id)),
+    enabled: selectedEssence !== null && !selectedEssence?.mediaUrl,
+    staleTime: 300000,
+    retry: false,
+  })
+
   const friendlyError = useMemo(() => {
     const error = indexQuery.error ?? searchQuery.error ?? detailQueries.find((entry) => entry.error)?.error ?? mediaQueries.find((entry) => entry.error)?.error
     if (!error) {
@@ -139,6 +165,57 @@ const AzeriteEssencePage = (): JSX.Element => {
         }
       }),
     [detailQueries, mediaQueries, visibleEssences]
+  )
+
+  const selectedEssenceUsesIconAsset = Boolean(
+    (selectedEssenceMediaQuery.data ?? selectedEssence?.mediaUrl) && /\/icons\/56\//.test(selectedEssenceMediaQuery.data ?? selectedEssence?.mediaUrl ?? "")
+  )
+  const selectedEssenceMediaUrl = selectedEssenceMediaQuery.data ?? selectedEssence?.mediaUrl
+
+  const selectedEssenceDescription = useMemo(() => {
+    const detail = selectedEssenceDetailQuery.data
+    if (!detail) {
+      return selectedEssence?.details
+    }
+
+    if (detail.allowedSpecializations.length === 0) {
+      return selectedEssence?.details
+    }
+
+    return detail.allowedSpecializations.map((specialization) => specialization.name).join(", ")
+  }, [selectedEssence?.details, selectedEssenceDetailQuery.data])
+
+  const selectedEssencePowerRows = useMemo(() => {
+    const detail = selectedEssenceDetailQuery.data
+    if (!detail) {
+      return []
+    }
+
+    return detail.powers.map((power) => {
+      const powerNames = [
+        power.mainPowerSpell?.name,
+        power.passivePowerSpell?.name,
+      ].filter(Boolean)
+
+      return powerNames.length > 0
+        ? `Rank ${power.rank}: ${powerNames.join(" • ")}`
+        : `Rank ${power.rank}`
+    })
+  }, [selectedEssenceDetailQuery.data])
+
+  const selectedEssenceChipLabels = useMemo(
+    () =>
+      [
+        selectedEssence?.tag,
+        selectedEssence?.typeLabel,
+        selectedEssenceDetailQuery.data
+          ? `${selectedEssenceDetailQuery.data.allowedSpecializations.length} specializations`
+          : undefined,
+        selectedEssenceDetailQuery.data
+          ? `${selectedEssenceDetailQuery.data.powers.length} ranks`
+          : selectedEssence?.summary,
+      ].filter((value): value is string => Boolean(value)),
+    [selectedEssence, selectedEssenceDetailQuery.data]
   )
 
   const hasMoreEssences = trimmedQuery.length < AZERITE_SEARCH_MIN_LENGTH && visibleEssences.length < candidateEssences.length
@@ -250,7 +327,7 @@ const AzeriteEssencePage = (): JSX.Element => {
             gap={12}
             columns={{ xs: 1, sm: 2, md: 4, lg: 6, xl: 10 }}
             onVisibleRangeChange={(range) => setRenderedCount(range.end - range.start)}
-            renderItem={(item) => <ResultCard result={item} accentColor="#7dd3fc" compact />}
+            renderItem={(item) => <ResultCard result={item} accentColor="#7dd3fc" compact onClick={() => setSelectedEssence(item)} />}
           />
 
           <Stack spacing={1.5} alignItems="center">
@@ -272,6 +349,139 @@ const AzeriteEssencePage = (): JSX.Element => {
           </Stack>
         </Stack>
       ) : null}
+
+      <Dialog
+        open={selectedEssence !== null}
+        onClose={() => setSelectedEssence(null)}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle sx={{ pr: 7 }}>
+          {selectedEssence?.name ?? "Azerite Essence details"}
+          <IconButton
+            aria-label="Close Azerite Essence details"
+            onClick={() => setSelectedEssence(null)}
+            sx={{ position: "absolute", right: 12, top: 12 }}
+          >
+            <CloseRoundedIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={3} alignItems={{ xs: "stretch", md: "flex-start" }}>
+            <Box
+              sx={{
+                width: selectedEssenceUsesIconAsset ? { xs: 56, md: 56 } : { xs: "100%", md: 220 },
+                flexShrink: 0,
+              }}
+            >
+              <Box
+                sx={{
+                  width: selectedEssenceUsesIconAsset ? 56 : "100%",
+                  height: selectedEssenceUsesIconAsset ? 56 : "auto",
+                  minHeight: selectedEssenceUsesIconAsset ? 56 : { xs: 180, md: 220 },
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: selectedEssenceUsesIconAsset ? 1 : 3,
+                  border: selectedEssenceUsesIconAsset ? "none" : "1px solid rgba(125, 211, 252, 0.18)",
+                  backgroundColor: selectedEssenceUsesIconAsset ? "transparent" : "rgba(7, 12, 24, 0.72)",
+                  p: selectedEssenceUsesIconAsset ? 0 : 3,
+                }}
+              >
+                {selectedEssence && selectedEssenceMediaUrl ? (
+                  <Box
+                    component="img"
+                    src={selectedEssenceMediaUrl}
+                    alt={selectedEssence.name}
+                    sx={{
+                      width: selectedEssenceUsesIconAsset ? 56 : "auto",
+                      height: selectedEssenceUsesIconAsset ? 56 : "auto",
+                      maxWidth: selectedEssenceUsesIconAsset ? 56 : 160,
+                      maxHeight: selectedEssenceUsesIconAsset ? 56 : 160,
+                      objectFit: "contain",
+                    }}
+                  />
+                ) : selectedEssence ? (
+                  <Typography variant="h2" sx={{ fontWeight: 700, color: "text.secondary" }}>
+                    {selectedEssence.name.slice(0, 1)}
+                  </Typography>
+                ) : null}
+              </Box>
+            </Box>
+
+            <Stack spacing={3} sx={{ minWidth: 0, flex: 1 }}>
+              {selectedEssenceDetailQuery.isLoading ? (
+                <Stack direction="row" spacing={1.5} alignItems="center">
+                  <CircularProgress size={22} />
+                  <Typography variant="body2" color="text.secondary">
+                    Loading live Azerite Essence details...
+                  </Typography>
+                </Stack>
+              ) : null}
+
+              {selectedEssenceDetailQuery.isError ? (
+                <Alert severity="error" sx={{ borderRadius: 2 }}>
+                  {selectedEssenceDetailQuery.error instanceof Error
+                    ? selectedEssenceDetailQuery.error.message
+                    : "Unable to load Azerite Essence details right now."}
+                </Alert>
+              ) : null}
+
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                {selectedEssenceChipLabels.map((label) => (
+                  <Chip key={label} label={label} size="small" />
+                ))}
+              </Stack>
+
+              {selectedEssenceDescription ? (
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                    Description
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "pre-wrap" }}>
+                    {selectedEssenceDescription}
+                  </Typography>
+                </Box>
+              ) : null}
+
+              {selectedEssencePowerRows.length > 0 ? (
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                    Details
+                  </Typography>
+                  <Stack spacing={0.75}>
+                    {selectedEssencePowerRows.map((row) => (
+                      <Typography key={row} variant="body2" color="text.secondary">
+                        {row}
+                      </Typography>
+                    ))}
+                  </Stack>
+                </Box>
+              ) : selectedEssence?.details ? (
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                    Details
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "pre-wrap" }}>
+                    {selectedEssence.details}
+                  </Typography>
+                </Box>
+              ) : null}
+
+              <Link
+                href={selectedEssence?.href}
+                target="_blank"
+                rel="noreferrer"
+                color="primary"
+                underline="hover"
+                sx={{ alignSelf: "flex-start" }}
+              >
+                View full record on Blizzard
+              </Link>
+            </Stack>
+          </Stack>
+        </DialogContent>
+      </Dialog>
     </Stack>
   )
 }
