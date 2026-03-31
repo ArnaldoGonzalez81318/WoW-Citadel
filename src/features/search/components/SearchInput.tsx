@@ -21,7 +21,7 @@ const SearchInput = ({
   value,
   onChange,
   onClear,
-  placeholder = "Search items, spells, achievements, mounts...",
+  placeholder = "Search items, spells, mounts, creatures...",
   autoFocus = true,
   textFieldProps,
 }: SearchInputProps): JSX.Element => (
