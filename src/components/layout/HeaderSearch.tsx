@@ -62,6 +62,11 @@ const HeaderSearch = (): JSX.Element => {
           border: "1px solid rgba(30, 155, 233, 0.14)",
           boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04), 0 14px 26px rgba(4, 8, 19, 0.18)",
           transition: "border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease",
+          "&:hover": {
+            borderColor: "rgba(76, 183, 255, 0.32)",
+            backgroundColor: "rgba(14, 22, 42, 0.9)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05), 0 16px 28px rgba(4, 8, 19, 0.24)",
+          },
           "&.Mui-focused": {
             borderColor: "rgba(76, 183, 255, 0.45)",
             boxShadow: "0 0 0 4px rgba(30, 155, 233, 0.16)",
