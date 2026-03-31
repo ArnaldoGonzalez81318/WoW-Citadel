@@ -10,6 +10,7 @@ import {
 import {
   Box,
   Button,
+  Grow,
   Grid,
   Link,
   Paper,
@@ -210,6 +211,7 @@ const NavFlyout = (): JSX.Element => {
         open={open}
         anchorEl={anchorEl}
         placement="bottom-start"
+        transition
         modifiers={[
           {
             name: "offset",
@@ -220,75 +222,83 @@ const NavFlyout = (): JSX.Element => {
         ]}
         sx={{ zIndex: (theme) => theme.zIndex.appBar + 1 }}
       >
-        {activeSection ? (
-          <Paper
-            onMouseEnter={clearCloseTimer}
-            onMouseLeave={handlePopoverMouseLeave}
-            onFocusCapture={clearCloseTimer}
-            onBlurCapture={handlePopoverBlur}
-            ref={registerPopoverRef}
-            sx={{
-              pointerEvents: "auto",
-              borderRadius: 4,
-              width: { xs: 320, sm: 420, md: 560 },
-              background: "linear-gradient(155deg, rgba(8, 14, 28, 0.98), rgba(14, 24, 46, 0.96))",
-              border: "1px solid rgba(30, 155, 233, 0.18)",
-              boxShadow: "0 32px 60px rgba(4, 8, 19, 0.6)",
-              overflow: "hidden",
-              "&::before": {
-                content: "''",
-                position: "absolute",
-                inset: 0,
-                background:
-                  "radial-gradient(circle at top right, rgba(245,192,69,0.16), transparent 38%), radial-gradient(circle at left, rgba(30,155,233,0.16), transparent 42%)",
-                pointerEvents: "none",
-              },
-            }}
-          >
-            <Box sx={{ p: { xs: 3, md: 4 } }}>
-              <Stack spacing={2} sx={{ mb: 2 }}>
-                <Typography variant="overline" sx={{ letterSpacing: "0.28em", color: "secondary.light" }}>
-                  {activeSection.label}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {activeSection.description}
-                </Typography>
-              </Stack>
-              <Grid container spacing={2} columns={{ xs: 1, sm: 2 }}>
-                {activeSection.items.map((item) => (
-                  <Grid item xs={1} sm={1} key={item.id}>
-                    <Link
-                      {...(item.path
-                        ? { component: RouterLink, to: item.path }
-                        : { href: item.href })}
-                      underline="none"
-                      sx={{
-                        display: "block",
-                        p: 1.5,
-                        borderRadius: 2,
-                        backgroundColor: "rgba(12, 18, 34, 0.75)",
-                        border: "1px solid transparent",
-                        transition: "all 0.18s ease",
-                        "&:hover": {
-                          borderColor: "rgba(30, 155, 233, 0.45)",
-                          backgroundColor: "rgba(20, 32, 56, 0.85)",
-                        },
-                      }}
-                      onClick={item.path ? handleClose : undefined}
-                    >
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                        {item.label}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {item.description}
-                      </Typography>
-                    </Link>
+        {({ TransitionProps }) =>
+          activeSection ? (
+            <Grow
+              {...TransitionProps}
+              timeout={{ enter: 180 }}
+              style={{ transformOrigin: "left top" }}
+            >
+              <Paper
+                onMouseEnter={clearCloseTimer}
+                onMouseLeave={handlePopoverMouseLeave}
+                onFocusCapture={clearCloseTimer}
+                onBlurCapture={handlePopoverBlur}
+                ref={registerPopoverRef}
+                sx={{
+                  pointerEvents: "auto",
+                  borderRadius: 4,
+                  width: { xs: 320, sm: 420, md: 560 },
+                  background: "linear-gradient(155deg, rgba(8, 14, 28, 0.98), rgba(14, 24, 46, 0.96))",
+                  border: "1px solid rgba(30, 155, 233, 0.18)",
+                  boxShadow: "0 32px 60px rgba(4, 8, 19, 0.6)",
+                  overflow: "hidden",
+                  "&::before": {
+                    content: "''",
+                    position: "absolute",
+                    inset: 0,
+                    background:
+                      "radial-gradient(circle at top right, rgba(245,192,69,0.16), transparent 38%), radial-gradient(circle at left, rgba(30,155,233,0.16), transparent 42%)",
+                    pointerEvents: "none",
+                  },
+                }}
+              >
+                <Box sx={{ p: { xs: 3, md: 4 } }}>
+                  <Stack spacing={2} sx={{ mb: 2 }}>
+                    <Typography variant="overline" sx={{ letterSpacing: "0.28em", color: "secondary.light" }}>
+                      {activeSection.label}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {activeSection.description}
+                    </Typography>
+                  </Stack>
+                  <Grid container spacing={2} columns={{ xs: 1, sm: 2 }}>
+                    {activeSection.items.map((item) => (
+                      <Grid item xs={1} sm={1} key={item.id}>
+                        <Link
+                          {...(item.path
+                            ? { component: RouterLink, to: item.path }
+                            : { href: item.href })}
+                          underline="none"
+                          sx={{
+                            display: "block",
+                            p: 1.5,
+                            borderRadius: 2,
+                            backgroundColor: "rgba(12, 18, 34, 0.75)",
+                            border: "1px solid transparent",
+                            transition: "all 0.18s ease",
+                            "&:hover": {
+                              borderColor: "rgba(30, 155, 233, 0.45)",
+                              backgroundColor: "rgba(20, 32, 56, 0.85)",
+                            },
+                          }}
+                          onClick={item.path ? handleClose : undefined}
+                        >
+                          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                            {item.label}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {item.description}
+                          </Typography>
+                        </Link>
+                      </Grid>
+                    ))}
                   </Grid>
-                ))}
-              </Grid>
-            </Box>
-          </Paper>
-        ) : null}
+                </Box>
+              </Paper>
+            </Grow>
+          ) : null
+        }
       </Popper>
     </Box>
   )
