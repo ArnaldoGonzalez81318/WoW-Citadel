@@ -58,14 +58,6 @@ type SpellSearchResult = {
   media?: { id: number }
 }
 
-type AchievementSearchResult = {
-  id: number
-  name: LocalizedString
-  description?: LocalizedString
-  points?: number
-  media?: { id: number }
-}
-
 type MountSearchResult = {
   id: number
   name: LocalizedString
@@ -173,34 +165,6 @@ export const searchSpells = async (query: string): Promise<SearchResult[]> => {
       details: cleanMarkup(localized(data.description)),
       typeLabel: "Spell",
     }))
-  })
-}
-
-export const searchAchievements = async (query: string): Promise<SearchResult[]> => {
-  if (!query.trim()) {
-    return []
-  }
-
-  return safeSearch(async () => {
-    const response = await blizzardClient.get<SearchResponse<AchievementSearchResult>>("/data/wow/search/achievement", {
-      namespace: namespace("static"),
-      orderby: "id:desc",
-      _pageSize: DEFAULT_PAGE_SIZE,
-      [nameParamKey()]: query,
-    })
-
-    return mapResults(response, ({ key, data }) => {
-      const points = typeof data.points === "number" ? `${data.points} pts` : undefined
-
-      return {
-        id: data.id,
-        name: localized(data.name),
-        href: key.href,
-        summary: points,
-        details: cleanMarkup(localized(data.description)),
-        typeLabel: "Achievement",
-      }
-    })
   })
 }
 
