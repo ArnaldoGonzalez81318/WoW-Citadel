@@ -246,8 +246,11 @@ const AzeriteEssencePage = (): JSX.Element => {
           <VirtualizedCardGrid
             items={galleryItems}
             getItemKey={(item) => item.id}
+            itemHeight={244}
+            gap={12}
+            columns={{ xs: 1, sm: 2, md: 4, lg: 6, xl: 10 }}
             onVisibleRangeChange={(range) => setRenderedCount(range.end - range.start)}
-            renderItem={(item) => <ResultCard result={item} accentColor="#7dd3fc" />}
+            renderItem={(item) => <ResultCard result={item} accentColor="#7dd3fc" compact />}
           />
 
           <Stack spacing={1.5} alignItems="center">

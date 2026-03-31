@@ -31,6 +31,7 @@ const ResultCard = ({
   width,
 }: ResultCardProps): JSX.Element => {
   const isSmallIconAsset = Boolean(result.mediaUrl && /\/icons\/56\//.test(result.mediaUrl))
+  const smallIconSize = 56
   const resolvedMediaHeight = mediaHeight ?? (compact ? 104 : 180)
   const interactiveProps = onClick
     ? {
@@ -65,15 +66,16 @@ const ResultCard = ({
         {result.mediaUrl ? (
           <Box
             sx={{
-              width: "100%",
-              height: resolvedMediaHeight,
+              width: isSmallIconAsset ? smallIconSize : "100%",
+              height: isSmallIconAsset ? smallIconSize : resolvedMediaHeight,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               borderBottom: `1px solid ${accentColor}22`,
               backgroundColor: "rgba(7, 12, 24, 0.72)",
               overflow: "hidden",
-              p: isSmallIconAsset ? 1.5 : mediaMode === "framed" ? 0 : 0,
+              alignSelf: isSmallIconAsset ? "center" : "stretch",
+              p: 0,
             }}
           >
             <Box
@@ -81,10 +83,10 @@ const ResultCard = ({
               src={result.mediaUrl}
               alt={result.name}
               sx={{
-                width: isSmallIconAsset ? "auto" : "100%",
-                height: isSmallIconAsset ? "auto" : "100%",
-                maxWidth: isSmallIconAsset ? 56 : "100%",
-                maxHeight: isSmallIconAsset ? 56 : "100%",
+                width: isSmallIconAsset ? smallIconSize : "100%",
+                height: isSmallIconAsset ? smallIconSize : "100%",
+                maxWidth: isSmallIconAsset ? smallIconSize : "100%",
+                maxHeight: isSmallIconAsset ? smallIconSize : "100%",
                 objectFit: isSmallIconAsset ? "contain" : "cover",
               }}
             />
@@ -181,7 +183,7 @@ const ResultCard = ({
       variant="outlined"
       {...interactiveProps}
       sx={{
-      width: width ?? "100%",
+        width: width ?? "100%",
         height: "100%",
         minHeight: 420,
         display: "flex",
@@ -193,15 +195,16 @@ const ResultCard = ({
       {result.mediaUrl ? (
         <Box
           sx={{
-            width: "100%",
-            height: resolvedMediaHeight,
+            width: isSmallIconAsset ? smallIconSize : "100%",
+            height: isSmallIconAsset ? smallIconSize : resolvedMediaHeight,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             borderBottom: `1px solid ${accentColor}22`,
             backgroundColor: "rgba(7, 12, 24, 0.72)",
             overflow: "hidden",
-            p: isSmallIconAsset ? 2 : mediaMode === "framed" ? 0 : 0,
+            alignSelf: isSmallIconAsset ? "center" : "stretch",
+            p: 0,
           }}
         >
           <Box
@@ -209,15 +212,15 @@ const ResultCard = ({
             src={result.mediaUrl}
             alt={result.name}
             sx={{
-              width: isSmallIconAsset || mediaMode === "framed" ? "auto" : "100%",
-              height: isSmallIconAsset || mediaMode === "framed" ? "auto" : "100%",
+              width: isSmallIconAsset ? smallIconSize : mediaMode === "framed" ? "auto" : "100%",
+              height: isSmallIconAsset ? smallIconSize : mediaMode === "framed" ? "auto" : "100%",
               maxWidth: isSmallIconAsset
-                ? 56
+                ? smallIconSize
                 : mediaMode === "framed"
                   ? `min(100%, ${resolvedMediaHeight - 16}px)`
                   : "100%",
               maxHeight: isSmallIconAsset
-                ? 56
+                ? smallIconSize
                 : mediaMode === "framed"
                   ? resolvedMediaHeight - 16
                   : "100%",
@@ -244,94 +247,94 @@ const ResultCard = ({
           {result.name.slice(0, 1)}
         </Box>
       )}
-    <CardHeader
-      title={
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            {result.name}
-          </Typography>
-          <Typography
-            variant="h6"
-            sx={{
-              position: "absolute",
-              width: 1,
-              height: 1,
-              overflow: "hidden",
-              clip: "rect(0 0 0 0)",
-              clipPath: "inset(50%)",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {result.name}
-          </Typography>
-          {result.tag ? (
-            <Chip
-              label={result.tag}
-              size="small"
+      <CardHeader
+        title={
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              {result.name}
+            </Typography>
+            <Typography
+              variant="h6"
               sx={{
-                borderRadius: 2,
-                backgroundColor: `${accentColor}22`,
-                color: `${accentColor}cc`,
-                fontWeight: 600,
+                position: "absolute",
+                width: 1,
+                height: 1,
+                overflow: "hidden",
+                clip: "rect(0 0 0 0)",
+                clipPath: "inset(50%)",
+                whiteSpace: "nowrap",
               }}
-            />
-          ) : null}
-        </Stack>
-      }
-      subheader={result.summary}
-      sx={{
-        pb: result.details ? 0 : 2,
-        px: 2,
-        pt: 2,
-        "& .MuiCardHeader-title": {
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-        },
-        "& .MuiCardHeader-subheader": {
-          color: "text.secondary",
-          fontWeight: 500,
-          display: "-webkit-box",
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-        },
-      }}
-    />
-    <CardContent sx={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, px: 2, py: 2 }}>
-      {result.details ? (
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          sx={{
+            >
+              {result.name}
+            </Typography>
+            {result.tag ? (
+              <Chip
+                label={result.tag}
+                size="small"
+                sx={{
+                  borderRadius: 2,
+                  backgroundColor: `${accentColor}22`,
+                  color: `${accentColor}cc`,
+                  fontWeight: 600,
+                }}
+              />
+            ) : null}
+          </Stack>
+        }
+        subheader={result.summary}
+        sx={{
+          pb: result.details ? 0 : 2,
+          px: 2,
+          pt: 2,
+          "& .MuiCardHeader-title": {
             display: "-webkit-box",
-            WebkitLineClamp: 3,
+            WebkitLineClamp: 2,
             WebkitBoxOrient: "vertical",
             overflow: "hidden",
-          }}
-        >
-          {result.details}
-        </Typography>
-      ) : null}
-      <Stack direction="row" justifyContent="space-between" alignItems="center" mt="auto">
-        <Typography variant="caption" color="text.secondary">
-          {result.typeLabel}
-        </Typography>
-        <Link
-          href={result.href}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(event) => event.stopPropagation()}
-          color="primary"
-          underline="hover"
-          sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
-        >
-          View on Blizzard
-          <LaunchRoundedIcon fontSize="inherit" />
-        </Link>
-      </Stack>
-    </CardContent>
+          },
+          "& .MuiCardHeader-subheader": {
+            color: "text.secondary",
+            fontWeight: 500,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          },
+        }}
+      />
+      <CardContent sx={{ display: "flex", flexDirection: "column", gap: 3, flex: 1, px: 2, py: 2 }}>
+        {result.details ? (
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{
+              display: "-webkit-box",
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+            }}
+          >
+            {result.details}
+          </Typography>
+        ) : null}
+        <Stack direction="row" justifyContent="space-between" alignItems="center" mt="auto">
+          <Typography variant="caption" color="text.secondary">
+            {result.typeLabel}
+          </Typography>
+          <Link
+            href={result.href}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            color="primary"
+            underline="hover"
+            sx={{ display: "inline-flex", alignItems: "center", gap: 0.5 }}
+          >
+            View on Blizzard
+            <LaunchRoundedIcon fontSize="inherit" />
+          </Link>
+        </Stack>
+      </CardContent>
     </Card>
   )
 }
