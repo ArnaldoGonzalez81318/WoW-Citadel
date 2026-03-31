@@ -50,10 +50,34 @@ const theme = createTheme({
   components: {
     MuiCssBaseline: {
       styleOverrides: {
+        html: {
+          scrollbarColor: "#1e9be9 rgba(10, 16, 32, 0.88)",
+        },
         body: {
           backgroundImage:
             "radial-gradient(circle at top, rgba(30,155,233,0.12), transparent 45%), radial-gradient(circle at 20% 80%, rgba(245,192,69,0.12), transparent 55%)",
           backgroundColor: "#040813",
+        },
+        "*": {
+          scrollbarWidth: "thin",
+        },
+        "*::-webkit-scrollbar": {
+          width: "12px",
+          height: "12px",
+        },
+        "*::-webkit-scrollbar-track": {
+          background: "rgba(10, 16, 32, 0.88)",
+        },
+        "*::-webkit-scrollbar-thumb": {
+          background: "linear-gradient(180deg, rgba(30, 155, 233, 0.82), rgba(245, 192, 69, 0.72))",
+          borderRadius: "999px",
+          border: "2px solid rgba(10, 16, 32, 0.88)",
+        },
+        "*::-webkit-scrollbar-thumb:hover": {
+          background: "linear-gradient(180deg, rgba(76, 183, 255, 0.96), rgba(245, 192, 69, 0.88))",
+        },
+        "*::-webkit-scrollbar-corner": {
+          background: "rgba(10, 16, 32, 0.88)",
         },
       },
     },
