@@ -1,25 +1,68 @@
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded"
-import { Alert, Skeleton, Stack, Typography } from "@mui/material"
-import { useEffect, useMemo, useState } from "react"
-import AchievementCategoryPanel from "@/features/achievements/components/AchievementCategoryPanel"
+import { Alert, Box, Chip, CircularProgress, Grid, Paper, Skeleton, Stack, Typography } from "@mui/material"
+import { useInfiniteQuery } from "@tanstack/react-query"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import ResultCard from "@/components/common/ResultCard"
+import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid"
 import { useAchievementCategoryIndex } from "@/features/achievements/hooks/useAchievementCategoryIndex"
+import { fetchAchievementGalleryPage } from "@/features/achievements/services/achievementService"
+import useInfiniteScrollTrigger from "@/hooks/useInfiniteScrollTrigger"
+import { usePerformanceOverlayEntry } from "@/devtools/PerformanceOverlayContext"
+
+const PAGE_SIZE = 18
 
 const AchievementsPage = (): JSX.Element => {
-  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null)
+  const [renderedCount, setRenderedCount] = useState(0)
   const { data, isLoading, isError, error } = useAchievementCategoryIndex()
 
   const categories = useMemo(() => data?.achievement_categories ?? [], [data])
   const errorMessage = error instanceof Error ? error.message : undefined
 
   useEffect(() => {
-    if (categories.length > 0 && expandedId === null) {
-      setExpandedId(categories[0].id)
+    if (categories.length > 0 && selectedCategoryId === null) {
+      setSelectedCategoryId(categories[0].id)
     }
-  }, [categories, expandedId])
+  }, [categories, selectedCategoryId])
 
-  const handleToggle = (categoryId: number) => {
-    setExpandedId((current) => (current === categoryId ? null : categoryId))
-  }
+  const galleryQuery = useInfiniteQuery({
+    queryKey: ["achievement-gallery", selectedCategoryId],
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) => fetchAchievementGalleryPage(Number(selectedCategoryId), pageParam, PAGE_SIZE),
+    enabled: selectedCategoryId !== null,
+    getNextPageParam: (lastPage) => (lastPage.page < lastPage.pageCount ? lastPage.page + 1 : undefined),
+  })
+
+  const friendlyError = galleryQuery.error instanceof Error ? galleryQuery.error.message : errorMessage
+  const galleryPages = galleryQuery.data?.pages ?? []
+  const galleryAchievements = useMemo(() => galleryPages.flatMap((pageEntry) => pageEntry.achievements), [galleryPages])
+
+  const loadMoreAchievements = useCallback(() => {
+    if (!galleryQuery.hasNextPage || galleryQuery.isFetchingNextPage) {
+      return
+    }
+
+    void galleryQuery.fetchNextPage()
+  }, [galleryQuery.fetchNextPage, galleryQuery.hasNextPage, galleryQuery.isFetchingNextPage])
+
+  const infiniteScrollRef = useInfiniteScrollTrigger({
+    enabled: selectedCategoryId !== null && !friendlyError,
+    hasMore: galleryQuery.hasNextPage,
+    isLoading: galleryQuery.isFetchingNextPage,
+    onLoadMore: loadMoreAchievements,
+  })
+
+  usePerformanceOverlayEntry(
+    import.meta.env.DEV
+      ? {
+        id: "achievements",
+        label: "Achievements",
+        renderedCount,
+        totalCount: galleryAchievements.length,
+        notes: galleryPages[0]?.category.name ?? "Achievement gallery",
+      }
+      : null
+  )
 
   return (
     <Stack spacing={{ xs: 4, md: 6 }}>
@@ -31,9 +74,38 @@ const AchievementsPage = (): JSX.Element => {
           </Typography>
         </Stack>
         <Typography variant="body1" color="text.secondary">
-          Browse Blizzard&apos;s official achievement catalogue by category. Expand a section to inspect key feats, their point values, and rewards without leaving the Citadel.
+          Browse achievements as a visual gallery. Filter by category and keep scrolling through live Blizzard records with points, rewards, and icon media.
         </Typography>
       </Stack>
+
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 3, md: 4 },
+          borderRadius: 4,
+          borderColor: "rgba(30, 155, 233, 0.22)",
+          backgroundColor: "rgba(12, 18, 34, 0.72)",
+        }}
+      >
+        <Stack spacing={2.5}>
+          <Typography variant="subtitle1" color="text.secondary">
+            Achievement category
+          </Typography>
+          <Stack direction="row" spacing={1.25} useFlexGap flexWrap="wrap">
+            {categories.map((category) => (
+              <Chip
+                key={category.id}
+                label={category.name}
+                clickable
+                color={selectedCategoryId === category.id ? "primary" : "default"}
+                variant={selectedCategoryId === category.id ? "filled" : "outlined"}
+                onClick={() => setSelectedCategoryId(category.id)}
+                sx={{ borderRadius: 2 }}
+              />
+            ))}
+          </Stack>
+        </Stack>
+      </Paper>
 
       {isError ? (
         <Alert severity="error" sx={{ borderRadius: 3 }}>
@@ -41,27 +113,51 @@ const AchievementsPage = (): JSX.Element => {
         </Alert>
       ) : null}
 
-      {isLoading ? (
-        <Stack spacing={2}>
-          {Array.from({ length: 3 }).map((_, index) => (
-            <Skeleton
-              key={index}
-              variant="rounded"
-              height={72}
-              sx={{ borderRadius: 3, backgroundColor: "rgba(12, 18, 34, 0.45)" }}
-            />
+      {galleryQuery.isError ? (
+        <Alert severity="error" sx={{ borderRadius: 3 }}>
+          {friendlyError ?? "Unable to load achievement data for this category."}
+        </Alert>
+      ) : null}
+
+      {isLoading || galleryQuery.isLoading ? (
+        <Grid container spacing={3}>
+          {Array.from({ length: 12 }).map((_, index) => (
+            <Grid item xs={12} md={6} lg={4} key={index}>
+              <Skeleton variant="rounded" height={320} sx={{ borderRadius: 3, backgroundColor: "rgba(12, 18, 34, 0.45)" }} />
+            </Grid>
           ))}
-        </Stack>
+        </Grid>
       ) : (
-        <Stack spacing={2}>
-          {categories.map((category) => (
-            <AchievementCategoryPanel
-              key={category.id}
-              category={category}
-              expanded={expandedId === category.id}
-              onToggle={handleToggle}
-            />
-          ))}
+        <Stack spacing={3}>
+          <Stack spacing={0.75}>
+            <Typography variant="h5" sx={{ fontWeight: 600 }}>
+              {galleryPages[0]?.category.name ?? "Achievements"}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Loaded {galleryAchievements.length} achievements across {galleryPages.length || 1} page{galleryPages.length === 1 ? "" : "s"}.
+            </Typography>
+          </Stack>
+
+          <VirtualizedCardGrid
+            items={galleryAchievements}
+            getItemKey={(achievement) => achievement.id}
+            onVisibleRangeChange={(range) => setRenderedCount(range.end - range.start)}
+            renderItem={(achievement) => <ResultCard result={achievement} accentColor="#f5c045" />}
+          />
+
+          <Stack spacing={1.5} alignItems="center">
+            {galleryQuery.hasNextPage ? (
+              <Typography variant="body2" color="text.secondary">
+                Keep scrolling to load more achievements.
+              </Typography>
+            ) : galleryAchievements.length > 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                Reached the end of this achievement category.
+              </Typography>
+            ) : null}
+            {galleryQuery.isFetchingNextPage ? <CircularProgress color="primary" size={28} /> : null}
+            {galleryQuery.hasNextPage ? <Box ref={infiniteScrollRef} sx={{ width: "100%", height: 1 }} /> : null}
+          </Stack>
         </Stack>
       )}
     </Stack>
