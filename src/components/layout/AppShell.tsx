@@ -1,5 +1,6 @@
 import { Box, Container } from "@mui/material"
 import { PropsWithChildren } from "react"
+import PerformanceOverlay from "@/devtools/PerformanceOverlay"
 import Footer from "@/components/layout/Footer"
 import Header from "@/components/layout/Header"
 
@@ -24,10 +25,11 @@ const AppShell = ({ children }: PropsWithChildren): JSX.Element => (
   >
     <Box sx={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column" }}>
       <Header />
-      <Container component="main" maxWidth="lg" sx={{ flex: 1, py: { xs: 6, md: 10 } }}>
+      <Container component="main" maxWidth="xl" sx={{ flex: 1, py: { xs: 6, md: 10 } }}>
         {children}
       </Container>
       <Footer />
+      <PerformanceOverlay />
     </Box>
   </Box>
 )
