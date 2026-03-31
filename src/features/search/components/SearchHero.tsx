@@ -20,13 +20,13 @@ const SearchHero = ({ onQuickSearch }: SearchHeroProps): JSX.Element => (
           Search Azeroth&apos;s knowledge base in seconds
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          Tap into Blizzard&apos;s official World of Warcraft Game Data APIs to surface gear, spells, achievements, and collectible companions. Built for theorycrafters, raid leaders, and auction aficionados alike.
+          Tap into Blizzard&apos;s official World of Warcraft Game Data APIs to surface gear, spells, mounts, and creature intel. Built for theorycrafters, raid leaders, and auction aficionados alike.
         </Typography>
         <Stack direction="row" spacing={1.5} flexWrap="wrap">
           {[
             { label: "Legendary Gear", icon: StyleRoundedIcon },
             { label: "Talent Spells", icon: AutoGraphRoundedIcon },
-            { label: "Feats & Points", icon: MilitaryTechRoundedIcon },
+            { label: "Raid Boss Intel", icon: MilitaryTechRoundedIcon },
             { label: "Mount Collection", icon: PetsRoundedIcon },
           ].map(({ label, icon: Icon }) => (
             <Paper
@@ -106,7 +106,7 @@ const SearchHero = ({ onQuickSearch }: SearchHeroProps): JSX.Element => (
                 Curious what&apos;s trending?
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Browse the curated sections below for legendary items, mounts, achievements, and more.
+                Browse the curated sections below for legendary items, mounts, creatures, and more.
               </Typography>
             </Stack>
             <Button
