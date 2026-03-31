@@ -1,7 +1,7 @@
 import AutorenewRoundedIcon from "@mui/icons-material/AutorenewRounded"
 import MonetizationOnRoundedIcon from "@mui/icons-material/MonetizationOnRounded"
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded"
-import { Box, Button, CircularProgress, Paper, Stack, Tooltip, Typography } from "@mui/material"
+import { Box, Button, CircularProgress, Paper, Stack, Typography } from "@mui/material"
 import { useMemo } from "react"
 import { useWowTokenPrice } from "@/features/search/hooks/useWowTokenPrice"
 import { env } from "@/lib/env"
@@ -140,22 +140,18 @@ const TokenTicker = (): JSX.Element => {
               gold per token. Perfect for comparing profession profits against subscription costs.
             </Typography>
           )}
-          <Tooltip title="Refresh token price">
-            <span>
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => refetch()}
-                disabled={isLoading || isFetching}
-                startIcon={
-                  isFetching ? <CircularProgress size={16} thickness={5} /> : <AutorenewRoundedIcon />
-                }
-                sx={{ alignSelf: { xs: "flex-start", md: "flex-end" } }}
-              >
-                {isFetching ? "Refreshing" : "Refresh price"}
-              </Button>
-            </span>
-          </Tooltip>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => refetch()}
+            disabled={isLoading || isFetching}
+            startIcon={
+              isFetching ? <CircularProgress size={16} thickness={5} /> : <AutorenewRoundedIcon />
+            }
+            sx={{ alignSelf: { xs: "flex-start", md: "flex-end" } }}
+          >
+            {isFetching ? "Refreshing" : "Refresh price"}
+          </Button>
         </Stack>
       </Stack>
     </Paper>
