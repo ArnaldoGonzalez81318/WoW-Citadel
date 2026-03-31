@@ -4,6 +4,7 @@ import { Alert, Grid, Skeleton, Stack, ToggleButton, ToggleButtonGroup, Typograp
 import { SyntheticEvent, useMemo, useState } from "react"
 import ConnectedRealmCard from "@/features/connectedRealms/components/ConnectedRealmCard"
 import { useConnectedRealmSnapshots } from "@/features/connectedRealms/hooks/useConnectedRealmSnapshots"
+import { usePerformanceOverlayEntry } from "@/devtools/PerformanceOverlayContext"
 
 const SAMPLE_SIZES = [6, 12, 18]
 
@@ -13,6 +14,18 @@ const ConnectedRealmsPage = (): JSX.Element => {
 
   const snapshots = useMemo(() => data ?? [], [data])
   const errorMessage = error instanceof Error ? error.message : undefined
+
+  usePerformanceOverlayEntry(
+    import.meta.env.DEV
+      ? {
+        id: "connected-realms",
+        label: "Connected Realms",
+        renderedCount: snapshots.length,
+        totalCount: snapshots.length,
+        notes: `Sample ${limit}`,
+      }
+      : null
+  )
 
   const handleLimitChange = (_event: SyntheticEvent, value: number | null) => {
     if (value) {
