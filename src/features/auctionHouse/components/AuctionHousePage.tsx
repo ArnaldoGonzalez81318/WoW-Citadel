@@ -20,6 +20,7 @@ import {
 import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import ResultCard from "@/components/common/ResultCard"
+import { usePerformanceOverlayEntry } from "@/devtools/PerformanceOverlayContext"
 import { fetchConnectedRealmSnapshots } from "@/features/connectedRealms/services/connectedRealmService"
 import {
   fetchCommoditySnapshots,
@@ -68,6 +69,21 @@ const AuctionHousePage = (): JSX.Element => {
   const activeQuery = viewMode === VIEW_OPTIONS.commodities ? commoditiesQuery : realmAuctionsQuery
   const activeItems = activeQuery.data ?? []
   const selectedRealm = realms.find((realm) => realm.id === selectedRealmId)
+
+  usePerformanceOverlayEntry(
+    import.meta.env.DEV
+      ? {
+        id: "auction-house",
+        label: "Auction House",
+        renderedCount: activeItems.length,
+        totalCount: activeItems.length,
+        notes:
+          viewMode === VIEW_OPTIONS.commodities
+            ? "Commodity market"
+            : selectedRealm?.displayName || "Connected realm market",
+      }
+      : null
+  )
 
   const friendlyError = useMemo(() => {
     const error = realmsQuery.error ?? commoditiesQuery.error ?? realmAuctionsQuery.error
