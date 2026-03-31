@@ -7,23 +7,31 @@ interface SearchResultsProps {
   query: string
   categoryStates: CategoryQueryState[]
   hasAnyResults: boolean
+  compact?: boolean
 }
 
 const ACCENT_COLORS: Record<SearchCategoryId, string> = {
   items: "#1e9be9",
   spells: "#a78bfa",
-  achievements: "#f5c045",
   mounts: "#6ee7b7",
   creatures: "#f87171",
 }
 
-const SearchResults = ({ query, categoryStates, hasAnyResults }: SearchResultsProps): JSX.Element => {
+const SearchResults = ({
+  query,
+  categoryStates,
+  hasAnyResults,
+  compact = false,
+}: SearchResultsProps): JSX.Element => {
+  const containerMarginTop = compact ? 0 : 8
+  const resultsMarginTop = compact ? 0 : 10
+
   if (!query) {
     return (
       <Paper
         variant="outlined"
         sx={{
-          mt: 8,
+          mt: containerMarginTop,
           p: { xs: 4, md: 6 },
           borderRadius: 4,
           borderColor: "rgba(30, 155, 233, 0.18)",
@@ -36,7 +44,7 @@ const SearchResults = ({ query, categoryStates, hasAnyResults }: SearchResultsPr
             Begin your search from the header
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Use the search field in the site header to look up legendary weapons like <strong>Shadowmourne</strong>, iconic spells such as <strong>Chaos Bolt</strong>, Feats of Strength like <strong>Champion of the Naaru</strong>, or mounts including <strong>Invincible</strong>.
+            Use the search field in the site header to look up legendary weapons like <strong>Shadowmourne</strong>, iconic spells such as <strong>Chaos Bolt</strong>, creatures like <strong>Onyxia</strong>, or mounts including <strong>Invincible</strong>.
           </Typography>
         </Stack>
       </Paper>
@@ -48,7 +56,7 @@ const SearchResults = ({ query, categoryStates, hasAnyResults }: SearchResultsPr
       <Paper
         variant="outlined"
         sx={{
-          mt: 8,
+          mt: containerMarginTop,
           p: { xs: 4, md: 6 },
           textAlign: "center",
           borderRadius: 4,
@@ -65,7 +73,7 @@ const SearchResults = ({ query, categoryStates, hasAnyResults }: SearchResultsPr
   }
 
   return (
-    <Stack spacing={8} mt={10}>
+    <Stack spacing={8} mt={resultsMarginTop}>
       {categoryStates.map((state) => (
         <Box key={state.category.id} id={`category-${state.category.id}`}>
           <SearchResultSection
