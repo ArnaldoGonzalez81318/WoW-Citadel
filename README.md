@@ -1,10 +1,6 @@
-<div align="center">
-
 # 🏰 WoW Citadel
 
 Search anything in Azeroth with a modern, data-driven World of Warcraft companion.
-
-</div>
 
 ## ✨ Features
 
