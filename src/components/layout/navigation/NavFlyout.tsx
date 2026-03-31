@@ -155,7 +155,18 @@ const NavFlyout = (): JSX.Element => {
     <Box
       component="nav"
       ref={navRef}
-      sx={{ display: "flex", alignItems: "center", gap: 1 }}
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        gap: 0.5,
+        px: 0.75,
+        py: 0.75,
+        borderRadius: 999,
+        border: "1px solid rgba(30, 155, 233, 0.12)",
+        backgroundColor: "rgba(10, 16, 32, 0.62)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+        overflowX: "auto",
+      }}
       onMouseEnter={handleNavMouseEnter}
       onMouseLeave={handleNavMouseLeave}
       onFocusCapture={clearCloseTimer}
@@ -171,12 +182,19 @@ const NavFlyout = (): JSX.Element => {
           aria-expanded={open && activeSection?.id === section.id ? "true" : undefined}
           aria-controls={popoverId}
           sx={{
-            color: "text.secondary",
+            color: open && activeSection?.id === section.id ? "text.primary" : "text.secondary",
             fontWeight: 600,
             letterSpacing: "0.02em",
-            borderRadius: 2,
-            px: 1.5,
+            borderRadius: 999,
+            px: 1.75,
+            py: 0.9,
             textTransform: "none",
+            whiteSpace: "nowrap",
+            background:
+              open && activeSection?.id === section.id
+                ? "linear-gradient(135deg, rgba(30,155,233,0.2), rgba(245,192,69,0.14))"
+                : "transparent",
+            border: open && activeSection?.id === section.id ? "1px solid rgba(76, 183, 255, 0.18)" : "1px solid transparent",
             "&:hover": {
               backgroundColor: "rgba(30, 155, 233, 0.12)",
               color: "primary.light",
@@ -211,11 +229,20 @@ const NavFlyout = (): JSX.Element => {
             ref={registerPopoverRef}
             sx={{
               pointerEvents: "auto",
-              borderRadius: 3,
+              borderRadius: 4,
               width: { xs: 320, sm: 420, md: 560 },
-              backgroundColor: "rgba(10, 16, 32, 0.94)",
+              background: "linear-gradient(155deg, rgba(8, 14, 28, 0.98), rgba(14, 24, 46, 0.96))",
               border: "1px solid rgba(30, 155, 233, 0.18)",
               boxShadow: "0 32px 60px rgba(4, 8, 19, 0.6)",
+              overflow: "hidden",
+              "&::before": {
+                content: "''",
+                position: "absolute",
+                inset: 0,
+                background:
+                  "radial-gradient(circle at top right, rgba(245,192,69,0.16), transparent 38%), radial-gradient(circle at left, rgba(30,155,233,0.16), transparent 42%)",
+                pointerEvents: "none",
+              },
             }}
           >
             <Box sx={{ p: { xs: 3, md: 4 } }}>
