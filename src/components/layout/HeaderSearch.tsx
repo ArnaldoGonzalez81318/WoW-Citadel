@@ -31,6 +31,7 @@ const HeaderSearch = (): JSX.Element => {
   }, [])
 
   const closeMobile = useCallback(() => setMobileOpen(false), [])
+  const clearQuery = useCallback(() => setQuery(""), [setQuery])
 
   const renderTextField = (variant: "desktop" | "mobile") => (
     <TextField
@@ -47,16 +48,32 @@ const HeaderSearch = (): JSX.Element => {
             <SearchRoundedIcon color="primary" fontSize="small" />
           </InputAdornment>
         ),
+        endAdornment: query ? (
+          <InputAdornment position="end">
+            <IconButton edge="end" size="small" aria-label="Clear search" onClick={clearQuery}>
+              <CloseRoundedIcon fontSize="small" />
+            </IconButton>
+          </InputAdornment>
+        ) : undefined,
         sx: {
-          bgcolor: "rgba(12, 18, 34, 0.85)",
-          borderRadius: 999,
+          height: 48,
+          bgcolor: "rgba(10, 16, 32, 0.82)",
+          borderRadius: 3,
+          border: "1px solid rgba(30, 155, 233, 0.14)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04), 0 14px 26px rgba(4, 8, 19, 0.18)",
+          transition: "border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease",
+          "&.Mui-focused": {
+            borderColor: "rgba(76, 183, 255, 0.45)",
+            boxShadow: "0 0 0 4px rgba(30, 155, 233, 0.16)",
+            backgroundColor: "rgba(12, 20, 40, 0.92)",
+          },
         },
       }}
       sx={{
-        minWidth: variant === "desktop" ? 340 : undefined,
-        maxWidth: variant === "desktop" ? 420 : undefined,
+        minWidth: variant === "desktop" ? 360 : undefined,
+        maxWidth: variant === "desktop" ? 520 : undefined,
         "& fieldset": {
-          borderColor: "rgba(30, 155, 233, 0.2)",
+          border: "none",
         },
       }}
     />
@@ -64,22 +81,30 @@ const HeaderSearch = (): JSX.Element => {
 
   if (isDesktop) {
     return (
-      <Box sx={{ display: "flex", alignItems: "center", position: "relative" }}>
+      <Box sx={{ display: "flex", alignItems: "center", position: "relative", width: "100%" }}>
         {renderTextField("desktop")}
       </Box>
     )
   }
 
   return (
-    <Box sx={{ display: "flex", alignItems: "center", position: "relative" }}>
+    <Box sx={{ display: "flex", alignItems: "center", position: "relative", width: "100%" }}>
       <IconButton
         color="inherit"
         aria-label="Toggle search"
         onClick={toggleMobile}
         sx={{
-          borderRadius: 2,
-          backgroundColor: mobileOpen ? "rgba(30, 155, 233, 0.18)" : "transparent",
-          transition: "background-color 0.2s ease",
+          width: 46,
+          height: 46,
+          borderRadius: 3,
+          border: "1px solid rgba(30, 155, 233, 0.14)",
+          backgroundColor: mobileOpen ? "rgba(20, 32, 56, 0.92)" : "rgba(10, 16, 32, 0.78)",
+          boxShadow: "0 10px 22px rgba(4, 8, 19, 0.16)",
+          transition: "background-color 0.2s ease, border-color 0.2s ease",
+          "&:hover": {
+            backgroundColor: "rgba(20, 32, 56, 0.96)",
+            borderColor: "rgba(76, 183, 255, 0.28)",
+          },
         }}
       >
         {mobileOpen ? <CloseRoundedIcon /> : <SearchRoundedIcon />}
@@ -93,11 +118,13 @@ const HeaderSearch = (): JSX.Element => {
             left: 0,
             right: 0,
             mt: 1,
-            px: 2,
-            py: 2,
+            px: 1.5,
+            py: 1.5,
             borderRadius: 3,
-            background:
-              "linear-gradient(135deg, rgba(30,155,233,0.18), rgba(245,192,69,0.16))",
+            border: "1px solid rgba(30, 155, 233, 0.16)",
+            background: "linear-gradient(145deg, rgba(9, 15, 30, 0.98), rgba(16, 26, 48, 0.96))",
+            boxShadow: "0 24px 40px rgba(4, 8, 19, 0.38)",
+            zIndex: 2,
           }}
         >
           {renderTextField("mobile")}
