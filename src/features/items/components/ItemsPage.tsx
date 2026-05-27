@@ -70,6 +70,7 @@ const ItemsPage = (): JSX.Element => {
   const classIndexQuery = useQuery({
     queryKey: ["item-class-index", env.region],
     queryFn: fetchItemClassIndex,
+    staleTime: 1000 * 60 * 60,
   })
 
   const itemClasses = useMemo(() => classIndexQuery.data?.item_classes ?? [], [classIndexQuery.data])
@@ -84,6 +85,7 @@ const ItemsPage = (): JSX.Element => {
     queryKey: ["item-class-detail", selectedClassId, env.region],
     queryFn: () => fetchItemClassDetail(Number(selectedClassId)),
     enabled: selectedClassId !== "",
+    staleTime: 1000 * 60 * 60,
   })
 
   const subclasses = useMemo(() => classDetailQuery.data?.item_subclasses ?? [], [classDetailQuery.data])
@@ -137,8 +139,8 @@ const ItemsPage = (): JSX.Element => {
 
   const selectedItemDetailQuery = useQuery({
     queryKey: ["item-detail-dialog", selectedItem?.id, env.region],
-    queryFn: () => fetchItemDetail(Number(selectedItem?.id)),
-    enabled: selectedItem !== null,
+    queryFn: () => fetchItemDetail(Number(selectedItem!.id)),
+    enabled: selectedItem !== null && selectedItem.id > 0,
     staleTime: 300000,
     retry: false,
   })
