@@ -1,8 +1,7 @@
-import { Suspense, lazy } from "react"
+import { Suspense, lazy, useMemo, type ReactNode } from "react"
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded"
 import UpcomingRoundedIcon from "@mui/icons-material/UpcomingRounded"
 import { Alert, AlertTitle, Box, Button, Chip, CircularProgress, Paper, Stack, Typography } from "@mui/material"
-import { ReactNode, useMemo } from "react"
 import { Link as RouterLink, Navigate, useParams } from "react-router-dom"
 import TokenTicker from "@/features/search/components/TokenTicker"
 import ApiFamilyGallery from "@/features/apiExplorer/components/ApiFamilyGallery"
@@ -187,11 +186,15 @@ const CategoryPage = (): JSX.Element => {
 
   const navItem = useMemo(() => (normalizedSlug ? findNavItemBySlug(normalizedSlug) : undefined), [normalizedSlug])
 
+  const content = useMemo(
+    () => (normalizedSlug && navItem ? renderContentForSlug(normalizedSlug) : null),
+    [normalizedSlug, navItem]
+  )
+
   if (!normalizedSlug || !navItem) {
     return <Navigate to="/" replace />
   }
 
-  const content = renderContentForSlug(normalizedSlug)
 
   return (
     <Stack spacing={{ xs: 6, md: 8 }}>
