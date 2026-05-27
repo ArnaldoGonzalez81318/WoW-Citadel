@@ -21,6 +21,7 @@ const CovenantPage = (): JSX.Element => {
   const indexQuery = useQuery({
     queryKey: ["covenant-index", env.region],
     queryFn: fetchCovenantIndex,
+    staleTime: 1000 * 60 * 60,
   })
 
   const covenants = useMemo(() => indexQuery.data?.covenants ?? [], [indexQuery.data])
