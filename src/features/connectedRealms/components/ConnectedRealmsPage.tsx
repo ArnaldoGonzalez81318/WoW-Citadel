@@ -5,14 +5,30 @@ import { SyntheticEvent, useMemo, useState } from "react"
 import ConnectedRealmCard from "@/features/connectedRealms/components/ConnectedRealmCard"
 import { useConnectedRealmSnapshots } from "@/features/connectedRealms/hooks/useConnectedRealmSnapshots"
 import { usePerformanceOverlayEntry } from "@/devtools/PerformanceOverlayContext"
+import SearchInput from "@/features/search/components/SearchInput"
 
-const SAMPLE_SIZES = [6, 12, 18]
+const SAMPLE_SIZES = [6, 12, 18, 24]
 
 const ConnectedRealmsPage = (): JSX.Element => {
   const [limit, setLimit] = useState<number>(SAMPLE_SIZES[1])
+  const [filterQuery, setFilterQuery] = useState("")
   const { data, isLoading, isError, error } = useConnectedRealmSnapshots(limit)
 
-  const snapshots = useMemo(() => data ?? [], [data])
+  const allSnapshots = useMemo(() => data ?? [], [data])
+
+  const snapshots = useMemo(() => {
+    const trimmed = filterQuery.trim().toLowerCase()
+    if (!trimmed) {
+      return allSnapshots
+    }
+
+    return allSnapshots.filter(
+      (snapshot) =>
+        snapshot.displayName.toLowerCase().includes(trimmed) ||
+        snapshot.realmSlugs.some((slug) => slug.toLowerCase().includes(trimmed))
+    )
+  }, [allSnapshots, filterQuery])
+
   const errorMessage = error instanceof Error ? error.message : undefined
 
   usePerformanceOverlayEntry(
@@ -21,8 +37,8 @@ const ConnectedRealmsPage = (): JSX.Element => {
         id: "connected-realms",
         label: "Connected Realms",
         renderedCount: snapshots.length,
-        totalCount: snapshots.length,
-        notes: `Sample ${limit}`,
+        totalCount: allSnapshots.length,
+        notes: filterQuery ? `Filter: "${filterQuery}" (${snapshots.length}/${allSnapshots.length})` : `Sample ${limit}`,
       }
       : null
   )
@@ -47,7 +63,7 @@ const ConnectedRealmsPage = (): JSX.Element => {
         </Typography>
       </Stack>
 
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ xs: "stretch", sm: "center" }} flexWrap="wrap">
         <Stack direction="row" spacing={1} alignItems="center">
           <TravelExploreRoundedIcon color="primary" />
           <Typography variant="subtitle1" color="text.secondary">
@@ -61,6 +77,20 @@ const ConnectedRealmsPage = (): JSX.Element => {
             </ToggleButton>
           ))}
         </ToggleButtonGroup>
+        <Stack sx={{ flex: 1, minWidth: 240 }}>
+          <SearchInput
+            value={filterQuery}
+            onChange={setFilterQuery}
+            onClear={() => setFilterQuery("")}
+            autoFocus={false}
+            placeholder="Filter by realm name..."
+          />
+        </Stack>
+        {filterQuery && !isLoading ? (
+          <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
+            {snapshots.length} of {allSnapshots.length} shown
+          </Typography>
+        ) : null}
       </Stack>
 
       {isError ? (
