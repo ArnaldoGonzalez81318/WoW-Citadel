@@ -33,12 +33,14 @@ const RealmsPage = (): JSX.Element => {
   const indexQuery = useQuery({
     queryKey: ["realm-gallery-index", env.region],
     queryFn: fetchRealmIndex,
+    staleTime: 1000 * 60 * 30,
   })
 
   const searchQuery = useQuery({
     queryKey: ["realm-search-explorer", query, env.region, env.locale],
     queryFn: () => searchRealmsDetailed(query),
     enabled: query.trim().length >= 2,
+    staleTime: 1000 * 60 * 10,
   })
 
   const indexedRealms = useMemo(() => indexQuery.data ?? [], [indexQuery.data])
