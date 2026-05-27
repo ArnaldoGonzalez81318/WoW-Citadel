@@ -47,12 +47,14 @@ const MountsPage = (): JSX.Element => {
   const indexQuery = useQuery({
     queryKey: ["mount-gallery-index", env.region],
     queryFn: fetchMountIndex,
+    staleTime: 1000 * 60 * 30,
   })
 
   const searchQuery = useQuery({
     queryKey: ["mount-search-explorer", query, env.region, env.locale],
     queryFn: () => searchMountsDetailed(query),
     enabled: query.trim().length >= 2,
+    staleTime: 1000 * 60 * 10,
   })
 
   const indexedMounts = useMemo(() => indexQuery.data ?? [], [indexQuery.data])
