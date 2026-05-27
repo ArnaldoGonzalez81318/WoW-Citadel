@@ -9,10 +9,12 @@ import {
   Skeleton,
   Stack,
   Typography,
+  Box,
 } from "@mui/material"
 import { useQueries, useQuery } from "@tanstack/react-query"
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import ResultCard from "@/components/common/ResultCard"
+import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid"
 import useIdlePrefetchWindow from "@/hooks/useIdlePrefetchWindow"
 import SearchInput from "@/features/search/components/SearchInput"
 import { fetchSpellDetail, fetchSpellIcon, searchSpellsDetailed } from "@/features/spells/services/spellService"
@@ -24,11 +26,13 @@ const QUICK_SPELLS = ["Chaos Bolt", "Bloodlust", "Starfall", "Avenging Wrath"]
 
 const SpellsPage = (): JSX.Element => {
   const [query, setQuery] = useState<string>(QUICK_SPELLS[0])
+  const [renderedCount, setRenderedCount] = useState(0)
 
   const searchQuery = useQuery({
     queryKey: ["spell-search-explorer", query, env.region, env.locale],
     queryFn: () => searchSpellsDetailed(query),
     enabled: query.trim().length >= 2,
+    staleTime: 1000 * 60 * 10,
   })
 
   const spells = useMemo(() => searchQuery.data ?? [], [searchQuery.data])
@@ -98,12 +102,17 @@ const SpellsPage = (): JSX.Element => {
     [detailQueries, mediaQueries, spells]
   )
 
+  const handleVisibleRangeChange = useCallback(
+    (range: { start: number; end: number }) => setRenderedCount(range.end - range.start),
+    []
+  )
+
   usePerformanceOverlayEntry(
     import.meta.env.DEV
       ? {
         id: "spells",
         label: "Spells",
-        renderedCount: gallerySpells.length,
+        renderedCount,
         totalCount: spells.length,
         enrichmentCount: activeEnrichmentCount,
         notes: searchQuery.isFetching ? "Searching live spell index" : "Search-driven gallery",
@@ -175,13 +184,13 @@ const SpellsPage = (): JSX.Element => {
               </Typography>
             ) : null}
           </Stack>
-          <Grid container spacing={3}>
-            {gallerySpells.map((spell) => (
-              <Grid item xs={12} md={6} lg={4} key={spell.id}>
-                <ResultCard result={spell} accentColor="#a78bfa" />
-              </Grid>
-            ))}
-          </Grid>
+          <VirtualizedCardGrid
+            items={gallerySpells}
+            getItemKey={(spell) => spell.id}
+            onVisibleRangeChange={handleVisibleRangeChange}
+            renderItem={(spell) => <ResultCard result={spell} accentColor="#a78bfa" />}
+          />
+          {gallerySpells.length > 0 ? <Box sx={{ height: 1 }} /> : null}
         </Stack>
       ) : null}
     </Stack>
