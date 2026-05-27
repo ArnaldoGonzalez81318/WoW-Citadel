@@ -20,6 +20,7 @@ import {
 import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import ResultCard from "@/components/common/ResultCard"
+import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid"
 import { usePerformanceOverlayEntry } from "@/devtools/PerformanceOverlayContext"
 import { fetchConnectedRealmSnapshots } from "@/features/connectedRealms/services/connectedRealmService"
 import {
@@ -44,6 +45,7 @@ const AuctionHousePage = (): JSX.Element => {
   const realmsQuery = useQuery({
     queryKey: ["auction-connected-realms", env.region],
     queryFn: () => fetchConnectedRealmSnapshots(REALM_SAMPLE_SIZE),
+    staleTime: 1000 * 60 * 5,
   })
 
   const realms = useMemo(() => realmsQuery.data ?? [], [realmsQuery.data])
@@ -58,12 +60,14 @@ const AuctionHousePage = (): JSX.Element => {
     queryKey: ["auction-commodities", env.region],
     queryFn: () => fetchCommoditySnapshots(),
     enabled: viewMode === VIEW_OPTIONS.commodities,
+    staleTime: 1000 * 60 * 15,
   })
 
   const realmAuctionsQuery = useQuery({
     queryKey: ["auction-realm-listings", selectedRealmId, env.region],
     queryFn: () => fetchConnectedRealmAuctionSnapshots(Number(selectedRealmId)),
     enabled: viewMode === VIEW_OPTIONS.realm && selectedRealmId !== "",
+    staleTime: 1000 * 60 * 5,
   })
 
   const activeQuery = viewMode === VIEW_OPTIONS.commodities ? commoditiesQuery : realmAuctionsQuery
@@ -225,13 +229,11 @@ const AuctionHousePage = (): JSX.Element => {
           </Stack>
 
           {activeItems.length > 0 ? (
-            <Grid container spacing={3}>
-              {activeItems.map((listing) => (
-                <Grid item xs={12} md={6} lg={4} key={listing.id}>
-                  <ResultCard result={listing} accentColor="#f5c045" />
-                </Grid>
-              ))}
-            </Grid>
+            <VirtualizedCardGrid
+              items={activeItems}
+              getItemKey={(listing) => listing.id}
+              renderItem={(listing) => <ResultCard result={listing} accentColor="#f5c045" />}
+            />
           ) : (
             <Typography variant="body2" color="text.secondary">
               Nothing is available for this market view right now. Try the other mode or another connected realm.
