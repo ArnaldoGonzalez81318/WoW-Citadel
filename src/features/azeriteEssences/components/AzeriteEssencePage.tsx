@@ -47,6 +47,7 @@ const AzeriteEssencePage = (): JSX.Element => {
   const indexQuery = useQuery({
     queryKey: ["azerite-essence-index", env.region],
     queryFn: fetchAzeriteEssenceIndex,
+    staleTime: 1000 * 60 * 60,
   })
 
   const trimmedQuery = query.trim()
@@ -54,6 +55,7 @@ const AzeriteEssencePage = (): JSX.Element => {
     queryKey: ["azerite-essence-search", trimmedQuery, env.region],
     queryFn: () => searchAzeriteEssences(trimmedQuery),
     enabled: trimmedQuery.length >= AZERITE_SEARCH_MIN_LENGTH,
+    staleTime: 1000 * 60 * 10,
   })
 
   const candidateEssences = useMemo(() => {
