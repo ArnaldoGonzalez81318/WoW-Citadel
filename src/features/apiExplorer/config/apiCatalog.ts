@@ -1,11 +1,16 @@
-import { ApiEndpointDefinition, ApiEndpointParameter, ApiFamilyConfig, ApiNamespaceKind } from "@/features/apiExplorer/types"
+import {
+  ApiEndpointDefinition,
+  ApiEndpointParameter,
+  ApiFamilyConfig,
+  ApiNamespaceKind,
+} from "@/features/apiExplorer/types";
 
 const pathParam = (
   key: string,
   label: string,
   defaultValue = "",
   placeholder?: string,
-  description?: string
+  description?: string,
 ): ApiEndpointParameter => ({
   key,
   label,
@@ -13,14 +18,14 @@ const pathParam = (
   defaultValue,
   placeholder,
   description,
-})
+});
 
 const queryParam = (
   key: string,
   label: string,
   defaultValue = "",
   placeholder?: string,
-  description?: string
+  description?: string,
 ): ApiEndpointParameter => ({
   key,
   label,
@@ -28,7 +33,7 @@ const queryParam = (
   defaultValue,
   placeholder,
   description,
-})
+});
 
 const endpoint = (
   id: string,
@@ -36,7 +41,7 @@ const endpoint = (
   description: string,
   path: string,
   namespace: ApiNamespaceKind,
-  parameters: ApiEndpointParameter[] = []
+  parameters: ApiEndpointParameter[] = [],
 ): ApiEndpointDefinition => ({
   id,
   label,
@@ -44,7 +49,7 @@ const endpoint = (
   path,
   namespace,
   parameters,
-})
+});
 
 export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
   {
@@ -53,11 +58,44 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Achievements, media, and category hierarchies.",
     accentColor: "#f5c045",
     endpoints: [
-      endpoint("achievement-index", "Achievements Index", "Load the top-level achievement catalogue.", "/data/wow/achievement/index", "static"),
-      endpoint("achievement-detail", "Achievement", "Fetch a single achievement by id.", "/data/wow/achievement/{achievementId}", "static", [pathParam("achievementId", "Achievement ID", "", "e.g. 6")]),
-      endpoint("achievement-media", "Achievement Media", "Fetch achievement media assets.", "/data/wow/media/achievement/{achievementId}", "static", [pathParam("achievementId", "Achievement ID", "", "e.g. 6")]),
-      endpoint("achievement-category-index", "Achievement Categories Index", "Load achievement categories.", "/data/wow/achievement-category/index", "static"),
-      endpoint("achievement-category", "Achievement Category", "Fetch a single achievement category.", "/data/wow/achievement-category/{achievementCategoryId}", "static", [pathParam("achievementCategoryId", "Category ID", "", "e.g. 81")]),
+      endpoint(
+        "achievement-index",
+        "Achievements Index",
+        "Load the top-level achievement catalogue.",
+        "/data/wow/achievement/index",
+        "static",
+      ),
+      endpoint(
+        "achievement-detail",
+        "Achievement",
+        "Fetch a single achievement by id.",
+        "/data/wow/achievement/{achievementId}",
+        "static",
+        [pathParam("achievementId", "Achievement ID", "", "e.g. 6")],
+      ),
+      endpoint(
+        "achievement-media",
+        "Achievement Media",
+        "Fetch achievement media assets.",
+        "/data/wow/media/achievement/{achievementId}",
+        "static",
+        [pathParam("achievementId", "Achievement ID", "", "e.g. 6")],
+      ),
+      endpoint(
+        "achievement-category-index",
+        "Achievement Categories Index",
+        "Load achievement categories.",
+        "/data/wow/achievement-category/index",
+        "static",
+      ),
+      endpoint(
+        "achievement-category",
+        "Achievement Category",
+        "Fetch a single achievement category.",
+        "/data/wow/achievement-category/{achievementCategoryId}",
+        "static",
+        [pathParam("achievementCategoryId", "Category ID", "", "e.g. 81")],
+      ),
     ],
   },
   {
@@ -66,8 +104,28 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Commodity and connected-realm auction listings.",
     accentColor: "#f5c045",
     endpoints: [
-      endpoint("auctions", "Auctions", "Fetch auctions for a connected realm.", "/data/wow/connected-realm/{connectedRealmId}/auctions", "dynamic", [pathParam("connectedRealmId", "Connected Realm ID", "", "Use a value from Connected Realm Index")]),
-      endpoint("commodities", "Commodities", "Fetch region-wide commodity listings.", "/data/wow/auctions/commodities", "dynamic"),
+      endpoint(
+        "auctions",
+        "Auctions",
+        "Fetch auctions for a connected realm.",
+        "/data/wow/connected-realm/{connectedRealmId}/auctions",
+        "dynamic",
+        [
+          pathParam(
+            "connectedRealmId",
+            "Connected Realm ID",
+            "",
+            "Use a value from Connected Realm Index",
+          ),
+        ],
+      ),
+      endpoint(
+        "commodities",
+        "Commodities",
+        "Fetch region-wide commodity listings.",
+        "/data/wow/auctions/commodities",
+        "dynamic",
+      ),
     ],
   },
   {
@@ -76,10 +134,51 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Essence index, detail, search, and media.",
     accentColor: "#7dd3fc",
     endpoints: [
-      endpoint("azerite-essence-index", "Azerite Essences Index", "Load all Azerite essences.", "/data/wow/azerite-essence/index", "static"),
-      endpoint("azerite-essence-detail", "Azerite Essence", "Fetch a single Azerite essence.", "/data/wow/azerite-essence/{azeriteEssenceId}", "static", [pathParam("azeriteEssenceId", "Azerite Essence ID", "", "Use an id from the index")]),
-      endpoint("azerite-essence-search", "Azerite Essence Search", "Search Azerite essences by localized name.", "/data/wow/search/azerite-essence", "static", [queryParam("name.{locale}", "Name Query", "Life", "Search term")]),
-      endpoint("azerite-essence-media", "Azerite Essence Media", "Fetch Azerite essence media.", "/data/wow/media/azerite-essence/{azeriteEssenceId}", "static", [pathParam("azeriteEssenceId", "Azerite Essence ID", "", "Use an id from the index")]),
+      endpoint(
+        "azerite-essence-index",
+        "Azerite Essences Index",
+        "Load all Azerite essences.",
+        "/data/wow/azerite-essence/index",
+        "static",
+      ),
+      endpoint(
+        "azerite-essence-detail",
+        "Azerite Essence",
+        "Fetch a single Azerite essence.",
+        "/data/wow/azerite-essence/{azeriteEssenceId}",
+        "static",
+        [
+          pathParam(
+            "azeriteEssenceId",
+            "Azerite Essence ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "azerite-essence-search",
+        "Azerite Essence Search",
+        "Search Azerite essences by localized name.",
+        "/data/wow/search/azerite-essence",
+        "static",
+        [queryParam("name.{locale}", "Name Query", "Life", "Search term")],
+      ),
+      endpoint(
+        "azerite-essence-media",
+        "Azerite Essence Media",
+        "Fetch Azerite essence media.",
+        "/data/wow/media/azerite-essence/{azeriteEssenceId}",
+        "static",
+        [
+          pathParam(
+            "azeriteEssenceId",
+            "Azerite Essence ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -88,9 +187,43 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Connected realm index, detail, and search.",
     accentColor: "#38bdf8",
     endpoints: [
-      endpoint("connected-realm-index", "Connected Realms Index", "Load connected realm references for the region.", "/data/wow/connected-realm/index", "dynamic"),
-      endpoint("connected-realm", "Connected Realm", "Fetch a connected realm cluster by id.", "/data/wow/connected-realm/{connectedRealmId}", "dynamic", [pathParam("connectedRealmId", "Connected Realm ID", "", "Use an id from the index")]),
-      endpoint("connected-realm-search", "Connected Realm Search", "Search connected realms by localized name.", "/data/wow/search/connected-realm", "dynamic", [queryParam("realms.name.{locale}", "Realm Name Query", "stormrage", "Search term")]),
+      endpoint(
+        "connected-realm-index",
+        "Connected Realms Index",
+        "Load connected realm references for the region.",
+        "/data/wow/connected-realm/index",
+        "dynamic",
+      ),
+      endpoint(
+        "connected-realm",
+        "Connected Realm",
+        "Fetch a connected realm cluster by id.",
+        "/data/wow/connected-realm/{connectedRealmId}",
+        "dynamic",
+        [
+          pathParam(
+            "connectedRealmId",
+            "Connected Realm ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "connected-realm-search",
+        "Connected Realm Search",
+        "Search connected realms by localized name.",
+        "/data/wow/search/connected-realm",
+        "dynamic",
+        [
+          queryParam(
+            "realms.name.{locale}",
+            "Realm Name Query",
+            "stormrage",
+            "Search term",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -99,13 +232,80 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Covenants, soulbinds, conduits, and media.",
     accentColor: "#a78bfa",
     endpoints: [
-      endpoint("covenant-index", "Covenant Index", "Load all covenants.", "/data/wow/covenant/index", "static"),
-      endpoint("covenant", "Covenant", "Fetch a covenant by id.", "/data/wow/covenant/{covenantId}", "static", [pathParam("covenantId", "Covenant ID", "", "Use an id from the index")]),
-      endpoint("covenant-media", "Covenant Media", "Fetch covenant media assets.", "/data/wow/media/covenant/{covenantId}", "static", [pathParam("covenantId", "Covenant ID", "", "Use an id from the index")]),
-      endpoint("soulbind-index", "Soulbind Index", "Load all soulbinds.", "/data/wow/covenant/soulbind/index", "static"),
-      endpoint("soulbind", "Soulbind", "Fetch a soulbind by id.", "/data/wow/covenant/soulbind/{soulbindId}", "static", [pathParam("soulbindId", "Soulbind ID", "", "Use an id from the index")]),
-      endpoint("conduit-index", "Conduit Index", "Load conduits.", "/data/wow/covenant/conduit/index", "static"),
-      endpoint("conduit", "Conduit", "Fetch a conduit by id.", "/data/wow/covenant/conduit/{conduitId}", "static", [pathParam("conduitId", "Conduit ID", "", "Use an id from the index")]),
+      endpoint(
+        "covenant-index",
+        "Covenant Index",
+        "Load all covenants.",
+        "/data/wow/covenant/index",
+        "static",
+      ),
+      endpoint(
+        "covenant",
+        "Covenant",
+        "Fetch a covenant by id.",
+        "/data/wow/covenant/{covenantId}",
+        "static",
+        [
+          pathParam(
+            "covenantId",
+            "Covenant ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "covenant-media",
+        "Covenant Media",
+        "Fetch covenant media assets.",
+        "/data/wow/media/covenant/{covenantId}",
+        "static",
+        [
+          pathParam(
+            "covenantId",
+            "Covenant ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "soulbind-index",
+        "Soulbind Index",
+        "Load all soulbinds.",
+        "/data/wow/covenant/soulbind/index",
+        "static",
+      ),
+      endpoint(
+        "soulbind",
+        "Soulbind",
+        "Fetch a soulbind by id.",
+        "/data/wow/covenant/soulbind/{soulbindId}",
+        "static",
+        [
+          pathParam(
+            "soulbindId",
+            "Soulbind ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "conduit-index",
+        "Conduit Index",
+        "Load conduits.",
+        "/data/wow/covenant/conduit/index",
+        "static",
+      ),
+      endpoint(
+        "conduit",
+        "Conduit",
+        "Fetch a conduit by id.",
+        "/data/wow/covenant/conduit/{conduitId}",
+        "static",
+        [pathParam("conduitId", "Conduit ID", "", "Use an id from the index")],
+      ),
     ],
   },
   {
@@ -114,14 +314,103 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Creatures, searches, families, types, and media.",
     accentColor: "#fb7185",
     endpoints: [
-      endpoint("creature", "Creature", "Fetch a single creature by id.", "/data/wow/creature/{creatureId}", "static", [pathParam("creatureId", "Creature ID", "", "Use search results to find ids")]),
-      endpoint("creature-search", "Creature Search", "Search creatures by localized name.", "/data/wow/search/creature", "static", [queryParam("name.{locale}", "Name Query", "Onyxia", "Search term")]),
-      endpoint("creature-display-media", "Creature Display Media", "Fetch creature display media by display id.", "/data/wow/media/creature-display/{creatureDisplayId}", "static", [pathParam("creatureDisplayId", "Creature Display ID", "", "Use a display id from creature data")]),
-      endpoint("creature-family-index", "Creature Families Index", "Load creature families.", "/data/wow/creature-family/index", "static"),
-      endpoint("creature-family", "Creature Family", "Fetch a creature family by id.", "/data/wow/creature-family/{creatureFamilyId}", "static", [pathParam("creatureFamilyId", "Creature Family ID", "", "Use an id from the index")]),
-      endpoint("creature-family-media", "Creature Family Media", "Fetch creature family media.", "/data/wow/media/creature-family/{creatureFamilyId}", "static", [pathParam("creatureFamilyId", "Creature Family ID", "", "Use an id from the index")]),
-      endpoint("creature-type-index", "Creature Types Index", "Load creature types.", "/data/wow/creature-type/index", "static"),
-      endpoint("creature-type", "Creature Type", "Fetch a creature type by id.", "/data/wow/creature-type/{creatureTypeId}", "static", [pathParam("creatureTypeId", "Creature Type ID", "", "Use an id from the index")]),
+      endpoint(
+        "creature",
+        "Creature",
+        "Fetch a single creature by id.",
+        "/data/wow/creature/{creatureId}",
+        "static",
+        [
+          pathParam(
+            "creatureId",
+            "Creature ID",
+            "",
+            "Use search results to find ids",
+          ),
+        ],
+      ),
+      endpoint(
+        "creature-search",
+        "Creature Search",
+        "Search creatures by localized name.",
+        "/data/wow/search/creature",
+        "static",
+        [queryParam("name.{locale}", "Name Query", "Onyxia", "Search term")],
+      ),
+      endpoint(
+        "creature-display-media",
+        "Creature Display Media",
+        "Fetch creature display media by display id.",
+        "/data/wow/media/creature-display/{creatureDisplayId}",
+        "static",
+        [
+          pathParam(
+            "creatureDisplayId",
+            "Creature Display ID",
+            "",
+            "Use a display id from creature data",
+          ),
+        ],
+      ),
+      endpoint(
+        "creature-family-index",
+        "Creature Families Index",
+        "Load creature families.",
+        "/data/wow/creature-family/index",
+        "static",
+      ),
+      endpoint(
+        "creature-family",
+        "Creature Family",
+        "Fetch a creature family by id.",
+        "/data/wow/creature-family/{creatureFamilyId}",
+        "static",
+        [
+          pathParam(
+            "creatureFamilyId",
+            "Creature Family ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "creature-family-media",
+        "Creature Family Media",
+        "Fetch creature family media.",
+        "/data/wow/media/creature-family/{creatureFamilyId}",
+        "static",
+        [
+          pathParam(
+            "creatureFamilyId",
+            "Creature Family ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "creature-type-index",
+        "Creature Types Index",
+        "Load creature types.",
+        "/data/wow/creature-type/index",
+        "static",
+      ),
+      endpoint(
+        "creature-type",
+        "Creature Type",
+        "Fetch a creature type by id.",
+        "/data/wow/creature-type/{creatureTypeId}",
+        "static",
+        [
+          pathParam(
+            "creatureTypeId",
+            "Creature Type ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -130,9 +419,43 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Guild crest component indexes and media assets.",
     accentColor: "#f59e0b",
     endpoints: [
-      endpoint("guild-crest-index", "Guild Crest Components Index", "Load guild crest emblem and border components.", "/data/wow/guild-crest/index", "static"),
-      endpoint("guild-crest-border-media", "Guild Crest Border Media", "Fetch guild crest border media.", "/data/wow/media/guild-crest/border/{borderId}", "static", [pathParam("borderId", "Border ID", "", "Use a border id from the index")]),
-      endpoint("guild-crest-emblem-media", "Guild Crest Emblem Media", "Fetch guild crest emblem media.", "/data/wow/media/guild-crest/emblem/{emblemId}", "static", [pathParam("emblemId", "Emblem ID", "", "Use an emblem id from the index")]),
+      endpoint(
+        "guild-crest-index",
+        "Guild Crest Components Index",
+        "Load guild crest emblem and border components.",
+        "/data/wow/guild-crest/index",
+        "static",
+      ),
+      endpoint(
+        "guild-crest-border-media",
+        "Guild Crest Border Media",
+        "Fetch guild crest border media.",
+        "/data/wow/media/guild-crest/border/{borderId}",
+        "static",
+        [
+          pathParam(
+            "borderId",
+            "Border ID",
+            "",
+            "Use a border id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "guild-crest-emblem-media",
+        "Guild Crest Emblem Media",
+        "Fetch guild crest emblem media.",
+        "/data/wow/media/guild-crest/emblem/{emblemId}",
+        "static",
+        [
+          pathParam(
+            "emblemId",
+            "Emblem ID",
+            "",
+            "Use an emblem id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -141,8 +464,28 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Heirloom index and detail records.",
     accentColor: "#f59e0b",
     endpoints: [
-      endpoint("heirloom-index", "Heirloom Index", "Load the heirloom catalogue.", "/data/wow/heirloom/index", "static"),
-      endpoint("heirloom", "Heirloom", "Fetch a single heirloom by id.", "/data/wow/heirloom/{heirloomId}", "static", [pathParam("heirloomId", "Heirloom ID", "", "Use an id from the index")]),
+      endpoint(
+        "heirloom-index",
+        "Heirloom Index",
+        "Load the heirloom catalogue.",
+        "/data/wow/heirloom/index",
+        "static",
+      ),
+      endpoint(
+        "heirloom",
+        "Heirloom",
+        "Fetch a single heirloom by id.",
+        "/data/wow/heirloom/{heirloomId}",
+        "static",
+        [
+          pathParam(
+            "heirloomId",
+            "Heirloom ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -151,18 +494,105 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Decor, fixtures, hooks, and rooms for housing data.",
     accentColor: "#34d399",
     endpoints: [
-      endpoint("decor-index", "Decor Index", "Load decor records.", "/data/wow/decor/index", "static"),
-      endpoint("decor", "Decor", "Fetch decor detail by id.", "/data/wow/decor/{decorId}", "static", [pathParam("decorId", "Decor ID", "", "Use an id from the index")]),
-      endpoint("decor-search", "Decor Search", "Search decor by localized name.", "/data/wow/search/decor", "static", [queryParam("name.{locale}", "Name Query", "chair", "Search term")]),
-      endpoint("fixture-index", "Fixture Index", "Load fixtures.", "/data/wow/fixture/index", "static"),
-      endpoint("fixture", "Fixture", "Fetch fixture detail.", "/data/wow/fixture/{fixtureId}", "static", [pathParam("fixtureId", "Fixture ID", "", "Use an id from the index")]),
-      endpoint("fixture-search", "Fixture Search", "Search fixtures by localized name.", "/data/wow/search/fixture", "static", [queryParam("name.{locale}", "Name Query", "table", "Search term")]),
-      endpoint("fixture-hook-index", "Fixture Hook Index", "Load fixture hooks.", "/data/wow/fixture-hook/index", "static"),
-      endpoint("fixture-hook", "Fixture Hook", "Fetch fixture hook detail.", "/data/wow/fixture-hook/{fixtureHookId}", "static", [pathParam("fixtureHookId", "Fixture Hook ID", "", "Use an id from the index")]),
-      endpoint("fixture-hook-search", "Fixture Hook Search", "Search fixture hooks by localized name.", "/data/wow/search/fixture-hook", "static", [queryParam("name.{locale}", "Name Query", "wall", "Search term")]),
-      endpoint("room-index", "Room Index", "Load rooms.", "/data/wow/room/index", "static"),
-      endpoint("room", "Room", "Fetch a room by id.", "/data/wow/room/{roomId}", "static", [pathParam("roomId", "Room ID", "", "Use an id from the index")]),
-      endpoint("room-search", "Room Search", "Search rooms by localized name.", "/data/wow/search/room", "static", [queryParam("name.{locale}", "Name Query", "hall", "Search term")]),
+      endpoint(
+        "decor-index",
+        "Decor Index",
+        "Load decor records.",
+        "/data/wow/decor/index",
+        "static",
+      ),
+      endpoint(
+        "decor",
+        "Decor",
+        "Fetch decor detail by id.",
+        "/data/wow/decor/{decorId}",
+        "static",
+        [pathParam("decorId", "Decor ID", "", "Use an id from the index")],
+      ),
+      endpoint(
+        "decor-search",
+        "Decor Search",
+        "Search decor by localized name.",
+        "/data/wow/search/decor",
+        "static",
+        [queryParam("name.{locale}", "Name Query", "chair", "Search term")],
+      ),
+      endpoint(
+        "fixture-index",
+        "Fixture Index",
+        "Load fixtures.",
+        "/data/wow/fixture/index",
+        "static",
+      ),
+      endpoint(
+        "fixture",
+        "Fixture",
+        "Fetch fixture detail.",
+        "/data/wow/fixture/{fixtureId}",
+        "static",
+        [pathParam("fixtureId", "Fixture ID", "", "Use an id from the index")],
+      ),
+      endpoint(
+        "fixture-search",
+        "Fixture Search",
+        "Search fixtures by localized name.",
+        "/data/wow/search/fixture",
+        "static",
+        [queryParam("name.{locale}", "Name Query", "table", "Search term")],
+      ),
+      endpoint(
+        "fixture-hook-index",
+        "Fixture Hook Index",
+        "Load fixture hooks.",
+        "/data/wow/fixture-hook/index",
+        "static",
+      ),
+      endpoint(
+        "fixture-hook",
+        "Fixture Hook",
+        "Fetch fixture hook detail.",
+        "/data/wow/fixture-hook/{fixtureHookId}",
+        "static",
+        [
+          pathParam(
+            "fixtureHookId",
+            "Fixture Hook ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "fixture-hook-search",
+        "Fixture Hook Search",
+        "Search fixture hooks by localized name.",
+        "/data/wow/search/fixture-hook",
+        "static",
+        [queryParam("name.{locale}", "Name Query", "wall", "Search term")],
+      ),
+      endpoint(
+        "room-index",
+        "Room Index",
+        "Load rooms.",
+        "/data/wow/room/index",
+        "static",
+      ),
+      endpoint(
+        "room",
+        "Room",
+        "Fetch a room by id.",
+        "/data/wow/room/{roomId}",
+        "static",
+        [pathParam("roomId", "Room ID", "", "Use an id from the index")],
+      ),
+      endpoint(
+        "room-search",
+        "Room Search",
+        "Search rooms by localized name.",
+        "/data/wow/search/room",
+        "static",
+        [queryParam("name.{locale}", "Name Query", "hall", "Search term")],
+      ),
     ],
   },
   {
@@ -171,14 +601,83 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Items, searches, classes, sets, subclasses, and media.",
     accentColor: "#38bdf8",
     endpoints: [
-      endpoint("item", "Item", "Fetch a single item by id.", "/data/wow/item/{itemId}", "static", [pathParam("itemId", "Item ID", "19019", "e.g. 19019")]),
-      endpoint("item-search", "Item Search", "Search items by localized name.", "/data/wow/search/item", "static", [queryParam("name.{locale}", "Name Query", "Thunderfury", "Search term")]),
-      endpoint("item-media", "Item Media", "Fetch item media by item id.", "/data/wow/media/item/{itemId}", "static", [pathParam("itemId", "Item ID", "19019", "e.g. 19019")]),
-      endpoint("item-class-index", "Item Classes Index", "Load item classes.", "/data/wow/item-class/index", "static"),
-      endpoint("item-class", "Item Class", "Fetch an item class by id.", "/data/wow/item-class/{itemClassId}", "static", [pathParam("itemClassId", "Item Class ID", "2", "e.g. 2")]),
-      endpoint("item-set-index", "Item Sets Index", "Load item sets.", "/data/wow/item-set/index", "static"),
-      endpoint("item-set", "Item Set", "Fetch an item set by id.", "/data/wow/item-set/{itemSetId}", "static", [pathParam("itemSetId", "Item Set ID", "", "Use an id from the index")]),
-      endpoint("item-subclass", "Item Subclass", "Fetch an item subclass by class and subclass id.", "/data/wow/item-class/{itemClassId}/item-subclass/{itemSubclassId}", "static", [pathParam("itemClassId", "Item Class ID", "2", "e.g. 2"), pathParam("itemSubclassId", "Item Subclass ID", "", "Use an id from the item class response")]),
+      endpoint(
+        "item",
+        "Item",
+        "Fetch a single item by id.",
+        "/data/wow/item/{itemId}",
+        "static",
+        [pathParam("itemId", "Item ID", "19019", "e.g. 19019")],
+      ),
+      endpoint(
+        "item-search",
+        "Item Search",
+        "Search items by localized name.",
+        "/data/wow/search/item",
+        "static",
+        [
+          queryParam(
+            "name.{locale}",
+            "Name Query",
+            "Thunderfury",
+            "Search term",
+          ),
+        ],
+      ),
+      endpoint(
+        "item-media",
+        "Item Media",
+        "Fetch item media by item id.",
+        "/data/wow/media/item/{itemId}",
+        "static",
+        [pathParam("itemId", "Item ID", "19019", "e.g. 19019")],
+      ),
+      endpoint(
+        "item-class-index",
+        "Item Classes Index",
+        "Load item classes.",
+        "/data/wow/item-class/index",
+        "static",
+      ),
+      endpoint(
+        "item-class",
+        "Item Class",
+        "Fetch an item class by id.",
+        "/data/wow/item-class/{itemClassId}",
+        "static",
+        [pathParam("itemClassId", "Item Class ID", "2", "e.g. 2")],
+      ),
+      endpoint(
+        "item-set-index",
+        "Item Sets Index",
+        "Load item sets.",
+        "/data/wow/item-set/index",
+        "static",
+      ),
+      endpoint(
+        "item-set",
+        "Item Set",
+        "Fetch an item set by id.",
+        "/data/wow/item-set/{itemSetId}",
+        "static",
+        [pathParam("itemSetId", "Item Set ID", "", "Use an id from the index")],
+      ),
+      endpoint(
+        "item-subclass",
+        "Item Subclass",
+        "Fetch an item subclass by class and subclass id.",
+        "/data/wow/item-class/{itemClassId}/item-subclass/{itemSubclassId}",
+        "static",
+        [
+          pathParam("itemClassId", "Item Class ID", "2", "e.g. 2"),
+          pathParam(
+            "itemSubclassId",
+            "Item Subclass ID",
+            "",
+            "Use an id from the item class response",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -187,28 +686,171 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Appearance detail, searches, sets, and slot references.",
     accentColor: "#60a5fa",
     endpoints: [
-      endpoint("item-appearance", "Item Appearance", "Fetch an item appearance by id.", "/data/wow/item-appearance/{appearanceId}", "static", [pathParam("appearanceId", "Appearance ID", "", "Use an id from search")]),
-      endpoint("item-appearance-search", "Item Appearance Search", "Search item appearances by localized name.", "/data/wow/search/item-appearance", "static", [queryParam("display_string.{locale}", "Name Query", "Thunderfury", "Search term")]),
-      endpoint("item-appearance-set-index", "Item Appearance Sets Index", "Load appearance sets.", "/data/wow/item-appearance/set/index", "static"),
-      endpoint("item-appearance-set", "Item Appearance Set", "Fetch an appearance set by id.", "/data/wow/item-appearance/set/{appearanceSetId}", "static", [pathParam("appearanceSetId", "Appearance Set ID", "", "Use an id from the index")]),
-      endpoint("item-appearance-slot-index", "Item Appearance Slot Index", "Load appearance slot types.", "/data/wow/item-appearance/slot/index", "static"),
-      endpoint("item-appearance-slot", "Item Appearance Slot", "Fetch a single appearance slot type.", "/data/wow/item-appearance/slot/{slotType}", "static", [pathParam("slotType", "Slot Type", "head", "e.g. head")]),
+      endpoint(
+        "item-appearance",
+        "Item Appearance",
+        "Fetch an item appearance by id.",
+        "/data/wow/item-appearance/{appearanceId}",
+        "static",
+        [
+          pathParam(
+            "appearanceId",
+            "Appearance ID",
+            "",
+            "Use an id from search",
+          ),
+        ],
+      ),
+      endpoint(
+        "item-appearance-search",
+        "Item Appearance Search",
+        "Search item appearances by localized name.",
+        "/data/wow/search/item-appearance",
+        "static",
+        [
+          queryParam(
+            "display_string.{locale}",
+            "Name Query",
+            "Thunderfury",
+            "Search term",
+          ),
+        ],
+      ),
+      endpoint(
+        "item-appearance-set-index",
+        "Item Appearance Sets Index",
+        "Load appearance sets.",
+        "/data/wow/item-appearance/set/index",
+        "static",
+      ),
+      endpoint(
+        "item-appearance-set",
+        "Item Appearance Set",
+        "Fetch an appearance set by id.",
+        "/data/wow/item-appearance/set/{appearanceSetId}",
+        "static",
+        [
+          pathParam(
+            "appearanceSetId",
+            "Appearance Set ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "item-appearance-slot-index",
+        "Item Appearance Slot Index",
+        "Load appearance slot types.",
+        "/data/wow/item-appearance/slot/index",
+        "static",
+      ),
+      endpoint(
+        "item-appearance-slot",
+        "Item Appearance Slot",
+        "Fetch a single appearance slot type.",
+        "/data/wow/item-appearance/slot/{slotType}",
+        "static",
+        [pathParam("slotType", "Slot Type", "head", "e.g. head")],
+      ),
     ],
   },
   {
     slug: "journal",
     label: "Journal API",
-    description: "Encounter journal expansions, instances, encounters, and media.",
+    description:
+      "Encounter journal expansions, instances, encounters, and media.",
     accentColor: "#fb7185",
     endpoints: [
-      endpoint("journal-expansion-index", "Journal Expansions Index", "Load journal expansions.", "/data/wow/journal-expansion/index", "static"),
-      endpoint("journal-expansion", "Journal Expansion", "Fetch a journal expansion by id.", "/data/wow/journal-expansion/{journalExpansionId}", "static", [pathParam("journalExpansionId", "Journal Expansion ID", "", "Use an id from the index")]),
-      endpoint("journal-encounter-index", "Journal Encounters Index", "Load journal encounters.", "/data/wow/journal-encounter/index", "static"),
-      endpoint("journal-encounter", "Journal Encounter", "Fetch a journal encounter by id.", "/data/wow/journal-encounter/{journalEncounterId}", "static", [pathParam("journalEncounterId", "Journal Encounter ID", "", "Use an id from the index")]),
-      endpoint("journal-encounter-search", "Journal Encounter Search", "Search journal encounters.", "/data/wow/search/journal-encounter", "static", [queryParam("name.{locale}", "Name Query", "Onyxia", "Search term")]),
-      endpoint("journal-instance-index", "Journal Instances Index", "Load journal instances.", "/data/wow/journal-instance/index", "static"),
-      endpoint("journal-instance", "Journal Instance", "Fetch a journal instance by id.", "/data/wow/journal-instance/{journalInstanceId}", "static", [pathParam("journalInstanceId", "Journal Instance ID", "", "Use an id from the index")]),
-      endpoint("journal-instance-media", "Journal Instance Media", "Fetch journal instance media.", "/data/wow/media/journal-instance/{journalInstanceId}", "static", [pathParam("journalInstanceId", "Journal Instance ID", "", "Use an id from the index")]),
+      endpoint(
+        "journal-expansion-index",
+        "Journal Expansions Index",
+        "Load journal expansions.",
+        "/data/wow/journal-expansion/index",
+        "static",
+      ),
+      endpoint(
+        "journal-expansion",
+        "Journal Expansion",
+        "Fetch a journal expansion by id.",
+        "/data/wow/journal-expansion/{journalExpansionId}",
+        "static",
+        [
+          pathParam(
+            "journalExpansionId",
+            "Journal Expansion ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "journal-encounter-index",
+        "Journal Encounters Index",
+        "Load journal encounters.",
+        "/data/wow/journal-encounter/index",
+        "static",
+      ),
+      endpoint(
+        "journal-encounter",
+        "Journal Encounter",
+        "Fetch a journal encounter by id.",
+        "/data/wow/journal-encounter/{journalEncounterId}",
+        "static",
+        [
+          pathParam(
+            "journalEncounterId",
+            "Journal Encounter ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "journal-encounter-search",
+        "Journal Encounter Search",
+        "Search journal encounters.",
+        "/data/wow/search/journal-encounter",
+        "static",
+        [queryParam("name.{locale}", "Name Query", "Onyxia", "Search term")],
+      ),
+      endpoint(
+        "journal-instance-index",
+        "Journal Instances Index",
+        "Load journal instances.",
+        "/data/wow/journal-instance/index",
+        "static",
+      ),
+      endpoint(
+        "journal-instance",
+        "Journal Instance",
+        "Fetch a journal instance by id.",
+        "/data/wow/journal-instance/{journalInstanceId}",
+        "static",
+        [
+          pathParam(
+            "journalInstanceId",
+            "Journal Instance ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "journal-instance-media",
+        "Journal Instance Media",
+        "Fetch journal instance media.",
+        "/data/wow/media/journal-instance/{journalInstanceId}",
+        "static",
+        [
+          pathParam(
+            "journalInstanceId",
+            "Journal Instance ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -217,7 +859,21 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Search media assets across the game data corpus.",
     accentColor: "#34d399",
     endpoints: [
-      endpoint("media-search", "Media Search", "Search media by localized title.", "/data/wow/search/media", "static", [queryParam("title.{locale}", "Title Query", "Shadowmourne", "Search term")]),
+      endpoint(
+        "media-search",
+        "Media Search",
+        "Search media by localized title.",
+        "/data/wow/search/media",
+        "static",
+        [
+          queryParam(
+            "title.{locale}",
+            "Title Query",
+            "Shadowmourne",
+            "Search term",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -226,11 +882,57 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Modified crafting, categories, and reagent slot types.",
     accentColor: "#34d399",
     endpoints: [
-      endpoint("modified-crafting-index", "Modified Crafting Index", "Load modified crafting entries.", "/data/wow/modified-crafting/index", "static"),
-      endpoint("modified-crafting-category-index", "Modified Crafting Category Index", "Load modified crafting categories.", "/data/wow/modified-crafting/category/index", "static"),
-      endpoint("modified-crafting-category", "Modified Crafting Category", "Fetch a modified crafting category by id.", "/data/wow/modified-crafting/category/{categoryId}", "static", [pathParam("categoryId", "Category ID", "", "Use an id from the index")]),
-      endpoint("modified-crafting-slot-type-index", "Modified Crafting Reagent Slot Type Index", "Load reagent slot types.", "/data/wow/modified-crafting/reagent-slot-type/index", "static"),
-      endpoint("modified-crafting-slot-type", "Modified Crafting Reagent Slot Type", "Fetch a reagent slot type by id.", "/data/wow/modified-crafting/reagent-slot-type/{slotTypeId}", "static", [pathParam("slotTypeId", "Slot Type ID", "", "Use an id from the index")]),
+      endpoint(
+        "modified-crafting-index",
+        "Modified Crafting Index",
+        "Load modified crafting entries.",
+        "/data/wow/modified-crafting/index",
+        "static",
+      ),
+      endpoint(
+        "modified-crafting-category-index",
+        "Modified Crafting Category Index",
+        "Load modified crafting categories.",
+        "/data/wow/modified-crafting/category/index",
+        "static",
+      ),
+      endpoint(
+        "modified-crafting-category",
+        "Modified Crafting Category",
+        "Fetch a modified crafting category by id.",
+        "/data/wow/modified-crafting/category/{categoryId}",
+        "static",
+        [
+          pathParam(
+            "categoryId",
+            "Category ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "modified-crafting-slot-type-index",
+        "Modified Crafting Reagent Slot Type Index",
+        "Load reagent slot types.",
+        "/data/wow/modified-crafting/reagent-slot-type/index",
+        "static",
+      ),
+      endpoint(
+        "modified-crafting-slot-type",
+        "Modified Crafting Reagent Slot Type",
+        "Fetch a reagent slot type by id.",
+        "/data/wow/modified-crafting/reagent-slot-type/{slotTypeId}",
+        "static",
+        [
+          pathParam(
+            "slotTypeId",
+            "Slot Type ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -239,9 +941,36 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Mount index, detail, and search.",
     accentColor: "#6ee7b7",
     endpoints: [
-      endpoint("mount-index", "Mounts Index", "Load all mounts.", "/data/wow/mount/index", "static"),
-      endpoint("mount", "Mount", "Fetch a mount by id.", "/data/wow/mount/{mountId}", "static", [pathParam("mountId", "Mount ID", "", "Use an id from the index")]),
-      endpoint("mount-search", "Mount Search", "Search mounts by localized name.", "/data/wow/search/mount", "static", [queryParam("name.{locale}", "Name Query", "Invincible", "Search term")]),
+      endpoint(
+        "mount-index",
+        "Mounts Index",
+        "Load all mounts.",
+        "/data/wow/mount/index",
+        "static",
+      ),
+      endpoint(
+        "mount",
+        "Mount",
+        "Fetch a mount by id.",
+        "/data/wow/mount/{mountId}",
+        "static",
+        [pathParam("mountId", "Mount ID", "", "Use an id from the index")],
+      ),
+      endpoint(
+        "mount-search",
+        "Mount Search",
+        "Search mounts by localized name.",
+        "/data/wow/search/mount",
+        "static",
+        [
+          queryParam(
+            "name.{locale}",
+            "Name Query",
+            "Invincible",
+            "Search term",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -250,9 +979,43 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Affix index, detail, and media.",
     accentColor: "#a78bfa",
     endpoints: [
-      endpoint("keystone-affix-index", "Mythic Keystone Affixes Index", "Load keystone affixes.", "/data/wow/keystone-affix/index", "static"),
-      endpoint("keystone-affix", "Mythic Keystone Affix", "Fetch a keystone affix by id.", "/data/wow/keystone-affix/{keystoneAffixId}", "static", [pathParam("keystoneAffixId", "Keystone Affix ID", "", "Use an id from the index")]),
-      endpoint("keystone-affix-media", "Mythic Keystone Affix Media", "Fetch affix media.", "/data/wow/media/keystone-affix/{keystoneAffixId}", "static", [pathParam("keystoneAffixId", "Keystone Affix ID", "", "Use an id from the index")]),
+      endpoint(
+        "keystone-affix-index",
+        "Mythic Keystone Affixes Index",
+        "Load keystone affixes.",
+        "/data/wow/keystone-affix/index",
+        "static",
+      ),
+      endpoint(
+        "keystone-affix",
+        "Mythic Keystone Affix",
+        "Fetch a keystone affix by id.",
+        "/data/wow/keystone-affix/{keystoneAffixId}",
+        "static",
+        [
+          pathParam(
+            "keystoneAffixId",
+            "Keystone Affix ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "keystone-affix-media",
+        "Mythic Keystone Affix Media",
+        "Fetch affix media.",
+        "/data/wow/media/keystone-affix/{keystoneAffixId}",
+        "static",
+        [
+          pathParam(
+            "keystoneAffixId",
+            "Keystone Affix ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -261,13 +1024,58 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Keystone dungeons, periods, seasons, and static indexes.",
     accentColor: "#8b5cf6",
     endpoints: [
-      endpoint("mythic-keystone-index", "Mythic Keystone Index", "Load mythic keystone metadata.", "/data/wow/mythic-keystone/index", "dynamic"),
-      endpoint("mythic-keystone-dungeon-index", "Mythic Keystone Dungeons Index", "Load current keystone dungeons.", "/data/wow/mythic-keystone/dungeon/index", "dynamic"),
-      endpoint("mythic-keystone-dungeon", "Mythic Keystone Dungeon", "Fetch a keystone dungeon by id.", "/data/wow/mythic-keystone/dungeon/{dungeonId}", "dynamic", [pathParam("dungeonId", "Dungeon ID", "", "Use an id from the index")]),
-      endpoint("mythic-keystone-period-index", "Mythic Keystone Periods Index", "Load keystone periods.", "/data/wow/mythic-keystone/period/index", "dynamic"),
-      endpoint("mythic-keystone-period", "Mythic Keystone Period", "Fetch a keystone period by id.", "/data/wow/mythic-keystone/period/{periodId}", "dynamic", [pathParam("periodId", "Period ID", "", "Use an id from the index")]),
-      endpoint("mythic-keystone-season-index", "Mythic Keystone Seasons Index", "Load keystone seasons.", "/data/wow/mythic-keystone/season/index", "dynamic"),
-      endpoint("mythic-keystone-season", "Mythic Keystone Season", "Fetch a keystone season by id.", "/data/wow/mythic-keystone/season/{seasonId}", "dynamic", [pathParam("seasonId", "Season ID", "", "Use an id from the index")]),
+      endpoint(
+        "mythic-keystone-index",
+        "Mythic Keystone Index",
+        "Load mythic keystone metadata.",
+        "/data/wow/mythic-keystone/index",
+        "dynamic",
+      ),
+      endpoint(
+        "mythic-keystone-dungeon-index",
+        "Mythic Keystone Dungeons Index",
+        "Load current keystone dungeons.",
+        "/data/wow/mythic-keystone/dungeon/index",
+        "dynamic",
+      ),
+      endpoint(
+        "mythic-keystone-dungeon",
+        "Mythic Keystone Dungeon",
+        "Fetch a keystone dungeon by id.",
+        "/data/wow/mythic-keystone/dungeon/{dungeonId}",
+        "dynamic",
+        [pathParam("dungeonId", "Dungeon ID", "", "Use an id from the index")],
+      ),
+      endpoint(
+        "mythic-keystone-period-index",
+        "Mythic Keystone Periods Index",
+        "Load keystone periods.",
+        "/data/wow/mythic-keystone/period/index",
+        "dynamic",
+      ),
+      endpoint(
+        "mythic-keystone-period",
+        "Mythic Keystone Period",
+        "Fetch a keystone period by id.",
+        "/data/wow/mythic-keystone/period/{periodId}",
+        "dynamic",
+        [pathParam("periodId", "Period ID", "", "Use an id from the index")],
+      ),
+      endpoint(
+        "mythic-keystone-season-index",
+        "Mythic Keystone Seasons Index",
+        "Load keystone seasons.",
+        "/data/wow/mythic-keystone/season/index",
+        "dynamic",
+      ),
+      endpoint(
+        "mythic-keystone-season",
+        "Mythic Keystone Season",
+        "Fetch a keystone season by id.",
+        "/data/wow/mythic-keystone/season/{seasonId}",
+        "dynamic",
+        [pathParam("seasonId", "Season ID", "", "Use an id from the index")],
+      ),
     ],
   },
   {
@@ -276,8 +1084,43 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Connected-realm leaderboard indexes and period views.",
     accentColor: "#8b5cf6",
     endpoints: [
-      endpoint("mythic-leaderboard-index", "Mythic Keystone Leaderboards Index", "Load leaderboards for a connected realm.", "/data/wow/connected-realm/{connectedRealmId}/mythic-leaderboard/index", "dynamic", [pathParam("connectedRealmId", "Connected Realm ID", "", "Use a connected realm id")]),
-      endpoint("mythic-leaderboard", "Mythic Keystone Leaderboard", "Fetch a leaderboard by dungeon and period.", "/data/wow/connected-realm/{connectedRealmId}/mythic-leaderboard/{dungeonId}/period/{period}", "dynamic", [pathParam("connectedRealmId", "Connected Realm ID", "", "Use a connected realm id"), pathParam("dungeonId", "Dungeon ID", "", "Use a dungeon id from keystone data"), pathParam("period", "Period", "", "Use a period id")]),
+      endpoint(
+        "mythic-leaderboard-index",
+        "Mythic Keystone Leaderboards Index",
+        "Load leaderboards for a connected realm.",
+        "/data/wow/connected-realm/{connectedRealmId}/mythic-leaderboard/index",
+        "dynamic",
+        [
+          pathParam(
+            "connectedRealmId",
+            "Connected Realm ID",
+            "",
+            "Use a connected realm id",
+          ),
+        ],
+      ),
+      endpoint(
+        "mythic-leaderboard",
+        "Mythic Keystone Leaderboard",
+        "Fetch a leaderboard by dungeon and period.",
+        "/data/wow/connected-realm/{connectedRealmId}/mythic-leaderboard/{dungeonId}/period/{period}",
+        "dynamic",
+        [
+          pathParam(
+            "connectedRealmId",
+            "Connected Realm ID",
+            "",
+            "Use a connected realm id",
+          ),
+          pathParam(
+            "dungeonId",
+            "Dungeon ID",
+            "",
+            "Use a dungeon id from keystone data",
+          ),
+          pathParam("period", "Period", "", "Use a period id"),
+        ],
+      ),
     ],
   },
   {
@@ -286,7 +1129,17 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Hall of fame raid rankings by raid and faction.",
     accentColor: "#ef4444",
     endpoints: [
-      endpoint("mythic-raid-leaderboard", "Mythic Raid Leaderboard", "Fetch hall-of-fame data for a raid and faction.", "/data/wow/leaderboard/hall-of-fame/{raid}/{faction}", "dynamic", [pathParam("raid", "Raid Slug", "", "Current raid slug"), pathParam("faction", "Faction", "alliance", "alliance or horde")]),
+      endpoint(
+        "mythic-raid-leaderboard",
+        "Mythic Raid Leaderboard",
+        "Fetch hall-of-fame data for a raid and faction.",
+        "/data/wow/leaderboard/hall-of-fame/{raid}/{faction}",
+        "dynamic",
+        [
+          pathParam("raid", "Raid Slug", "", "Current raid slug"),
+          pathParam("faction", "Faction", "alliance", "alliance or horde"),
+        ],
+      ),
     ],
   },
   {
@@ -295,9 +1148,49 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Neighborhood maps and nested neighborhoods.",
     accentColor: "#22c55e",
     endpoints: [
-      endpoint("neighborhood-map-index", "Neighborhood Map Index", "Load neighborhood maps.", "/data/wow/neighborhood-map/index", "static"),
-      endpoint("neighborhood-map", "Neighborhood Map", "Fetch a neighborhood map by id.", "/data/wow/neighborhood-map/{neighborhoodMapId}", "static", [pathParam("neighborhoodMapId", "Neighborhood Map ID", "", "Use an id from the index")]),
-      endpoint("neighborhood", "Neighborhood", "Fetch a neighborhood by map and neighborhood id.", "/data/wow/neighborhood-map/{neighborhoodMapId}/neighborhood/{neighborhoodId}", "static", [pathParam("neighborhoodMapId", "Neighborhood Map ID", "", "Use an id from the index"), pathParam("neighborhoodId", "Neighborhood ID", "", "Use a neighborhood id from the map response")]),
+      endpoint(
+        "neighborhood-map-index",
+        "Neighborhood Map Index",
+        "Load neighborhood maps.",
+        "/data/wow/neighborhood-map/index",
+        "static",
+      ),
+      endpoint(
+        "neighborhood-map",
+        "Neighborhood Map",
+        "Fetch a neighborhood map by id.",
+        "/data/wow/neighborhood-map/{neighborhoodMapId}",
+        "static",
+        [
+          pathParam(
+            "neighborhoodMapId",
+            "Neighborhood Map ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "neighborhood",
+        "Neighborhood",
+        "Fetch a neighborhood by map and neighborhood id.",
+        "/data/wow/neighborhood-map/{neighborhoodMapId}/neighborhood/{neighborhoodId}",
+        "static",
+        [
+          pathParam(
+            "neighborhoodMapId",
+            "Neighborhood Map ID",
+            "",
+            "Use an id from the index",
+          ),
+          pathParam(
+            "neighborhoodId",
+            "Neighborhood ID",
+            "",
+            "Use a neighborhood id from the map response",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -306,12 +1199,66 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Pets, pet abilities, and media assets.",
     accentColor: "#34d399",
     endpoints: [
-      endpoint("pet-index", "Pets Index", "Load pets.", "/data/wow/pet/index", "static"),
-      endpoint("pet", "Pet", "Fetch a pet by id.", "/data/wow/pet/{petId}", "static", [pathParam("petId", "Pet ID", "", "Use an id from the index")]),
-      endpoint("pet-media", "Pet Media", "Fetch pet media.", "/data/wow/media/pet/{petId}", "static", [pathParam("petId", "Pet ID", "", "Use an id from the index")]),
-      endpoint("pet-ability-index", "Pet Abilities Index", "Load pet abilities.", "/data/wow/pet-ability/index", "static"),
-      endpoint("pet-ability", "Pet Ability", "Fetch a pet ability by id.", "/data/wow/pet-ability/{petAbilityId}", "static", [pathParam("petAbilityId", "Pet Ability ID", "", "Use an id from the index")]),
-      endpoint("pet-ability-media", "Pet Ability Media", "Fetch pet ability media.", "/data/wow/media/pet-ability/{petAbilityId}", "static", [pathParam("petAbilityId", "Pet Ability ID", "", "Use an id from the index")]),
+      endpoint(
+        "pet-index",
+        "Pets Index",
+        "Load pets.",
+        "/data/wow/pet/index",
+        "static",
+      ),
+      endpoint(
+        "pet",
+        "Pet",
+        "Fetch a pet by id.",
+        "/data/wow/pet/{petId}",
+        "static",
+        [pathParam("petId", "Pet ID", "", "Use an id from the index")],
+      ),
+      endpoint(
+        "pet-media",
+        "Pet Media",
+        "Fetch pet media.",
+        "/data/wow/media/pet/{petId}",
+        "static",
+        [pathParam("petId", "Pet ID", "", "Use an id from the index")],
+      ),
+      endpoint(
+        "pet-ability-index",
+        "Pet Abilities Index",
+        "Load pet abilities.",
+        "/data/wow/pet-ability/index",
+        "static",
+      ),
+      endpoint(
+        "pet-ability",
+        "Pet Ability",
+        "Fetch a pet ability by id.",
+        "/data/wow/pet-ability/{petAbilityId}",
+        "static",
+        [
+          pathParam(
+            "petAbilityId",
+            "Pet Ability ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "pet-ability-media",
+        "Pet Ability Media",
+        "Fetch pet ability media.",
+        "/data/wow/media/pet-ability/{petAbilityId}",
+        "static",
+        [
+          pathParam(
+            "petAbilityId",
+            "Pet Ability ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -320,10 +1267,37 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Classes, class media, and PvP talent slots.",
     accentColor: "#60a5fa",
     endpoints: [
-      endpoint("playable-class-index", "Playable Classes Index", "Load playable classes.", "/data/wow/playable-class/index", "static"),
-      endpoint("playable-class", "Playable Class", "Fetch a class by id.", "/data/wow/playable-class/{classId}", "static", [pathParam("classId", "Class ID", "1", "e.g. 1")]),
-      endpoint("playable-class-media", "Playable Class Media", "Fetch class media.", "/data/wow/media/playable-class/{playableClassId}", "static", [pathParam("playableClassId", "Playable Class ID", "1", "e.g. 1")]),
-      endpoint("pvp-talent-slots", "PvP Talent Slots", "Fetch PvP talent slots for a class.", "/data/wow/playable-class/{classId}/pvp-talent-slots", "static", [pathParam("classId", "Class ID", "1", "e.g. 1")]),
+      endpoint(
+        "playable-class-index",
+        "Playable Classes Index",
+        "Load playable classes.",
+        "/data/wow/playable-class/index",
+        "static",
+      ),
+      endpoint(
+        "playable-class",
+        "Playable Class",
+        "Fetch a class by id.",
+        "/data/wow/playable-class/{classId}",
+        "static",
+        [pathParam("classId", "Class ID", "1", "e.g. 1")],
+      ),
+      endpoint(
+        "playable-class-media",
+        "Playable Class Media",
+        "Fetch class media.",
+        "/data/wow/media/playable-class/{playableClassId}",
+        "static",
+        [pathParam("playableClassId", "Playable Class ID", "1", "e.g. 1")],
+      ),
+      endpoint(
+        "pvp-talent-slots",
+        "PvP Talent Slots",
+        "Fetch PvP talent slots for a class.",
+        "/data/wow/playable-class/{classId}/pvp-talent-slots",
+        "static",
+        [pathParam("classId", "Class ID", "1", "e.g. 1")],
+      ),
     ],
   },
   {
@@ -332,8 +1306,21 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Playable race index and detail data.",
     accentColor: "#22c55e",
     endpoints: [
-      endpoint("playable-race-index", "Playable Races Index", "Load playable races.", "/data/wow/playable-race/index", "static"),
-      endpoint("playable-race", "Playable Race", "Fetch a race by id.", "/data/wow/playable-race/{playableRaceId}", "static", [pathParam("playableRaceId", "Playable Race ID", "1", "e.g. 1")]),
+      endpoint(
+        "playable-race-index",
+        "Playable Races Index",
+        "Load playable races.",
+        "/data/wow/playable-race/index",
+        "static",
+      ),
+      endpoint(
+        "playable-race",
+        "Playable Race",
+        "Fetch a race by id.",
+        "/data/wow/playable-race/{playableRaceId}",
+        "static",
+        [pathParam("playableRaceId", "Playable Race ID", "1", "e.g. 1")],
+      ),
     ],
   },
   {
@@ -342,9 +1329,29 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Specialization index, detail, and media.",
     accentColor: "#38bdf8",
     endpoints: [
-      endpoint("playable-specialization-index", "Playable Specializations Index", "Load specializations.", "/data/wow/playable-specialization/index", "static"),
-      endpoint("playable-specialization", "Playable Specialization", "Fetch a specialization by id.", "/data/wow/playable-specialization/{specId}", "static", [pathParam("specId", "Specialization ID", "62", "e.g. 62")]),
-      endpoint("playable-specialization-media", "Playable Specialization Media", "Fetch specialization media.", "/data/wow/media/playable-specialization/{specId}", "static", [pathParam("specId", "Specialization ID", "62", "e.g. 62")]),
+      endpoint(
+        "playable-specialization-index",
+        "Playable Specializations Index",
+        "Load specializations.",
+        "/data/wow/playable-specialization/index",
+        "static",
+      ),
+      endpoint(
+        "playable-specialization",
+        "Playable Specialization",
+        "Fetch a specialization by id.",
+        "/data/wow/playable-specialization/{specId}",
+        "static",
+        [pathParam("specId", "Specialization ID", "62", "e.g. 62")],
+      ),
+      endpoint(
+        "playable-specialization-media",
+        "Playable Specialization Media",
+        "Fetch specialization media.",
+        "/data/wow/media/playable-specialization/{specId}",
+        "static",
+        [pathParam("specId", "Specialization ID", "62", "e.g. 62")],
+      ),
     ],
   },
   {
@@ -353,8 +1360,28 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Class resource index and detail data.",
     accentColor: "#f59e0b",
     endpoints: [
-      endpoint("power-type-index", "Power Types Index", "Load power types.", "/data/wow/power-type/index", "static"),
-      endpoint("power-type", "Power Type", "Fetch a power type by id.", "/data/wow/power-type/{powerTypeId}", "static", [pathParam("powerTypeId", "Power Type ID", "", "Use an id from the index")]),
+      endpoint(
+        "power-type-index",
+        "Power Types Index",
+        "Load power types.",
+        "/data/wow/power-type/index",
+        "static",
+      ),
+      endpoint(
+        "power-type",
+        "Power Type",
+        "Fetch a power type by id.",
+        "/data/wow/power-type/{powerTypeId}",
+        "static",
+        [
+          pathParam(
+            "powerTypeId",
+            "Power Type ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -363,12 +1390,75 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Professions, skill tiers, recipes, and media.",
     accentColor: "#f97316",
     endpoints: [
-      endpoint("profession-index", "Professions Index", "Load professions.", "/data/wow/profession/index", "static"),
-      endpoint("profession", "Profession", "Fetch a profession by id.", "/data/wow/profession/{professionId}", "static", [pathParam("professionId", "Profession ID", "164", "e.g. 164")]),
-      endpoint("profession-media", "Profession Media", "Fetch profession media.", "/data/wow/media/profession/{professionId}", "static", [pathParam("professionId", "Profession ID", "164", "e.g. 164")]),
-      endpoint("profession-skill-tier", "Profession Skill Tier", "Fetch a profession skill tier.", "/data/wow/profession/{professionId}/skill-tier/{skillTierId}", "static", [pathParam("professionId", "Profession ID", "164", "e.g. 164"), pathParam("skillTierId", "Skill Tier ID", "", "Use a tier id from profession data")]),
-      endpoint("recipe", "Recipe", "Fetch a recipe by id.", "/data/wow/recipe/{recipeId}", "static", [pathParam("recipeId", "Recipe ID", "", "Use a recipe id from skill tiers")]),
-      endpoint("recipe-media", "Recipe Media", "Fetch recipe media.", "/data/wow/media/recipe/{recipeId}", "static", [pathParam("recipeId", "Recipe ID", "", "Use a recipe id from skill tiers")]),
+      endpoint(
+        "profession-index",
+        "Professions Index",
+        "Load professions.",
+        "/data/wow/profession/index",
+        "static",
+      ),
+      endpoint(
+        "profession",
+        "Profession",
+        "Fetch a profession by id.",
+        "/data/wow/profession/{professionId}",
+        "static",
+        [pathParam("professionId", "Profession ID", "164", "e.g. 164")],
+      ),
+      endpoint(
+        "profession-media",
+        "Profession Media",
+        "Fetch profession media.",
+        "/data/wow/media/profession/{professionId}",
+        "static",
+        [pathParam("professionId", "Profession ID", "164", "e.g. 164")],
+      ),
+      endpoint(
+        "profession-skill-tier",
+        "Profession Skill Tier",
+        "Fetch a profession skill tier.",
+        "/data/wow/profession/{professionId}/skill-tier/{skillTierId}",
+        "static",
+        [
+          pathParam("professionId", "Profession ID", "164", "e.g. 164"),
+          pathParam(
+            "skillTierId",
+            "Skill Tier ID",
+            "",
+            "Use a tier id from profession data",
+          ),
+        ],
+      ),
+      endpoint(
+        "recipe",
+        "Recipe",
+        "Fetch a recipe by id.",
+        "/data/wow/recipe/{recipeId}",
+        "static",
+        [
+          pathParam(
+            "recipeId",
+            "Recipe ID",
+            "",
+            "Use a recipe id from skill tiers",
+          ),
+        ],
+      ),
+      endpoint(
+        "recipe-media",
+        "Recipe Media",
+        "Fetch recipe media.",
+        "/data/wow/media/recipe/{recipeId}",
+        "static",
+        [
+          pathParam(
+            "recipeId",
+            "Recipe ID",
+            "",
+            "Use a recipe id from skill tiers",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -377,11 +1467,74 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "PvP seasons, leaderboards, and rewards.",
     accentColor: "#ef4444",
     endpoints: [
-      endpoint("pvp-season-index", "PvP Seasons Index", "Load PvP seasons.", "/data/wow/pvp-season/index", "dynamic"),
-      endpoint("pvp-season", "PvP Season", "Fetch a PvP season by id.", "/data/wow/pvp-season/{pvpSeasonId}", "dynamic", [pathParam("pvpSeasonId", "PvP Season ID", "", "Use an id from the index")]),
-      endpoint("pvp-leaderboard-index", "PvP Leaderboards Index", "Load PvP leaderboards for a season.", "/data/wow/pvp-season/{pvpSeasonId}/pvp-leaderboard/index", "dynamic", [pathParam("pvpSeasonId", "PvP Season ID", "", "Use an id from the index")]),
-      endpoint("pvp-leaderboard", "PvP Leaderboard", "Fetch a PvP leaderboard by bracket.", "/data/wow/pvp-season/{pvpSeasonId}/pvp-leaderboard/{pvpBracket}", "dynamic", [pathParam("pvpSeasonId", "PvP Season ID", "", "Use an id from the index"), pathParam("pvpBracket", "PvP Bracket", "3v3", "e.g. 2v2, 3v3, rbg")]),
-      endpoint("pvp-reward-index", "PvP Rewards Index", "Load PvP rewards for a season.", "/data/wow/pvp-season/{pvpSeasonId}/pvp-reward/index", "dynamic", [pathParam("pvpSeasonId", "PvP Season ID", "", "Use an id from the index")]),
+      endpoint(
+        "pvp-season-index",
+        "PvP Seasons Index",
+        "Load PvP seasons.",
+        "/data/wow/pvp-season/index",
+        "dynamic",
+      ),
+      endpoint(
+        "pvp-season",
+        "PvP Season",
+        "Fetch a PvP season by id.",
+        "/data/wow/pvp-season/{pvpSeasonId}",
+        "dynamic",
+        [
+          pathParam(
+            "pvpSeasonId",
+            "PvP Season ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "pvp-leaderboard-index",
+        "PvP Leaderboards Index",
+        "Load PvP leaderboards for a season.",
+        "/data/wow/pvp-season/{pvpSeasonId}/pvp-leaderboard/index",
+        "dynamic",
+        [
+          pathParam(
+            "pvpSeasonId",
+            "PvP Season ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "pvp-leaderboard",
+        "PvP Leaderboard",
+        "Fetch a PvP leaderboard by bracket.",
+        "/data/wow/pvp-season/{pvpSeasonId}/pvp-leaderboard/{pvpBracket}",
+        "dynamic",
+        [
+          pathParam(
+            "pvpSeasonId",
+            "PvP Season ID",
+            "",
+            "Use an id from the index",
+          ),
+          pathParam("pvpBracket", "PvP Bracket", "3v3", "e.g. 2v2, 3v3, rbg"),
+        ],
+      ),
+      endpoint(
+        "pvp-reward-index",
+        "PvP Rewards Index",
+        "Load PvP rewards for a season.",
+        "/data/wow/pvp-season/{pvpSeasonId}/pvp-reward/index",
+        "dynamic",
+        [
+          pathParam(
+            "pvpSeasonId",
+            "PvP Season ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -390,9 +1543,29 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "PvP tiers and associated media.",
     accentColor: "#ef4444",
     endpoints: [
-      endpoint("pvp-tier-index", "PvP Tiers Index", "Load PvP tiers.", "/data/wow/pvp-tier/index", "static"),
-      endpoint("pvp-tier", "PvP Tier", "Fetch a PvP tier by id.", "/data/wow/pvp-tier/{pvpTierId}", "static", [pathParam("pvpTierId", "PvP Tier ID", "", "Use an id from the index")]),
-      endpoint("pvp-tier-media", "PvP Tier Media", "Fetch PvP tier media.", "/data/wow/media/pvp-tier/{pvpTierId}", "static", [pathParam("pvpTierId", "PvP Tier ID", "", "Use an id from the index")]),
+      endpoint(
+        "pvp-tier-index",
+        "PvP Tiers Index",
+        "Load PvP tiers.",
+        "/data/wow/pvp-tier/index",
+        "static",
+      ),
+      endpoint(
+        "pvp-tier",
+        "PvP Tier",
+        "Fetch a PvP tier by id.",
+        "/data/wow/pvp-tier/{pvpTierId}",
+        "static",
+        [pathParam("pvpTierId", "PvP Tier ID", "", "Use an id from the index")],
+      ),
+      endpoint(
+        "pvp-tier-media",
+        "PvP Tier Media",
+        "Fetch PvP tier media.",
+        "/data/wow/media/pvp-tier/{pvpTierId}",
+        "static",
+        [pathParam("pvpTierId", "PvP Tier ID", "", "Use an id from the index")],
+      ),
     ],
   },
   {
@@ -401,14 +1574,87 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Quest index, detail, categories, areas, and types.",
     accentColor: "#22c55e",
     endpoints: [
-      endpoint("quest-index", "Quests Index", "Load quest references.", "/data/wow/quest/index", "static"),
-      endpoint("quest", "Quest", "Fetch a quest by id.", "/data/wow/quest/{questId}", "static", [pathParam("questId", "Quest ID", "", "Use an id from the index")]),
-      endpoint("quest-category-index", "Quest Categories Index", "Load quest categories.", "/data/wow/quest/category/index", "static"),
-      endpoint("quest-category", "Quest Category", "Fetch a quest category by id.", "/data/wow/quest/category/{questCategoryId}", "static", [pathParam("questCategoryId", "Quest Category ID", "", "Use an id from the index")]),
-      endpoint("quest-area-index", "Quest Areas Index", "Load quest areas.", "/data/wow/quest/area/index", "static"),
-      endpoint("quest-area", "Quest Area", "Fetch a quest area by id.", "/data/wow/quest/area/{questAreaId}", "static", [pathParam("questAreaId", "Quest Area ID", "", "Use an id from the index")]),
-      endpoint("quest-type-index", "Quest Types Index", "Load quest types.", "/data/wow/quest/type/index", "static"),
-      endpoint("quest-type", "Quest Type", "Fetch a quest type by id.", "/data/wow/quest/type/{questTypeId}", "static", [pathParam("questTypeId", "Quest Type ID", "", "Use an id from the index")]),
+      endpoint(
+        "quest-index",
+        "Quests Index",
+        "Load quest references.",
+        "/data/wow/quest/index",
+        "static",
+      ),
+      endpoint(
+        "quest",
+        "Quest",
+        "Fetch a quest by id.",
+        "/data/wow/quest/{questId}",
+        "static",
+        [pathParam("questId", "Quest ID", "", "Use an id from the index")],
+      ),
+      endpoint(
+        "quest-category-index",
+        "Quest Categories Index",
+        "Load quest categories.",
+        "/data/wow/quest/category/index",
+        "static",
+      ),
+      endpoint(
+        "quest-category",
+        "Quest Category",
+        "Fetch a quest category by id.",
+        "/data/wow/quest/category/{questCategoryId}",
+        "static",
+        [
+          pathParam(
+            "questCategoryId",
+            "Quest Category ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "quest-area-index",
+        "Quest Areas Index",
+        "Load quest areas.",
+        "/data/wow/quest/area/index",
+        "static",
+      ),
+      endpoint(
+        "quest-area",
+        "Quest Area",
+        "Fetch a quest area by id.",
+        "/data/wow/quest/area/{questAreaId}",
+        "static",
+        [
+          pathParam(
+            "questAreaId",
+            "Quest Area ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "quest-type-index",
+        "Quest Types Index",
+        "Load quest types.",
+        "/data/wow/quest/type/index",
+        "static",
+      ),
+      endpoint(
+        "quest-type",
+        "Quest Type",
+        "Fetch a quest type by id.",
+        "/data/wow/quest/type/{questTypeId}",
+        "static",
+        [
+          pathParam(
+            "questTypeId",
+            "Quest Type ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -417,9 +1663,29 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Realm index, slug detail, and search.",
     accentColor: "#38bdf8",
     endpoints: [
-      endpoint("realm-index", "Realms Index", "Load realm references.", "/data/wow/realm/index", "dynamic"),
-      endpoint("realm", "Realm", "Fetch a realm by slug.", "/data/wow/realm/{realmSlug}", "dynamic", [pathParam("realmSlug", "Realm Slug", "", "e.g. area-52")]),
-      endpoint("realm-search", "Realm Search", "Search realms by localized name.", "/data/wow/search/realm", "dynamic", [queryParam("name.{locale}", "Name Query", "Stormrage", "Search term")]),
+      endpoint(
+        "realm-index",
+        "Realms Index",
+        "Load realm references.",
+        "/data/wow/realm/index",
+        "dynamic",
+      ),
+      endpoint(
+        "realm",
+        "Realm",
+        "Fetch a realm by slug.",
+        "/data/wow/realm/{realmSlug}",
+        "dynamic",
+        [pathParam("realmSlug", "Realm Slug", "", "e.g. area-52")],
+      ),
+      endpoint(
+        "realm-search",
+        "Realm Search",
+        "Search realms by localized name.",
+        "/data/wow/search/realm",
+        "dynamic",
+        [queryParam("name.{locale}", "Name Query", "Stormrage", "Search term")],
+      ),
     ],
   },
   {
@@ -428,8 +1694,21 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Region index and region detail data.",
     accentColor: "#38bdf8",
     endpoints: [
-      endpoint("region-index", "Regions Index", "Load regions.", "/data/wow/region/index", "dynamic"),
-      endpoint("region", "Region", "Fetch a region by id.", "/data/wow/region/{regionId}", "dynamic", [pathParam("regionId", "Region ID", "1", "e.g. 1")]),
+      endpoint(
+        "region-index",
+        "Regions Index",
+        "Load regions.",
+        "/data/wow/region/index",
+        "dynamic",
+      ),
+      endpoint(
+        "region",
+        "Region",
+        "Fetch a region by id.",
+        "/data/wow/region/{regionId}",
+        "dynamic",
+        [pathParam("regionId", "Region ID", "1", "e.g. 1")],
+      ),
     ],
   },
   {
@@ -438,10 +1717,50 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Reputation factions and reputation tiers.",
     accentColor: "#22c55e",
     endpoints: [
-      endpoint("reputation-faction-index", "Reputation Factions Index", "Load reputation factions.", "/data/wow/reputation-faction/index", "static"),
-      endpoint("reputation-faction", "Reputation Faction", "Fetch a reputation faction by id.", "/data/wow/reputation-faction/{reputationFactionId}", "static", [pathParam("reputationFactionId", "Reputation Faction ID", "", "Use an id from the index")]),
-      endpoint("reputation-tiers-index", "Reputation Tiers Index", "Load reputation tier sets.", "/data/wow/reputation-tiers/index", "static"),
-      endpoint("reputation-tiers", "Reputation Tiers", "Fetch a reputation tier set by id.", "/data/wow/reputation-tiers/{reputationTiersId}", "static", [pathParam("reputationTiersId", "Reputation Tiers ID", "", "Use an id from the index")]),
+      endpoint(
+        "reputation-faction-index",
+        "Reputation Factions Index",
+        "Load reputation factions.",
+        "/data/wow/reputation-faction/index",
+        "static",
+      ),
+      endpoint(
+        "reputation-faction",
+        "Reputation Faction",
+        "Fetch a reputation faction by id.",
+        "/data/wow/reputation-faction/{reputationFactionId}",
+        "static",
+        [
+          pathParam(
+            "reputationFactionId",
+            "Reputation Faction ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "reputation-tiers-index",
+        "Reputation Tiers Index",
+        "Load reputation tier sets.",
+        "/data/wow/reputation-tiers/index",
+        "static",
+      ),
+      endpoint(
+        "reputation-tiers",
+        "Reputation Tiers",
+        "Fetch a reputation tier set by id.",
+        "/data/wow/reputation-tiers/{reputationTiersId}",
+        "static",
+        [
+          pathParam(
+            "reputationTiersId",
+            "Reputation Tiers ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -450,9 +1769,51 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Spell detail, media, and search.",
     accentColor: "#a78bfa",
     endpoints: [
-      endpoint("spell", "Spell", "Fetch a spell by id.", "/data/wow/spell/{spellId}", "static", [pathParam("spellId", "Spell ID", "", "Use search results to find ids")]),
-      endpoint("spell-media", "Spell Media", "Fetch spell media.", "/data/wow/media/spell/{spellId}", "static", [pathParam("spellId", "Spell ID", "", "Use search results to find ids")]),
-      endpoint("spell-search", "Spell Search", "Search spells by localized name.", "/data/wow/search/spell", "static", [queryParam("name.{locale}", "Name Query", "Chaos Bolt", "Search term")]),
+      endpoint(
+        "spell",
+        "Spell",
+        "Fetch a spell by id.",
+        "/data/wow/spell/{spellId}",
+        "static",
+        [
+          pathParam(
+            "spellId",
+            "Spell ID",
+            "",
+            "Use search results to find ids",
+          ),
+        ],
+      ),
+      endpoint(
+        "spell-media",
+        "Spell Media",
+        "Fetch spell media.",
+        "/data/wow/media/spell/{spellId}",
+        "static",
+        [
+          pathParam(
+            "spellId",
+            "Spell ID",
+            "",
+            "Use search results to find ids",
+          ),
+        ],
+      ),
+      endpoint(
+        "spell-search",
+        "Spell Search",
+        "Search spells by localized name.",
+        "/data/wow/search/spell",
+        "static",
+        [
+          queryParam(
+            "name.{locale}",
+            "Name Query",
+            "Chaos Bolt",
+            "Search term",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -461,13 +1822,86 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Talent trees, talents, and PvP talents.",
     accentColor: "#a78bfa",
     endpoints: [
-      endpoint("talent-tree-index", "Talent Tree Index", "Load talent trees.", "/data/wow/talent-tree/index", "static"),
-      endpoint("talent-tree", "Talent Tree", "Fetch a specialization talent tree.", "/data/wow/talent-tree/{talentTreeId}/playable-specialization/{specId}", "static", [pathParam("talentTreeId", "Talent Tree ID", "", "Use an id from the index"), pathParam("specId", "Specialization ID", "", "Use a specialization id")]),
-      endpoint("talent-tree-nodes", "Talent Tree Nodes", "Fetch talent tree nodes.", "/data/wow/talent-tree/{talentTreeId}", "static", [pathParam("talentTreeId", "Talent Tree ID", "", "Use an id from the index")]),
-      endpoint("talent-index", "Talents Index", "Load talents.", "/data/wow/talent/index", "static"),
-      endpoint("talent", "Talent", "Fetch a talent by id.", "/data/wow/talent/{talentId}", "static", [pathParam("talentId", "Talent ID", "", "Use an id from the index")]),
-      endpoint("pvp-talent-index", "PvP Talents Index", "Load PvP talents.", "/data/wow/pvp-talent/index", "static"),
-      endpoint("pvp-talent", "PvP Talent", "Fetch a PvP talent by id.", "/data/wow/pvp-talent/{pvpTalentId}", "static", [pathParam("pvpTalentId", "PvP Talent ID", "", "Use an id from the index")]),
+      endpoint(
+        "talent-tree-index",
+        "Talent Tree Index",
+        "Load talent trees.",
+        "/data/wow/talent-tree/index",
+        "static",
+      ),
+      endpoint(
+        "talent-tree",
+        "Talent Tree",
+        "Fetch a specialization talent tree.",
+        "/data/wow/talent-tree/{talentTreeId}/playable-specialization/{specId}",
+        "static",
+        [
+          pathParam(
+            "talentTreeId",
+            "Talent Tree ID",
+            "",
+            "Use an id from the index",
+          ),
+          pathParam(
+            "specId",
+            "Specialization ID",
+            "",
+            "Use a specialization id",
+          ),
+        ],
+      ),
+      endpoint(
+        "talent-tree-nodes",
+        "Talent Tree Nodes",
+        "Fetch talent tree nodes.",
+        "/data/wow/talent-tree/{talentTreeId}",
+        "static",
+        [
+          pathParam(
+            "talentTreeId",
+            "Talent Tree ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "talent-index",
+        "Talents Index",
+        "Load talents.",
+        "/data/wow/talent/index",
+        "static",
+      ),
+      endpoint(
+        "talent",
+        "Talent",
+        "Fetch a talent by id.",
+        "/data/wow/talent/{talentId}",
+        "static",
+        [pathParam("talentId", "Talent ID", "", "Use an id from the index")],
+      ),
+      endpoint(
+        "pvp-talent-index",
+        "PvP Talents Index",
+        "Load PvP talents.",
+        "/data/wow/pvp-talent/index",
+        "static",
+      ),
+      endpoint(
+        "pvp-talent",
+        "PvP Talent",
+        "Fetch a PvP talent by id.",
+        "/data/wow/pvp-talent/{pvpTalentId}",
+        "static",
+        [
+          pathParam(
+            "pvpTalentId",
+            "PvP Talent ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -476,11 +1910,65 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Tech talent trees, talents, and media.",
     accentColor: "#c084fc",
     endpoints: [
-      endpoint("tech-talent-tree-index", "Tech Talent Tree Index", "Load tech talent trees.", "/data/wow/tech-talent-tree/index", "static"),
-      endpoint("tech-talent-tree", "Tech Talent Tree", "Fetch a tech talent tree by id.", "/data/wow/tech-talent-tree/{techTalentTreeId}", "static", [pathParam("techTalentTreeId", "Tech Talent Tree ID", "", "Use an id from the index")]),
-      endpoint("tech-talent-index", "Tech Talent Index", "Load tech talents.", "/data/wow/tech-talent/index", "static"),
-      endpoint("tech-talent", "Tech Talent", "Fetch a tech talent by id.", "/data/wow/tech-talent/{techTalentId}", "static", [pathParam("techTalentId", "Tech Talent ID", "", "Use an id from the index")]),
-      endpoint("tech-talent-media", "Tech Talent Media", "Fetch tech talent media.", "/data/wow/media/tech-talent/{techTalentId}", "static", [pathParam("techTalentId", "Tech Talent ID", "", "Use an id from the index")]),
+      endpoint(
+        "tech-talent-tree-index",
+        "Tech Talent Tree Index",
+        "Load tech talent trees.",
+        "/data/wow/tech-talent-tree/index",
+        "static",
+      ),
+      endpoint(
+        "tech-talent-tree",
+        "Tech Talent Tree",
+        "Fetch a tech talent tree by id.",
+        "/data/wow/tech-talent-tree/{techTalentTreeId}",
+        "static",
+        [
+          pathParam(
+            "techTalentTreeId",
+            "Tech Talent Tree ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "tech-talent-index",
+        "Tech Talent Index",
+        "Load tech talents.",
+        "/data/wow/tech-talent/index",
+        "static",
+      ),
+      endpoint(
+        "tech-talent",
+        "Tech Talent",
+        "Fetch a tech talent by id.",
+        "/data/wow/tech-talent/{techTalentId}",
+        "static",
+        [
+          pathParam(
+            "techTalentId",
+            "Tech Talent ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
+      endpoint(
+        "tech-talent-media",
+        "Tech Talent Media",
+        "Fetch tech talent media.",
+        "/data/wow/media/tech-talent/{techTalentId}",
+        "static",
+        [
+          pathParam(
+            "techTalentId",
+            "Tech Talent ID",
+            "",
+            "Use an id from the index",
+          ),
+        ],
+      ),
     ],
   },
   {
@@ -489,8 +1977,21 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Title index and title detail records.",
     accentColor: "#f59e0b",
     endpoints: [
-      endpoint("title-index", "Titles Index", "Load character titles.", "/data/wow/title/index", "static"),
-      endpoint("title", "Title", "Fetch a title by id.", "/data/wow/title/{titleId}", "static", [pathParam("titleId", "Title ID", "", "Use an id from the index")]),
+      endpoint(
+        "title-index",
+        "Titles Index",
+        "Load character titles.",
+        "/data/wow/title/index",
+        "static",
+      ),
+      endpoint(
+        "title",
+        "Title",
+        "Fetch a title by id.",
+        "/data/wow/title/{titleId}",
+        "static",
+        [pathParam("titleId", "Title ID", "", "Use an id from the index")],
+      ),
     ],
   },
   {
@@ -499,8 +2000,21 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Toy index and toy detail records.",
     accentColor: "#34d399",
     endpoints: [
-      endpoint("toy-index", "Toy Index", "Load toys.", "/data/wow/toy/index", "static"),
-      endpoint("toy", "Toy", "Fetch a toy by id.", "/data/wow/toy/{toyId}", "static", [pathParam("toyId", "Toy ID", "", "Use an id from the index")]),
+      endpoint(
+        "toy-index",
+        "Toy Index",
+        "Load toys.",
+        "/data/wow/toy/index",
+        "static",
+      ),
+      endpoint(
+        "toy",
+        "Toy",
+        "Fetch a toy by id.",
+        "/data/wow/toy/{toyId}",
+        "static",
+        [pathParam("toyId", "Toy ID", "", "Use an id from the index")],
+      ),
     ],
   },
   {
@@ -509,10 +2023,18 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     description: "Regional WoW token pricing.",
     accentColor: "#f5c045",
     endpoints: [
-      endpoint("wow-token-index", "WoW Token Index", "Fetch regional WoW token pricing.", "/data/wow/token/index", "dynamic"),
+      endpoint(
+        "wow-token-index",
+        "WoW Token Index",
+        "Fetch regional WoW token pricing.",
+        "/data/wow/token/index",
+        "dynamic",
+      ),
     ],
   },
-]
+];
 
-export const getApiFamilyConfigBySlug = (slug: string): ApiFamilyConfig | undefined =>
-  API_FAMILY_CONFIGS.find((family) => family.slug === slug)
+export const getApiFamilyConfigBySlug = (
+  slug: string,
+): ApiFamilyConfig | undefined =>
+  API_FAMILY_CONFIGS.find((family) => family.slug === slug);
