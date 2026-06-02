@@ -1,8 +1,8 @@
-import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded"
-import CodeRoundedIcon from "@mui/icons-material/CodeRounded"
-import DataObjectRoundedIcon from "@mui/icons-material/DataObjectRounded"
-import ImageSearchRoundedIcon from "@mui/icons-material/ImageSearchRounded"
-import LinkRoundedIcon from "@mui/icons-material/LinkRounded"
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
+import CodeRoundedIcon from "@mui/icons-material/CodeRounded";
+import DataObjectRoundedIcon from "@mui/icons-material/DataObjectRounded";
+import ImageSearchRoundedIcon from "@mui/icons-material/ImageSearchRounded";
+import LinkRoundedIcon from "@mui/icons-material/LinkRounded";
 import {
   Accordion,
   AccordionDetails,
@@ -18,10 +18,14 @@ import {
   Stack,
   TextField,
   Typography,
-} from "@mui/material"
-import { useQueries, useQuery } from "@tanstack/react-query"
-import { useEffect, useMemo, useState } from "react"
-import { ApiEndpointDefinition, ApiEndpointParameter, ApiFamilyConfig } from "@/features/apiExplorer/types"
+} from "@mui/material";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ApiEndpointDefinition,
+  ApiEndpointParameter,
+  ApiFamilyConfig,
+} from "@/features/apiExplorer/types";
 import {
   buildPath,
   collectUrlStrings,
@@ -30,183 +34,220 @@ import {
   matchPathTemplate,
   resolveNamespace,
   resolveParameterKey,
-} from "@/features/apiExplorer/utils"
-import { blizzardClient, BlizzardRequestError } from "@/lib/blizzardClient"
-import { env } from "@/lib/env"
+} from "@/features/apiExplorer/utils";
+import { blizzardClient, BlizzardRequestError } from "@/lib/blizzardClient";
+import { env } from "@/lib/env";
 
 interface ApiEndpointWorkbenchProps {
-  family: ApiFamilyConfig
+  family: ApiFamilyConfig;
 }
 
 type EndpointPanelProps = {
-  family: ApiFamilyConfig
-  endpoint: ApiEndpointDefinition
-  defaultExpanded?: boolean
-  suggestedValues?: Record<string, string>
-}
+  family: ApiFamilyConfig;
+  endpoint: ApiEndpointDefinition;
+  defaultExpanded?: boolean;
+  suggestedValues?: Record<string, string>;
+};
 
 type EndpointRequestDetails = {
-  values: Record<string, string>
-  queryParams: Record<string, string>
-  requestPath: string
-  unresolvedPathParams: ApiEndpointParameter[]
-}
+  values: Record<string, string>;
+  queryParams: Record<string, string>;
+  requestPath: string;
+  unresolvedPathParams: ApiEndpointParameter[];
+};
 
 const SAMPLE_PATH_VALUE_CANDIDATES: Record<string, string[]> = {
   connectedRealmId: ["4"],
   raid: ["vault-of-the-incarnates", "sepulcher-of-the-first-ones"],
   faction: ["alliance", "horde"],
-}
+};
 
-const areEqualRecords = (left: Record<string, string>, right: Record<string, string>): boolean => {
-  const leftEntries = Object.entries(left)
-  const rightEntries = Object.entries(right)
+const areEqualRecords = (
+  left: Record<string, string>,
+  right: Record<string, string>,
+): boolean => {
+  const leftEntries = Object.entries(left);
+  const rightEntries = Object.entries(right);
 
   if (leftEntries.length !== rightEntries.length) {
-    return false
+    return false;
   }
 
-  return leftEntries.every(([key, value]) => right[key] === value)
-}
+  return leftEntries.every(([key, value]) => right[key] === value);
+};
 
 const resolveErrorMessage = (error: unknown): string => {
   if (error instanceof BlizzardRequestError) {
-    return error.details || error.message
+    return error.details || error.message;
   }
 
-  return error instanceof Error ? error.message : "Unable to load endpoint response."
-}
+  return error instanceof Error
+    ? error.message
+    : "Unable to load endpoint response.";
+};
 
 const resolveEndpointRequest = (
   endpoint: ApiEndpointDefinition,
-  discoveredPathValues: Record<string, string>
+  discoveredPathValues: Record<string, string>,
 ): EndpointRequestDetails => {
   const values = Object.fromEntries(
     (endpoint.parameters ?? []).map((parameter) => {
-      const discoveredValue = discoveredPathValues[parameter.key]
-      const fallbackValue = SAMPLE_PATH_VALUE_CANDIDATES[parameter.key]?.[0]
+      const discoveredValue = discoveredPathValues[parameter.key];
+      const fallbackValue = SAMPLE_PATH_VALUE_CANDIDATES[parameter.key]?.[0];
 
       return [
         parameter.key,
-        discoveredValue ?? parameter.defaultValue ?? (parameter.location === "path" ? fallbackValue ?? "" : ""),
-      ]
-    })
-  )
+        discoveredValue ??
+          parameter.defaultValue ??
+          (parameter.location === "path" ? (fallbackValue ?? "") : ""),
+      ];
+    }),
+  );
 
   const unresolvedPathParams = (endpoint.parameters ?? []).filter(
-    (parameter) => parameter.location === "path" && !(values[parameter.key] ?? "").trim()
-  )
+    (parameter) =>
+      parameter.location === "path" && !(values[parameter.key] ?? "").trim(),
+  );
 
   const queryParams = Object.fromEntries(
     (endpoint.parameters ?? [])
       .filter((parameter) => parameter.location === "query")
-      .map((parameter) => [resolveParameterKey(parameter.key), (values[parameter.key] ?? "").trim()])
-      .filter((entry) => entry[1].length > 0)
-  )
+      .map((parameter) => [
+        resolveParameterKey(parameter.key),
+        (values[parameter.key] ?? "").trim(),
+      ])
+      .filter((entry) => entry[1].length > 0),
+  );
 
   return {
     values,
     queryParams,
     requestPath: buildPath(endpoint.path, values),
     unresolvedPathParams,
-  }
-}
+  };
+};
 
 const derivePathValuesFromResponses = (
   family: ApiFamilyConfig,
   discoveredPathValues: Record<string, string>,
   resolvedRequests: EndpointRequestDetails[],
-  queryResults: Array<{ isSuccess: boolean; data?: unknown }>
+  queryResults: Array<{ isSuccess: boolean; data?: unknown }>,
 ): Record<string, string> => {
-  const nextValues = { ...discoveredPathValues }
+  const nextValues = { ...discoveredPathValues };
 
   queryResults.forEach((result, index) => {
     if (!result.isSuccess) {
-      return
+      return;
     }
 
-    const endpoint = family.endpoints[index]
-    const request = resolvedRequests[index]
+    const endpoint = family.endpoints[index];
+    const request = resolvedRequests[index];
 
-    ;(endpoint.parameters ?? [])
+    (endpoint.parameters ?? [])
       .filter((parameter) => parameter.location === "path")
       .forEach((parameter) => {
-        const value = request.values[parameter.key]?.trim()
+        const value = request.values[parameter.key]?.trim();
 
         if (value && !nextValues[parameter.key]) {
-          nextValues[parameter.key] = value
+          nextValues[parameter.key] = value;
         }
-      })
+      });
 
     collectUrlStrings(result.data).forEach((href) => {
       family.endpoints.forEach((candidateEndpoint) => {
-        const match = matchPathTemplate(candidateEndpoint.path, href)
+        const match = matchPathTemplate(candidateEndpoint.path, href);
 
         if (!match) {
-          return
+          return;
         }
 
         Object.entries(match).forEach(([key, value]) => {
           if (!nextValues[key]) {
-            nextValues[key] = value
+            nextValues[key] = value;
           }
-        })
-      })
-    })
-  })
+        });
+      });
+    });
+  });
 
-  return nextValues
-}
+  return nextValues;
+};
 
-const EndpointPanel = ({ family, endpoint, defaultExpanded = false, suggestedValues = {} }: EndpointPanelProps): JSX.Element => {
-  const [expanded, setExpanded] = useState(defaultExpanded)
+const EndpointPanel = ({
+  family,
+  endpoint,
+  defaultExpanded = false,
+  suggestedValues = {},
+}: EndpointPanelProps): JSX.Element => {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries((endpoint.parameters ?? []).map((parameter) => [parameter.key, parameter.defaultValue ?? ""]))
-  )
+    Object.fromEntries(
+      (endpoint.parameters ?? []).map((parameter) => [
+        parameter.key,
+        parameter.defaultValue ?? "",
+      ]),
+    ),
+  );
 
   useEffect(() => {
     setValues((current) => {
-      const next = { ...current }
-      let changed = false
+      const next = { ...current };
+      let changed = false;
 
-      ;(endpoint.parameters ?? []).forEach((parameter) => {
+      (endpoint.parameters ?? []).forEach((parameter) => {
         if ((next[parameter.key] ?? "").trim().length > 0) {
-          return
+          return;
         }
 
-        const suggestedValue = suggestedValues[parameter.key]?.trim()
+        const suggestedValue = suggestedValues[parameter.key]?.trim();
         if (suggestedValue) {
-          next[parameter.key] = suggestedValue
-          changed = true
+          next[parameter.key] = suggestedValue;
+          changed = true;
         }
-      })
+      });
 
-      return changed ? next : current
-    })
-  }, [endpoint.parameters, suggestedValues])
+      return changed ? next : current;
+    });
+  }, [endpoint.parameters, suggestedValues]);
 
   const unresolvedPathParams = useMemo(
     () =>
       (endpoint.parameters ?? []).filter(
-        (parameter) => parameter.location === "path" && !(values[parameter.key] ?? "").trim()
+        (parameter) =>
+          parameter.location === "path" &&
+          !(values[parameter.key] ?? "").trim(),
       ),
-    [endpoint.parameters, values]
-  )
+    [endpoint.parameters, values],
+  );
 
-  const requestPath = useMemo(() => buildPath(endpoint.path, values), [endpoint.path, values])
+  const requestPath = useMemo(
+    () => buildPath(endpoint.path, values),
+    [endpoint.path, values],
+  );
   const queryParams = useMemo(
     () =>
       Object.fromEntries(
         (endpoint.parameters ?? [])
           .filter((parameter) => parameter.location === "query")
-          .map((parameter) => [resolveParameterKey(parameter.key), (values[parameter.key] ?? "").trim()])
-          .filter((entry) => entry[1].length > 0)
+          .map((parameter) => [
+            resolveParameterKey(parameter.key),
+            (values[parameter.key] ?? "").trim(),
+          ])
+          .filter((entry) => entry[1].length > 0),
       ),
-    [endpoint.parameters, values]
-  )
+    [endpoint.parameters, values],
+  );
 
   const query = useQuery({
-    queryKey: ["api-family-endpoint", family.slug, endpoint.id, requestPath, queryParams, env.region, env.locale],
+    queryKey: [
+      "api-family-endpoint",
+      family.slug,
+      endpoint.id,
+      requestPath,
+      queryParams,
+      env.region,
+      env.locale,
+    ],
     queryFn: () =>
       blizzardClient.get<unknown>(requestPath, {
         ...queryParams,
@@ -214,23 +255,32 @@ const EndpointPanel = ({ family, endpoint, defaultExpanded = false, suggestedVal
       }),
     enabled: expanded && unresolvedPathParams.length === 0,
     retry: false,
-  })
+  });
 
-  const previewItems = useMemo(() => extractPreviewItems(query.data), [query.data])
-  const mediaAssets = useMemo(() => extractMediaAssets(query.data), [query.data])
+  const previewItems = useMemo(
+    () => extractPreviewItems(query.data),
+    [query.data],
+  );
+  const mediaAssets = useMemo(
+    () => extractMediaAssets(query.data),
+    [query.data],
+  );
   const responseTopLevelKeys = useMemo(() => {
     if (!query.data || typeof query.data !== "object") {
-      return []
+      return [];
     }
 
-    return Object.keys(query.data as Record<string, unknown>).slice(0, 10)
-  }, [query.data])
+    return Object.keys(query.data as Record<string, unknown>).slice(0, 10);
+  }, [query.data]);
 
   const handleChange = (key: string, nextValue: string) => {
-    setValues((current) => ({ ...current, [key]: nextValue }))
-  }
+    setValues((current) => ({ ...current, [key]: nextValue }));
+  };
 
-  const errorMessage = useMemo(() => (query.error ? resolveErrorMessage(query.error) : undefined), [query.error])
+  const errorMessage = useMemo(
+    () => (query.error ? resolveErrorMessage(query.error) : undefined),
+    [query.error],
+  );
 
   return (
     <Accordion
@@ -259,8 +309,22 @@ const EndpointPanel = ({ family, endpoint, defaultExpanded = false, suggestedVal
               {endpoint.label}
             </Typography>
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-              <Chip label="GET" size="small" color="primary" sx={{ borderRadius: 2 }} />
-              <Chip label={endpoint.namespace === "none" ? "No namespace" : `${endpoint.namespace}-${env.region}`} size="small" variant="outlined" sx={{ borderRadius: 2 }} />
+              <Chip
+                label="GET"
+                size="small"
+                color="primary"
+                sx={{ borderRadius: 2 }}
+              />
+              <Chip
+                label={
+                  endpoint.namespace === "none"
+                    ? "No namespace"
+                    : `${endpoint.namespace}-${env.region}`
+                }
+                size="small"
+                variant="outlined"
+                sx={{ borderRadius: 2 }}
+              />
             </Stack>
           </Stack>
           <Typography variant="body2" color="text.secondary">
@@ -284,10 +348,14 @@ const EndpointPanel = ({ family, endpoint, defaultExpanded = false, suggestedVal
                     fullWidth
                     size="small"
                     label={parameter.label}
+                    id={`${endpoint.id}-param-${parameter.key}`}
+                    name={parameter.key}
                     value={values[parameter.key] ?? ""}
                     placeholder={parameter.placeholder}
                     helperText={parameter.description}
-                    onChange={(event) => handleChange(parameter.key, event.target.value)}
+                    onChange={(event) =>
+                      handleChange(parameter.key, event.target.value)
+                    }
                   />
                 </Grid>
               ))}
@@ -296,7 +364,11 @@ const EndpointPanel = ({ family, endpoint, defaultExpanded = false, suggestedVal
 
           {unresolvedPathParams.length > 0 ? (
             <Alert severity="info" sx={{ borderRadius: 3 }}>
-              Fill in {unresolvedPathParams.map((parameter) => parameter.label).join(", ")} to load this endpoint.
+              Fill in{" "}
+              {unresolvedPathParams
+                .map((parameter) => parameter.label)
+                .join(", ")}{" "}
+              to load this endpoint.
             </Alert>
           ) : null}
 
@@ -310,7 +382,13 @@ const EndpointPanel = ({ family, endpoint, defaultExpanded = false, suggestedVal
             <Stack spacing={2.5}>
               <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                 {responseTopLevelKeys.map((key) => (
-                  <Chip key={key} label={key} size="small" variant="outlined" sx={{ borderRadius: 2 }} />
+                  <Chip
+                    key={key}
+                    label={key}
+                    size="small"
+                    variant="outlined"
+                    sx={{ borderRadius: 2 }}
+                  />
                 ))}
               </Stack>
 
@@ -324,7 +402,11 @@ const EndpointPanel = ({ family, endpoint, defaultExpanded = false, suggestedVal
                   </Stack>
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                     {previewItems.map((entry) => (
-                      <Chip key={entry} label={entry} sx={{ borderRadius: 2 }} />
+                      <Chip
+                        key={entry}
+                        label={entry}
+                        sx={{ borderRadius: 2 }}
+                      />
                     ))}
                   </Stack>
                 </Stack>
@@ -340,7 +422,13 @@ const EndpointPanel = ({ family, endpoint, defaultExpanded = false, suggestedVal
                   </Stack>
                   <Grid container spacing={2}>
                     {mediaAssets.slice(0, 6).map((asset) => (
-                      <Grid item xs={12} sm={6} md={4} key={`${endpoint.id}-${asset.key}`}>
+                      <Grid
+                        item
+                        xs={12}
+                        sm={6}
+                        md={4}
+                        key={`${endpoint.id}-${asset.key}`}
+                      >
                         <Box
                           sx={{
                             p: 2,
@@ -350,16 +438,29 @@ const EndpointPanel = ({ family, endpoint, defaultExpanded = false, suggestedVal
                           }}
                         >
                           <Stack spacing={1.25}>
-                            <Typography variant="caption" color="text.secondary">
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
                               {asset.key}
                             </Typography>
                             <Box
                               component="img"
                               src={asset.value}
                               alt={asset.key}
-                              sx={{ width: 56, height: 56, borderRadius: 2, objectFit: "cover" }}
+                              sx={{
+                                width: 56,
+                                height: 56,
+                                borderRadius: 2,
+                                objectFit: "cover",
+                              }}
                             />
-                            <Link href={asset.value} target="_blank" rel="noreferrer" underline="hover">
+                            <Link
+                              href={asset.value}
+                              target="_blank"
+                              rel="noreferrer"
+                              underline="hover"
+                            >
                               Open asset
                             </Link>
                           </Stack>
@@ -400,8 +501,8 @@ const EndpointPanel = ({ family, endpoint, defaultExpanded = false, suggestedVal
         </Stack>
       </AccordionDetails>
     </Accordion>
-  )
-}
+  );
+};
 
 const EndpointCoverageCard = ({
   family,
@@ -409,46 +510,56 @@ const EndpointCoverageCard = ({
   request,
   query,
 }: {
-  family: ApiFamilyConfig
-  endpoint: ApiEndpointDefinition
-  request: EndpointRequestDetails
+  family: ApiFamilyConfig;
+  endpoint: ApiEndpointDefinition;
+  request: EndpointRequestDetails;
   query: {
-    isError: boolean
-    isFetching: boolean
-    isPending: boolean
-    isSuccess: boolean
-    error: unknown
-    data?: unknown
-  }
+    isError: boolean;
+    isFetching: boolean;
+    isPending: boolean;
+    isSuccess: boolean;
+    error: unknown;
+    data?: unknown;
+  };
 }): JSX.Element => {
-  const previewItems = useMemo(() => extractPreviewItems(query.data), [query.data])
-  const mediaAssets = useMemo(() => extractMediaAssets(query.data), [query.data])
+  const previewItems = useMemo(
+    () => extractPreviewItems(query.data),
+    [query.data],
+  );
+  const mediaAssets = useMemo(
+    () => extractMediaAssets(query.data),
+    [query.data],
+  );
   const responseTopLevelKeys = useMemo(() => {
     if (!query.data || typeof query.data !== "object") {
-      return []
+      return [];
     }
 
-    return Object.keys(query.data as Record<string, unknown>).slice(0, 6)
-  }, [query.data])
+    return Object.keys(query.data as Record<string, unknown>).slice(0, 6);
+  }, [query.data]);
 
-  const unresolvedLabels = request.unresolvedPathParams.map((parameter) => parameter.label)
-  const statusLabel = request.unresolvedPathParams.length > 0
-    ? "Blocked"
-    : query.isSuccess
-      ? "Live"
-      : query.isError
-        ? "Error"
-        : query.isPending || query.isFetching
-          ? "Loading"
-          : "Queued"
+  const unresolvedLabels = request.unresolvedPathParams.map(
+    (parameter) => parameter.label,
+  );
+  const statusLabel =
+    request.unresolvedPathParams.length > 0
+      ? "Blocked"
+      : query.isSuccess
+        ? "Live"
+        : query.isError
+          ? "Error"
+          : query.isPending || query.isFetching
+            ? "Loading"
+            : "Queued";
 
-  const statusColor = request.unresolvedPathParams.length > 0
-    ? "default"
-    : query.isSuccess
-      ? "success"
-      : query.isError
-        ? "warning"
-        : "primary"
+  const statusColor =
+    request.unresolvedPathParams.length > 0
+      ? "default"
+      : query.isSuccess
+        ? "success"
+        : query.isError
+          ? "warning"
+          : "primary";
 
   return (
     <Paper
@@ -462,7 +573,12 @@ const EndpointCoverageCard = ({
       }}
     >
       <Stack spacing={2} sx={{ height: "100%" }}>
-        <Stack direction="row" spacing={1.25} justifyContent="space-between" alignItems="flex-start">
+        <Stack
+          direction="row"
+          spacing={1.25}
+          justifyContent="space-between"
+          alignItems="flex-start"
+        >
           <Stack spacing={0.75}>
             <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
               {endpoint.label}
@@ -471,7 +587,12 @@ const EndpointCoverageCard = ({
               {endpoint.description}
             </Typography>
           </Stack>
-          <Chip label={statusLabel} color={statusColor} size="small" sx={{ borderRadius: 2 }} />
+          <Chip
+            label={statusLabel}
+            color={statusColor}
+            size="small"
+            sx={{ borderRadius: 2 }}
+          />
         </Stack>
 
         <Chip
@@ -496,8 +617,16 @@ const EndpointCoverageCard = ({
 
         {query.isPending || query.isFetching ? (
           <Stack spacing={1.25}>
-            <Skeleton variant="rounded" height={24} sx={{ borderRadius: 2, bgcolor: "rgba(148, 163, 184, 0.16)" }} />
-            <Skeleton variant="rounded" height={68} sx={{ borderRadius: 2, bgcolor: "rgba(148, 163, 184, 0.12)" }} />
+            <Skeleton
+              variant="rounded"
+              height={24}
+              sx={{ borderRadius: 2, bgcolor: "rgba(148, 163, 184, 0.16)" }}
+            />
+            <Skeleton
+              variant="rounded"
+              height={68}
+              sx={{ borderRadius: 2, bgcolor: "rgba(148, 163, 184, 0.12)" }}
+            />
           </Stack>
         ) : null}
 
@@ -506,7 +635,13 @@ const EndpointCoverageCard = ({
             {responseTopLevelKeys.length > 0 ? (
               <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                 {responseTopLevelKeys.map((key) => (
-                  <Chip key={key} label={key} size="small" variant="outlined" sx={{ borderRadius: 2 }} />
+                  <Chip
+                    key={key}
+                    label={key}
+                    size="small"
+                    variant="outlined"
+                    sx={{ borderRadius: 2 }}
+                  />
                 ))}
               </Stack>
             ) : null}
@@ -527,7 +662,12 @@ const EndpointCoverageCard = ({
                     component="img"
                     src={asset.value}
                     alt={asset.key}
-                    sx={{ width: 48, height: 48, borderRadius: 2, objectFit: "cover" }}
+                    sx={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 2,
+                      objectFit: "cover",
+                    }}
                   />
                 ))}
               </Stack>
@@ -536,24 +676,31 @@ const EndpointCoverageCard = ({
         ) : null}
       </Stack>
     </Paper>
-  )
-}
+  );
+};
 
-const ApiEndpointWorkbench = ({ family }: ApiEndpointWorkbenchProps): JSX.Element => {
-  const [discoveredPathValues, setDiscoveredPathValues] = useState<Record<string, string>>({})
+const ApiEndpointWorkbench = ({
+  family,
+}: ApiEndpointWorkbenchProps): JSX.Element => {
+  const [discoveredPathValues, setDiscoveredPathValues] = useState<
+    Record<string, string>
+  >({});
 
   useEffect(() => {
-    setDiscoveredPathValues({})
-  }, [family.slug])
+    setDiscoveredPathValues({});
+  }, [family.slug]);
 
   const resolvedRequests = useMemo(
-    () => family.endpoints.map((endpoint) => resolveEndpointRequest(endpoint, discoveredPathValues)),
-    [discoveredPathValues, family.endpoints]
-  )
+    () =>
+      family.endpoints.map((endpoint) =>
+        resolveEndpointRequest(endpoint, discoveredPathValues),
+      ),
+    [discoveredPathValues, family.endpoints],
+  );
 
   const endpointQueries = useQueries({
     queries: family.endpoints.map((endpoint, index) => {
-      const request = resolvedRequests[index]
+      const request = resolvedRequests[index];
 
       return {
         queryKey: [
@@ -573,9 +720,9 @@ const ApiEndpointWorkbench = ({ family }: ApiEndpointWorkbenchProps): JSX.Elemen
         enabled: request.unresolvedPathParams.length === 0,
         retry: false,
         staleTime: 300000,
-      }
+      };
     }),
-  })
+  });
 
   useEffect(() => {
     const nextValues = derivePathValuesFromResponses(
@@ -585,18 +732,24 @@ const ApiEndpointWorkbench = ({ family }: ApiEndpointWorkbenchProps): JSX.Elemen
       endpointQueries.map((query) => ({
         isSuccess: query.isSuccess,
         data: query.data,
-      }))
-    )
+      })),
+    );
 
     if (!areEqualRecords(discoveredPathValues, nextValues)) {
-      setDiscoveredPathValues(nextValues)
+      setDiscoveredPathValues(nextValues);
     }
-  }, [discoveredPathValues, endpointQueries, family, resolvedRequests])
+  }, [discoveredPathValues, endpointQueries, family, resolvedRequests]);
 
-  const successCount = endpointQueries.filter((query) => query.isSuccess).length
-  const errorCount = endpointQueries.filter((query) => query.isError).length
-  const blockedCount = resolvedRequests.filter((request) => request.unresolvedPathParams.length > 0).length
-  const loadingCount = endpointQueries.filter((query) => query.isPending || query.isFetching).length
+  const successCount = endpointQueries.filter(
+    (query) => query.isSuccess,
+  ).length;
+  const errorCount = endpointQueries.filter((query) => query.isError).length;
+  const blockedCount = resolvedRequests.filter(
+    (request) => request.unresolvedPathParams.length > 0,
+  ).length;
+  const loadingCount = endpointQueries.filter(
+    (query) => query.isPending || query.isFetching,
+  ).length;
 
   return (
     <Stack spacing={4}>
@@ -605,21 +758,48 @@ const ApiEndpointWorkbench = ({ family }: ApiEndpointWorkbenchProps): JSX.Elemen
           Live endpoint explorer
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Every endpoint in {family.label} is sampled automatically when this page loads. Use the overview for fast coverage, then drill into any panel for raw JSON and manual parameter changes.
+          Every endpoint in {family.label} is sampled automatically when this
+          page loads. Use the overview for fast coverage, then drill into any
+          panel for raw JSON and manual parameter changes.
         </Typography>
       </Stack>
 
       <Stack spacing={2}>
         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-          <Chip label={`${successCount}/${family.endpoints.length} live`} color="success" variant="outlined" sx={{ borderRadius: 2 }} />
-          <Chip label={`${loadingCount} loading`} color="primary" variant="outlined" sx={{ borderRadius: 2 }} />
-          <Chip label={`${blockedCount} blocked`} variant="outlined" sx={{ borderRadius: 2 }} />
-          <Chip label={`${errorCount} errors`} color="warning" variant="outlined" sx={{ borderRadius: 2 }} />
+          <Chip
+            label={`${successCount}/${family.endpoints.length} live`}
+            color="success"
+            variant="outlined"
+            sx={{ borderRadius: 2 }}
+          />
+          <Chip
+            label={`${loadingCount} loading`}
+            color="primary"
+            variant="outlined"
+            sx={{ borderRadius: 2 }}
+          />
+          <Chip
+            label={`${blockedCount} blocked`}
+            variant="outlined"
+            sx={{ borderRadius: 2 }}
+          />
+          <Chip
+            label={`${errorCount} errors`}
+            color="warning"
+            variant="outlined"
+            sx={{ borderRadius: 2 }}
+          />
         </Stack>
 
         <Grid container spacing={2.5}>
           {family.endpoints.map((endpoint, index) => (
-            <Grid item xs={12} md={6} xl={4} key={`${family.slug}-${endpoint.id}-coverage`}>
+            <Grid
+              item
+              xs={12}
+              md={6}
+              xl={4}
+              key={`${family.slug}-${endpoint.id}-coverage`}
+            >
               <EndpointCoverageCard
                 family={family}
                 endpoint={endpoint}
@@ -652,7 +832,7 @@ const ApiEndpointWorkbench = ({ family }: ApiEndpointWorkbenchProps): JSX.Elemen
         ))}
       </Stack>
     </Stack>
-  )
-}
+  );
+};
 
-export default ApiEndpointWorkbench
+export default ApiEndpointWorkbench;
