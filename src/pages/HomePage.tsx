@@ -1,9 +1,9 @@
-import { Suspense, lazy } from "react"
-import ArrowOutwardRoundedIcon from "@mui/icons-material/ArrowOutwardRounded"
-import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded"
-import HubRoundedIcon from "@mui/icons-material/HubRounded"
-import SearchRoundedIcon from "@mui/icons-material/SearchRounded"
-import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded"
+import { Suspense, lazy } from "react";
+import ArrowOutwardRoundedIcon from "@mui/icons-material/ArrowOutwardRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import HubRoundedIcon from "@mui/icons-material/HubRounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import ShowChartRoundedIcon from "@mui/icons-material/ShowChartRounded";
 import {
   Box,
   Button,
@@ -13,14 +13,16 @@ import {
   Paper,
   Stack,
   Typography,
-} from "@mui/material"
-import { useNavigate } from "react-router-dom"
-import TokenTicker from "@/features/search/components/TokenTicker"
-import { useSearchState } from "@/features/search/context/SearchContext"
+} from "@mui/material";
+import { useNavigate } from "react-router-dom";
+import TokenTicker from "@/features/search/components/TokenTicker";
+import { useSearchState } from "@/features/search/context/SearchContext";
 
-const SearchQueryResults = lazy(() => import("@/features/search/components/SearchQueryResults"))
+const SearchQueryResults = lazy(
+  () => import("@/features/search/components/SearchQueryResults"),
+);
 
-const QUICK_SEARCHES = ["Shadowmourne", "Chaos Bolt", "Onyxia", "Invincible"]
+const QUICK_SEARCHES = ["Shadowmourne", "Chaos Bolt", "Onyxia", "Invincible"];
 
 const FEATURED_EXPLORERS = [
   {
@@ -30,12 +32,14 @@ const FEATURED_EXPLORERS = [
   },
   {
     label: "Spells",
-    description: "Search live spell records and inspect icons and descriptions.",
+    description:
+      "Search live spell records and inspect icons and descriptions.",
     path: "/category/spells",
   },
   {
     label: "Mounts",
-    description: "Browse featured mounts or search for specific collection targets.",
+    description:
+      "Browse featured mounts or search for specific collection targets.",
     path: "/category/mounts",
   },
   {
@@ -58,29 +62,32 @@ const FEATURED_EXPLORERS = [
     description: "Explore essences, specs, and rank-by-rank powers.",
     path: "/category/azerite-essence",
   },
-]
+];
 
 const HIGHLIGHTS = [
   {
     title: "Focused search",
-    description: "Use the header to search items, spells, mounts, and creatures without extra homepage clutter.",
+    description:
+      "Use the header to search items, spells, mounts, and creatures without extra homepage clutter.",
     icon: SearchRoundedIcon,
   },
   {
     title: "Direct explorers",
-    description: "Jump straight into the Blizzard API families that already have dedicated views.",
+    description:
+      "Jump straight into the Blizzard API families that already have dedicated views.",
     icon: HubRoundedIcon,
   },
   {
     title: "Live economy pulse",
-    description: "Keep the WoW Token market visible without turning the homepage into a dashboard.",
+    description:
+      "Keep the WoW Token market visible without turning the homepage into a dashboard.",
     icon: ShowChartRoundedIcon,
   },
-]
+];
 
 const HomePage = (): JSX.Element => {
-  const navigate = useNavigate()
-  const { query, setQuery } = useSearchState()
+  const navigate = useNavigate();
+  const { query, setQuery } = useSearchState();
 
   return (
     <Stack spacing={{ xs: 5, md: 8 }}>
@@ -103,7 +110,8 @@ const HomePage = (): JSX.Element => {
             width: 260,
             height: 260,
             borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(39, 167, 255, 0.22), transparent 72%)",
+            background:
+              "radial-gradient(circle, rgba(39, 167, 255, 0.22), transparent 72%)",
             pointerEvents: "none",
           },
           "&::after": {
@@ -114,7 +122,8 @@ const HomePage = (): JSX.Element => {
             width: 280,
             height: 280,
             borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(255, 196, 88, 0.18), transparent 70%)",
+            background:
+              "radial-gradient(circle, rgba(255, 196, 88, 0.18), transparent 70%)",
             pointerEvents: "none",
           },
         }}
@@ -146,15 +155,21 @@ const HomePage = (): JSX.Element => {
                     fontSize: { xs: "2.7rem", md: "4.5rem" },
                   }}
                 >
-                  Azeroth&apos;s data, forged into tools worthy of a raid leader.
+                  Azeroth&apos;s data, forged into tools worthy of a raid
+                  leader.
                 </Typography>
                 <Typography
                   variant="body1"
                   color="text.secondary"
-                  sx={{ maxWidth: 620, fontSize: { xs: "1rem", md: "1.05rem" } }}
+                  sx={{
+                    maxWidth: 620,
+                    fontSize: { xs: "1rem", md: "1.05rem" },
+                  }}
                 >
-                  Search fast, jump straight into dedicated explorers, and track live market signals without drowning in raw endpoint noise.
-                  Built for players who want answers quickly, whether they are chasing loot, planning builds, or scouting the economy.
+                  Search fast, jump straight into dedicated explorers, and track
+                  live market signals without drowning in raw endpoint noise.
+                  Built for players who want answers quickly, whether they are
+                  chasing loot, planning builds, or scouting the economy.
                 </Typography>
               </Stack>
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
@@ -195,7 +210,10 @@ const HomePage = (): JSX.Element => {
             </Stack>
           </Grid>
           <Grid item xs={12} md={5}>
-            <Stack spacing={2} sx={{ position: "relative", zIndex: 1, height: "100%" }}>
+            <Stack
+              spacing={2}
+              sx={{ position: "relative", zIndex: 1, height: "100%" }}
+            >
               <Paper
                 variant="outlined"
                 sx={{
@@ -206,11 +224,19 @@ const HomePage = (): JSX.Element => {
                 }}
               >
                 <Stack spacing={2.5}>
-                  <Typography variant="overline" sx={{ color: "#8fd3ff", letterSpacing: "0.16em" }}>
+                  <Typography
+                    variant="overline"
+                    sx={{ color: "#8fd3ff", letterSpacing: "0.16em" }}
+                  >
                     What stays on this page
                   </Typography>
                   {HIGHLIGHTS.map(({ title, description, icon: Icon }) => (
-                    <Stack key={title} direction="row" spacing={1.5} alignItems="flex-start">
+                    <Stack
+                      key={title}
+                      direction="row"
+                      spacing={1.5}
+                      alignItems="flex-start"
+                    >
                       <Box
                         sx={{
                           width: 42,
@@ -227,7 +253,10 @@ const HomePage = (): JSX.Element => {
                         <Icon fontSize="small" />
                       </Box>
                       <Stack spacing={0.5}>
-                        <Typography variant="subtitle1" sx={{ color: "text.primary", fontWeight: 700 }}>
+                        <Typography
+                          variant="subtitle1"
+                          sx={{ color: "text.primary", fontWeight: 700 }}
+                        >
                           {title}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
@@ -252,14 +281,19 @@ const HomePage = (): JSX.Element => {
                   flex: 1,
                 }}
               >
-                <Typography variant="overline" sx={{ color: "secondary.light", letterSpacing: "0.16em" }}>
+                <Typography
+                  variant="overline"
+                  sx={{ color: "secondary.light", letterSpacing: "0.16em" }}
+                >
                   Live entry points
                 </Typography>
                 <Typography variant="h5" sx={{ fontWeight: 700 }}>
                   The custom explorer set keeps growing.
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Items, spells, mounts, realms, auctions, covenants, and essences now have richer custom views before you ever need the raw endpoint workbench.
+                  Items, spells, mounts, realms, auctions, covenants, and
+                  essences now have richer custom views before you ever need the
+                  raw endpoint workbench.
                 </Typography>
               </Paper>
             </Stack>
@@ -284,7 +318,8 @@ const HomePage = (): JSX.Element => {
                 background:
                   "linear-gradient(180deg, rgba(11,17,31,0.94), rgba(8,13,24,0.88))",
                 borderColor: "rgba(39, 167, 255, 0.14)",
-                transition: "transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease",
+                transition:
+                  "transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease",
                 "&:hover": {
                   transform: "translateY(-4px)",
                   borderColor: "rgba(39, 167, 255, 0.3)",
@@ -335,7 +370,8 @@ const HomePage = (): JSX.Element => {
                 Search when you need it
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Use the header search for ad hoc lookups. Results only appear here after you search.
+                Use the header search for ad hoc lookups. Results only appear
+                here after you search.
               </Typography>
             </Stack>
             <Button
@@ -368,7 +404,7 @@ const HomePage = (): JSX.Element => {
         </Stack>
       </Paper>
     </Stack>
-  )
-}
+  );
+};
 
-export default HomePage
+export default HomePage;
