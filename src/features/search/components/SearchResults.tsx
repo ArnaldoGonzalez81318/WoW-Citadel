@@ -1,13 +1,13 @@
-import AutoFixHighRoundedIcon from "@mui/icons-material/AutoFixHighRounded"
-import { Box, Paper, Stack, Typography } from "@mui/material"
-import SearchResultSection from "@/features/search/components/SearchResultSection"
-import { CategoryQueryState, SearchCategoryId } from "@/features/search/types"
+import AutoFixHighRoundedIcon from "@mui/icons-material/AutoFixHighRounded";
+import { Box, Paper, Stack, Typography } from "@mui/material";
+import SearchResultSection from "@/features/search/components/SearchResultSection";
+import { CategoryQueryState, SearchCategoryId } from "@/features/search/types";
 
 interface SearchResultsProps {
-  query: string
-  categoryStates: CategoryQueryState[]
-  hasAnyResults: boolean
-  compact?: boolean
+  query: string;
+  categoryStates: CategoryQueryState[];
+  hasAnyResults: boolean;
+  compact?: boolean;
 }
 
 const ACCENT_COLORS: Record<SearchCategoryId, string> = {
@@ -15,7 +15,7 @@ const ACCENT_COLORS: Record<SearchCategoryId, string> = {
   spells: "#a78bfa",
   mounts: "#6ee7b7",
   creatures: "#f87171",
-}
+};
 
 const SearchResults = ({
   query,
@@ -23,8 +23,8 @@ const SearchResults = ({
   hasAnyResults,
   compact = false,
 }: SearchResultsProps): JSX.Element => {
-  const containerMarginTop = compact ? 0 : 8
-  const resultsMarginTop = compact ? 0 : 10
+  const containerMarginTop = compact ? 0 : 8;
+  const resultsMarginTop = compact ? 0 : 10;
 
   if (!query) {
     return (
@@ -44,11 +44,14 @@ const SearchResults = ({
             Begin your search from the header
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Use the search field in the site header to look up legendary weapons like <strong>Shadowmourne</strong>, iconic spells such as <strong>Chaos Bolt</strong>, creatures like <strong>Onyxia</strong>, or mounts including <strong>Invincible</strong>.
+            Use the search field in the site header to look up legendary weapons
+            like <strong>Shadowmourne</strong>, iconic spells such as{" "}
+            <strong>Chaos Bolt</strong>, creatures like <strong>Onyxia</strong>,
+            or mounts including <strong>Invincible</strong>.
           </Typography>
         </Stack>
       </Paper>
-    )
+    );
   }
 
   if (!hasAnyResults) {
@@ -66,10 +69,11 @@ const SearchResults = ({
           No matches discovered
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Double check spelling, try a specific expansion keyword, or search another category of game data.
+          Double check spelling, try a specific expansion keyword, or search
+          another category of game data.
         </Typography>
       </Paper>
-    )
+    );
   }
 
   return (
@@ -83,7 +87,7 @@ const SearchResults = ({
         </Box>
       ))}
     </Stack>
-  )
-}
+  );
+};
 
-export default SearchResults
+export default SearchResults;
