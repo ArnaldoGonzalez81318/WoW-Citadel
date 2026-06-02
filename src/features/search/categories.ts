@@ -1,14 +1,14 @@
-import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded"
-import FlightRoundedIcon from "@mui/icons-material/FlightRounded"
-import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded"
-import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded"
-import { SearchCategory } from "@/features/search/types"
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import FlightRoundedIcon from "@mui/icons-material/FlightRounded";
+import GroupsRoundedIcon from "@mui/icons-material/GroupsRounded";
+import Inventory2RoundedIcon from "@mui/icons-material/Inventory2Rounded";
+import { SearchCategory } from "@/features/search/types";
 import {
   searchCreatures,
   searchItems,
   searchMounts,
   searchSpells,
-} from "@/features/search/services/searchService"
+} from "@/features/search/services/searchService";
 
 export const SEARCH_CATEGORIES: SearchCategory[] = [
   {
@@ -30,7 +30,8 @@ export const SEARCH_CATEGORIES: SearchCategory[] = [
   {
     id: "mounts",
     label: "Mounts",
-    description: "Discover ground, flying, and special mounts with their sources",
+    description:
+      "Discover ground, flying, and special mounts with their sources",
     icon: FlightRoundedIcon,
     fetcher: searchMounts,
     minQueryLength: 2,
@@ -43,4 +44,4 @@ export const SEARCH_CATEGORIES: SearchCategory[] = [
     fetcher: searchCreatures,
     minQueryLength: 2,
   },
-]
+];
