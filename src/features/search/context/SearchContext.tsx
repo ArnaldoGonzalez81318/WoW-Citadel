@@ -1,36 +1,47 @@
-import { createContext, PropsWithChildren, useCallback, useContext, useMemo, useState } from "react"
+import {
+  createContext,
+  PropsWithChildren,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
 
 interface SearchState {
-  query: string
-  setQuery: (value: string) => void
+  query: string;
+  setQuery: (value: string) => void;
 }
 
-const SearchContext = createContext<SearchState | undefined>(undefined)
+const SearchContext = createContext<SearchState | undefined>(undefined);
 
-export const SearchProvider = ({ children }: PropsWithChildren): JSX.Element => {
-  const [query, setQueryState] = useState<string>("")
+export const SearchProvider = ({
+  children,
+}: PropsWithChildren): JSX.Element => {
+  const [query, setQueryState] = useState<string>("");
 
   const setQuery = useCallback((value: string) => {
-    setQueryState(value)
-  }, [])
+    setQueryState(value);
+  }, []);
 
   const value = useMemo(
     () => ({
       query,
       setQuery,
     }),
-    [query, setQuery]
-  )
+    [query, setQuery],
+  );
 
-  return <SearchContext.Provider value={value}>{children}</SearchContext.Provider>
-}
+  return (
+    <SearchContext.Provider value={value}>{children}</SearchContext.Provider>
+  );
+};
 
 export const useSearchState = (): SearchState => {
-  const context = useContext(SearchContext)
+  const context = useContext(SearchContext);
 
   if (!context) {
-    throw new Error("useSearchState must be used within a SearchProvider")
+    throw new Error("useSearchState must be used within a SearchProvider");
   }
 
-  return context
-}
+  return context;
+};
