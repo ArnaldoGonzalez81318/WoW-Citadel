@@ -1,27 +1,38 @@
-import { Stack } from "@mui/material"
-import { useEffect, useRef } from "react"
-import SearchResults from "@/features/search/components/SearchResults"
-import { useBlizzardSearch } from "@/features/search/hooks/useBlizzardSearch"
+import { Stack } from "@mui/material";
+import { useEffect, useRef } from "react";
+import SearchResults from "@/features/search/components/SearchResults";
+import { useBlizzardSearch } from "@/features/search/hooks/useBlizzardSearch";
 
 interface SearchQueryResultsProps {
-  query: string
-  compact?: boolean
-  autoScroll?: boolean
+  query: string;
+  compact?: boolean;
+  autoScroll?: boolean;
 }
 
-const SearchQueryResults = ({ query, compact = false, autoScroll = false }: SearchQueryResultsProps): JSX.Element => {
-  const { query: activeQuery, categoryStates, hasAnyResults } = useBlizzardSearch(query)
-  const resultsRef = useRef<HTMLDivElement | null>(null)
+const SearchQueryResults = ({
+  query,
+  compact = false,
+  autoScroll = false,
+}: SearchQueryResultsProps): JSX.Element => {
+  const {
+    query: activeQuery,
+    categoryStates,
+    hasAnyResults,
+  } = useBlizzardSearch(query);
+  const resultsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!autoScroll || !activeQuery || !resultsRef.current) {
-      return
+      return;
     }
 
     window.requestAnimationFrame(() => {
-      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
-    })
-  }, [activeQuery, autoScroll])
+      resultsRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, [activeQuery, autoScroll]);
 
   return (
     <Stack ref={resultsRef} spacing={0}>
@@ -32,7 +43,7 @@ const SearchQueryResults = ({ query, compact = false, autoScroll = false }: Sear
         compact={compact}
       />
     </Stack>
-  )
-}
+  );
+};
 
-export default SearchQueryResults
+export default SearchQueryResults;
