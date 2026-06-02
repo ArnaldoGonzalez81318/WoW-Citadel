@@ -1,20 +1,20 @@
-import ClearRoundedIcon from "@mui/icons-material/ClearRounded"
-import SearchRoundedIcon from "@mui/icons-material/SearchRounded"
+import ClearRoundedIcon from "@mui/icons-material/ClearRounded";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import {
   IconButton,
   InputAdornment,
   TextField,
   TextFieldProps,
-} from "@mui/material"
-import type { ChangeEvent } from "react"
+} from "@mui/material";
+import type { ChangeEvent } from "react";
 
 interface SearchInputProps {
-  value: string
-  onChange: (value: string) => void
-  onClear?: () => void
-  placeholder?: string
-  autoFocus?: boolean
-  textFieldProps?: Partial<TextFieldProps>
+  value: string;
+  onChange: (value: string) => void;
+  onClear?: () => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  textFieldProps?: Partial<TextFieldProps>;
 }
 
 const SearchInput = ({
@@ -30,8 +30,14 @@ const SearchInput = ({
     value={value}
     autoFocus={autoFocus}
     placeholder={placeholder}
-    onChange={(event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value)}
+    onChange={(event: ChangeEvent<HTMLInputElement>) =>
+      onChange(event.target.value)
+    }
     variant="outlined"
+    id="search-input"
+    name="search"
+    label="Search"
+    slotProps={{ inputLabel: { shrink: true, sx: { display: "none" } } }}
     InputProps={{
       startAdornment: (
         <InputAdornment position="start">
@@ -61,6 +67,6 @@ const SearchInput = ({
     }}
     {...textFieldProps}
   />
-)
+);
 
-export default SearchInput
+export default SearchInput;
