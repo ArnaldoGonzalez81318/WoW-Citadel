@@ -1,12 +1,12 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef } from "react";
 
 type UseInfiniteScrollTriggerOptions = {
-  enabled?: boolean
-  hasMore?: boolean
-  isLoading?: boolean
-  onLoadMore: () => void
-  rootMargin?: string
-}
+  enabled?: boolean;
+  hasMore?: boolean;
+  isLoading?: boolean;
+  onLoadMore: () => void;
+  rootMargin?: string;
+};
 
 const useInfiniteScrollTrigger = ({
   enabled = true,
@@ -15,53 +15,53 @@ const useInfiniteScrollTrigger = ({
   onLoadMore,
   rootMargin = "900px 0px",
 }: UseInfiniteScrollTriggerOptions): React.RefObject<HTMLDivElement> => {
-  const sentinelRef = useRef<HTMLDivElement>(null)
-  const wasIntersectingRef = useRef(false)
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const wasIntersectingRef = useRef(false);
 
   useEffect(() => {
-    wasIntersectingRef.current = false
+    wasIntersectingRef.current = false;
 
     if (!enabled || !hasMore || isLoading) {
-      return
+      return;
     }
 
-    const node = sentinelRef.current
+    const node = sentinelRef.current;
 
     if (!node || typeof IntersectionObserver === "undefined") {
-      return
+      return;
     }
 
     const observer = new IntersectionObserver(
       (entries) => {
-        const [entry] = entries
-        const isIntersecting = Boolean(entry?.isIntersecting)
+        const [entry] = entries;
+        const isIntersecting = Boolean(entry?.isIntersecting);
 
         if (!isIntersecting) {
-          wasIntersectingRef.current = false
-          return
+          wasIntersectingRef.current = false;
+          return;
         }
 
         if (wasIntersectingRef.current) {
-          return
+          return;
         }
 
-        wasIntersectingRef.current = true
-        onLoadMore()
+        wasIntersectingRef.current = true;
+        onLoadMore();
       },
       {
         rootMargin,
         threshold: 0.01,
-      }
-    )
+      },
+    );
 
-    observer.observe(node)
+    observer.observe(node);
 
     return () => {
-      observer.disconnect()
-    }
-  }, [enabled, hasMore, isLoading, onLoadMore, rootMargin])
+      observer.disconnect();
+    };
+  }, [enabled, hasMore, isLoading, onLoadMore, rootMargin]);
 
-  return sentinelRef
-}
+  return sentinelRef;
+};
 
-export default useInfiniteScrollTrigger
+export default useInfiniteScrollTrigger;
