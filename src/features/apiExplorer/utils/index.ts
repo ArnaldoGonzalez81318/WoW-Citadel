@@ -1,197 +1,223 @@
-import { ApiNamespaceKind } from "@/features/apiExplorer/types"
-import { env } from "@/lib/env"
+import { ApiNamespaceKind } from "@/features/apiExplorer/types";
+import { env } from "@/lib/env";
 
-export const resolveNamespace = (kind: ApiNamespaceKind): string | undefined => {
+export const resolveNamespace = (
+  kind: ApiNamespaceKind,
+): string | undefined => {
   if (kind === "static") {
-    return `static-${env.region}`
+    return `static-${env.region}`;
   }
 
   if (kind === "dynamic") {
-    return `dynamic-${env.region}`
+    return `dynamic-${env.region}`;
   }
 
-  return undefined
-}
+  return undefined;
+};
 
-export const resolveParameterKey = (key: string): string => key.replace("{locale}", env.locale)
+export const resolveParameterKey = (key: string): string =>
+  key.replace("{locale}", env.locale);
 
 export const resolveLocalizedString = (value: unknown): string => {
   if (typeof value === "string") {
-    return value
+    return value;
   }
 
   if (!value || typeof value !== "object") {
-    return ""
+    return "";
   }
 
-  const localized = value as Record<string, unknown>
+  const localized = value as Record<string, unknown>;
 
-  const directMatch = localized[env.locale]
+  const directMatch = localized[env.locale];
   if (typeof directMatch === "string") {
-    return directMatch
+    return directMatch;
   }
 
-  const englishMatch = localized.en_US
+  const englishMatch = localized.en_US;
   if (typeof englishMatch === "string") {
-    return englishMatch
+    return englishMatch;
   }
 
-  const fallback = Object.values(localized).find((entry) => typeof entry === "string")
-  return typeof fallback === "string" ? fallback : ""
-}
+  const fallback = Object.values(localized).find(
+    (entry) => typeof entry === "string",
+  );
+  return typeof fallback === "string" ? fallback : "";
+};
 
 export const summarizeEntry = (entry: unknown): string => {
   if (typeof entry === "string") {
-    return entry
+    return entry;
   }
 
   if (!entry || typeof entry !== "object") {
-    return "Unknown entry"
+    return "Unknown entry";
   }
 
-  const record = entry as Record<string, unknown>
+  const record = entry as Record<string, unknown>;
   const labelCandidates = [
     resolveLocalizedString(record.name),
     resolveLocalizedString(record.label),
     resolveLocalizedString(record.title),
     typeof record.slug === "string" ? record.slug : "",
-    typeof record.id === "number" || typeof record.id === "string" ? `ID ${record.id}` : "",
-  ]
+    typeof record.id === "number" || typeof record.id === "string"
+      ? `ID ${record.id}`
+      : "",
+  ];
 
-  return labelCandidates.find((candidate) => candidate.length > 0) ?? "Unknown entry"
-}
+  return (
+    labelCandidates.find((candidate) => candidate.length > 0) ?? "Unknown entry"
+  );
+};
 
 export const extractPreviewItems = (data: unknown): string[] => {
   if (!data || typeof data !== "object") {
-    return []
+    return [];
   }
 
-  const record = data as Record<string, unknown>
+  const record = data as Record<string, unknown>;
 
   const results = Array.isArray(record.results)
     ? record.results.map((entry) => {
-      if (entry && typeof entry === "object" && "data" in entry) {
-        return summarizeEntry((entry as { data: unknown }).data)
-      }
+        if (entry && typeof entry === "object" && "data" in entry) {
+          return summarizeEntry((entry as { data: unknown }).data);
+        }
 
-      return summarizeEntry(entry)
-    })
-    : []
+        return summarizeEntry(entry);
+      })
+    : [];
 
   if (results.length > 0) {
-    return results.slice(0, 8)
+    return results.slice(0, 8);
   }
 
-  const arrayEntry = Object.values(record).find((value) => Array.isArray(value))
+  const arrayEntry = Object.values(record).find((value) =>
+    Array.isArray(value),
+  );
   if (Array.isArray(arrayEntry)) {
-    return arrayEntry.map((entry) => summarizeEntry(entry)).slice(0, 8)
+    return arrayEntry.map((entry) => summarizeEntry(entry)).slice(0, 8);
   }
 
-  return []
-}
+  return [];
+};
 
-export const extractMediaAssets = (data: unknown): Array<{ key: string; value: string }> => {
+export const extractMediaAssets = (
+  data: unknown,
+): Array<{ key: string; value: string }> => {
   if (!data || typeof data !== "object") {
-    return []
+    return [];
   }
 
-  const record = data as Record<string, unknown>
+  const record = data as Record<string, unknown>;
   if (!Array.isArray(record.assets)) {
-    return []
+    return [];
   }
 
   return record.assets
     .map((asset) => {
       if (!asset || typeof asset !== "object") {
-        return undefined
+        return undefined;
       }
 
-      const candidate = asset as Record<string, unknown>
-      return typeof candidate.key === "string" && typeof candidate.value === "string"
+      const candidate = asset as Record<string, unknown>;
+      return typeof candidate.key === "string" &&
+        typeof candidate.value === "string"
         ? { key: candidate.key, value: candidate.value }
-        : undefined
+        : undefined;
     })
-    .filter((entry): entry is { key: string; value: string } => Boolean(entry))
-}
+    .filter((entry): entry is { key: string; value: string } => Boolean(entry));
+};
 
-export const buildPath = (template: string, values: Record<string, string>): string =>
-  template.replace(/\{(\w+)\}/g, (_match, key: string) => encodeURIComponent(values[key] ?? ""))
+export const buildPath = (
+  template: string,
+  values: Record<string, string>,
+): string =>
+  template.replace(/\{(\w+)\}/g, (_match, key: string) =>
+    encodeURIComponent(values[key] ?? ""),
+  );
 
-const trimPath = (value: string): string => value.replace(/\/+$/, "") || "/"
+const trimPath = (value: string): string => value.replace(/\/+$/, "") || "/";
 
 const parseCandidatePathname = (value: string): string | null => {
   try {
-    return trimPath(new URL(value).pathname)
+    return trimPath(new URL(value).pathname);
   } catch {
     if (!value.startsWith("/")) {
-      return null
+      return null;
     }
 
-    return trimPath(value.split("?")[0] ?? value)
+    return trimPath(value.split("?")[0] ?? value);
   }
-}
+};
 
 export const matchPathTemplate = (
   template: string,
-  candidate: string
+  candidate: string,
 ): Record<string, string> | null => {
-  const pathname = parseCandidatePathname(candidate)
+  const pathname = parseCandidatePathname(candidate);
 
   if (!pathname) {
-    return null
+    return null;
   }
 
-  const templateSegments = trimPath(template).split("/").filter(Boolean)
-  const pathSegments = pathname.split("/").filter(Boolean)
+  const templateSegments = trimPath(template).split("/").filter(Boolean);
+  const pathSegments = pathname.split("/").filter(Boolean);
 
   if (templateSegments.length !== pathSegments.length) {
-    return null
+    return null;
   }
 
-  const values: Record<string, string> = {}
+  const values: Record<string, string> = {};
 
   for (let index = 0; index < templateSegments.length; index += 1) {
-    const templateSegment = templateSegments[index]
-    const pathSegment = pathSegments[index]
-    const match = /^\{(\w+)\}$/.exec(templateSegment)
+    const templateSegment = templateSegments[index];
+    const pathSegment = pathSegments[index];
+    const match = /^\{(\w+)\}$/.exec(templateSegment);
 
     if (match) {
-      values[match[1]] = decodeURIComponent(pathSegment)
-      continue
+      values[match[1]] = decodeURIComponent(pathSegment);
+      continue;
     }
 
     if (templateSegment !== pathSegment) {
-      return null
+      return null;
     }
   }
 
-  return values
-}
+  return values;
+};
 
-export const collectUrlStrings = (value: unknown, bag = new Set<string>()): string[] => {
+export const collectUrlStrings = (
+  value: unknown,
+  bag = new Set<string>(),
+): string[] => {
   if (typeof value === "string") {
-    if (value.startsWith("http://") || value.startsWith("https://") || value.startsWith("/data/wow/")) {
-      bag.add(value)
+    if (
+      value.startsWith("http://") ||
+      value.startsWith("https://") ||
+      value.startsWith("/data/wow/")
+    ) {
+      bag.add(value);
     }
 
-    return Array.from(bag)
+    return Array.from(bag);
   }
 
   if (Array.isArray(value)) {
     value.forEach((entry) => {
-      collectUrlStrings(entry, bag)
-    })
+      collectUrlStrings(entry, bag);
+    });
 
-    return Array.from(bag)
+    return Array.from(bag);
   }
 
   if (!value || typeof value !== "object") {
-    return Array.from(bag)
+    return Array.from(bag);
   }
 
   Object.values(value as Record<string, unknown>).forEach((entry) => {
-    collectUrlStrings(entry, bag)
-  })
+    collectUrlStrings(entry, bag);
+  });
 
-  return Array.from(bag)
-}
+  return Array.from(bag);
+};
