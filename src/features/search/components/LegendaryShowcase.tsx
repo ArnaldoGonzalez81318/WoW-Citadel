@@ -1,12 +1,22 @@
-import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded"
-import { Box, Card, CardActionArea, CardContent, Chip, Grid, Stack, Typography } from "@mui/material"
+import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
+import {
+  Box,
+  Card,
+  CardActionArea,
+  CardContent,
+  Chip,
+  Grid,
+  Stack,
+  Typography,
+} from "@mui/material";
 
 const LEGENDARIES = [
   {
     id: "fyralath",
     name: "Fyr'alath, the Dream Render",
     tagline: "Empower your swings with draconic shadowflame.",
-    image: "https://render-us.worldofwarcraft.com/icons/128/inv_axe_2h_drakonorlegendary_d_01.jpg",
+    image:
+      "https://render-us.worldofwarcraft.com/icons/128/inv_axe_2h_drakonorlegendary_d_01.jpg",
     accent: "rgba(239, 68, 68, 0.3)",
     query: "Fyr'alath",
   },
@@ -14,7 +24,8 @@ const LEGENDARIES = [
     id: "warglaives",
     name: "Warglaives of Azzinoth",
     tagline: "Illidan's iconic blades—a rite of passage for demon hunters.",
-    image: "https://render-us.worldofwarcraft.com/icons/128/inv_weapon_glaves_01.jpg",
+    image:
+      "https://render-us.worldofwarcraft.com/icons/128/inv_weapon_glaves_01.jpg",
     accent: "rgba(59, 130, 246, 0.28)",
     query: "Warglaive of Azzinoth",
   },
@@ -34,13 +45,15 @@ const LEGENDARIES = [
     accent: "rgba(16, 185, 129, 0.28)",
     query: "Thunderfury",
   },
-]
+];
 
 interface LegendaryShowcaseProps {
-  onSelect: (query: string) => void
+  onSelect: (query: string) => void;
 }
 
-const LegendaryShowcase = ({ onSelect }: LegendaryShowcaseProps): JSX.Element => (
+const LegendaryShowcase = ({
+  onSelect,
+}: LegendaryShowcaseProps): JSX.Element => (
   <Stack spacing={4} id="category-legendary">
     <Stack spacing={1.5}>
       <Chip
@@ -57,7 +70,9 @@ const LegendaryShowcase = ({ onSelect }: LegendaryShowcaseProps): JSX.Element =>
         Iconic armaments that shaped Azeroth
       </Typography>
       <Typography variant="body1" color="text.secondary">
-        Dive into the story, source, and modern relevance of Warcraft&apos;s most coveted legendary items. Tap a card to prime the search with its name.
+        Dive into the story, source, and modern relevance of Warcraft&apos;s
+        most coveted legendary items. Tap a card to prime the search with its
+        name.
       </Typography>
     </Stack>
     <Grid container spacing={3}>
@@ -73,7 +88,10 @@ const LegendaryShowcase = ({ onSelect }: LegendaryShowcaseProps): JSX.Element =>
               border: "1px solid rgba(30, 155, 233, 0.18)",
             }}
           >
-            <CardActionArea onClick={() => onSelect(legendary.query)} sx={{ height: "100%" }}>
+            <CardActionArea
+              onClick={() => onSelect(legendary.query)}
+              sx={{ height: "100%" }}
+            >
               <Box
                 sx={{
                   position: "absolute",
@@ -85,7 +103,15 @@ const LegendaryShowcase = ({ onSelect }: LegendaryShowcaseProps): JSX.Element =>
                   filter: "blur(52px)",
                 }}
               />
-              <CardContent sx={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+              <CardContent
+                sx={{
+                  position: "relative",
+                  zIndex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                }}
+              >
                 <Box
                   component="img"
                   src={legendary.image}
@@ -108,8 +134,19 @@ const LegendaryShowcase = ({ onSelect }: LegendaryShowcaseProps): JSX.Element =>
                     {legendary.tagline}
                   </Typography>
                 </Stack>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: "auto" }}>
-                  <Typography variant="button" color="primary.light" sx={{ letterSpacing: "0.08em" }}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    mt: "auto",
+                  }}
+                >
+                  <Typography
+                    variant="button"
+                    color="primary.light"
+                    sx={{ letterSpacing: "0.08em" }}
+                  >
                     Queue search
                   </Typography>
                   <LaunchRoundedIcon fontSize="small" color="primary" />
@@ -121,6 +158,6 @@ const LegendaryShowcase = ({ onSelect }: LegendaryShowcaseProps): JSX.Element =>
       ))}
     </Grid>
   </Stack>
-)
+);
 
-export default LegendaryShowcase
+export default LegendaryShowcase;
