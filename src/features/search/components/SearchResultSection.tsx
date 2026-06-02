@@ -1,36 +1,91 @@
-import ReportProblemRoundedIcon from "@mui/icons-material/ReportProblemRounded"
-import { useMemo } from "react"
-import { Alert, Grid, Skeleton, Stack, Typography } from "@mui/material"
-import ResultCard from "@/components/common/ResultCard"
-import { CategoryQueryState } from "@/features/search/types"
-import { BlizzardRequestError } from "@/lib/blizzardClient"
+import ReportProblemRoundedIcon from "@mui/icons-material/ReportProblemRounded";
+import { useMemo } from "react";
+import { Alert, Grid, Skeleton, Stack, Typography } from "@mui/material";
+import { useQueries } from "@tanstack/react-query";
+import ResultCard from "@/components/common/ResultCard";
+import { CategoryQueryState } from "@/features/search/types";
+import { BlizzardRequestError, blizzardClient } from "@/lib/blizzardClient";
+import { env } from "@/lib/env";
 
 interface SearchResultSectionProps {
-  state: CategoryQueryState
-  accentColor: string
+  state: CategoryQueryState;
+  accentColor: string;
 }
 
-const SearchResultSection = ({ state, accentColor }: SearchResultSectionProps): JSX.Element => {
-  const { category, isLoading, isError, data, error } = state
-  const Icon = category.icon
+const SearchResultSection = ({
+  state,
+  accentColor,
+}: SearchResultSectionProps): JSX.Element => {
+  const { category, isLoading, isError, data, error } = state;
+  const Icon = category.icon;
+
+  const mediaTargets = useMemo(
+    () => (data ?? []).filter((r) => r.mediaRequestPath && !r.mediaUrl),
+    [data],
+  );
+
+  const mediaQueries = useQueries({
+    queries: mediaTargets.map((r) => ({
+      queryKey: [
+        "search-result-media",
+        r.mediaRequestPath,
+        r.mediaRequestNamespace,
+        env.region,
+      ],
+      queryFn: async () => {
+        try {
+          const res = await blizzardClient.get<{
+            assets?: Array<{ key?: string; value?: string }>;
+          }>(r.mediaRequestPath!, { namespace: r.mediaRequestNamespace });
+          return {
+            id: r.id,
+            url:
+              res.assets?.find((a) => a.key === "icon")?.value ??
+              res.assets?.[0]?.value,
+          };
+        } catch {
+          return { id: r.id, url: undefined };
+        }
+      },
+      retry: false,
+      staleTime: 300_000,
+    })),
+  });
+
+  const mediaUrlById = useMemo(() => {
+    const map = new Map<number, string | undefined>();
+    mediaQueries.forEach((q) => {
+      if (q.data) map.set(q.data.id, q.data.url);
+    });
+    return map;
+  }, [mediaQueries]);
+
+  const enrichedData = useMemo(
+    () =>
+      (data ?? []).map((r) => ({
+        ...r,
+        mediaUrl: r.mediaUrl ?? mediaUrlById.get(r.id),
+      })),
+    [data, mediaUrlById],
+  );
 
   const friendlyError = useMemo(() => {
     if (!error) {
-      return undefined
+      return undefined;
     }
 
     if (error instanceof BlizzardRequestError) {
       if (error.status === 401 || error.status === 403) {
-        return "We couldn’t authenticate with Blizzard’s API. Update your Blizzard credentials in the .env file and refresh."
+        return "We couldn’t authenticate with Blizzard’s API. Update your Blizzard credentials in the .env file and refresh.";
       }
 
       if (error.status === 429) {
-        return "The Blizzard API rate limit has been reached. Please wait a few minutes and try again."
+        return "The Blizzard API rate limit has been reached. Please wait a few minutes and try again.";
       }
     }
 
-    return error.message
-  }, [error])
+    return error.message;
+  }, [error]);
 
   return (
     <Stack spacing={3}>
@@ -81,7 +136,7 @@ const SearchResultSection = ({ state, accentColor }: SearchResultSectionProps): 
 
       {!isLoading && !isError && data && data.length > 0 ? (
         <Grid container spacing={3}>
-          {data.map((result) => (
+          {enrichedData.map((result) => (
             <Grid item xs={12} md={6} lg={4} key={result.id}>
               <ResultCard result={result} accentColor={accentColor} />
             </Grid>
@@ -89,7 +144,7 @@ const SearchResultSection = ({ state, accentColor }: SearchResultSectionProps): 
         </Grid>
       ) : null}
     </Stack>
-  )
-}
+  );
+};
 
-export default SearchResultSection
+export default SearchResultSection;
