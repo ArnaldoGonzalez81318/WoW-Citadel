@@ -1,33 +1,33 @@
 export type LinkReference = {
-  href: string
-}
+  href: string;
+};
 
-export type LocalizedString = string | { [locale: string]: string | undefined }
+export type LocalizedString = string | { [locale: string]: string | undefined };
 
 export type MountSummary = {
-  id: number
-  name: string
-  href: string
-  description?: string
-  source?: string
-  displayId?: number
-}
+  id: number;
+  name: string;
+  href: string;
+  description?: string;
+  source?: string;
+  displayId?: number;
+};
 
 export type MountIndexEntry = {
-  id: number
-  name: string
-  key: LinkReference
-}
+  id: number;
+  name: string;
+  key: LinkReference;
+};
 
 export type MountIndexResponse = {
-  mounts: MountIndexEntry[]
-}
+  mounts: MountIndexEntry[];
+};
 
 export type MountDetail = {
-  id: number
-  name: string
-  description: string
-  source?: string
-  href: string
-  displayId?: number
-}
+  id: number;
+  name: string;
+  description: string;
+  source?: string;
+  href: string;
+  displayId?: number;
+};
