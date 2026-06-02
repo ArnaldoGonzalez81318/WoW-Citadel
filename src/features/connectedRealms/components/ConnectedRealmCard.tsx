@@ -1,15 +1,24 @@
-import CloudQueueRoundedIcon from "@mui/icons-material/CloudQueueRounded"
-import PublicRoundedIcon from "@mui/icons-material/PublicRounded"
-import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded"
-import SensorsRoundedIcon from "@mui/icons-material/SensorsRounded"
-import { Card, CardContent, Chip, Divider, Stack, Typography } from "@mui/material"
-import type { ConnectedRealmSnapshot } from "@/features/connectedRealms/services/connectedRealmService"
+import CloudQueueRoundedIcon from "@mui/icons-material/CloudQueueRounded";
+import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
+import ScheduleRoundedIcon from "@mui/icons-material/ScheduleRounded";
+import SensorsRoundedIcon from "@mui/icons-material/SensorsRounded";
+import {
+  Card,
+  CardContent,
+  Chip,
+  Divider,
+  Stack,
+  Typography,
+} from "@mui/material";
+import type { ConnectedRealmSnapshot } from "@/features/connectedRealms/services/connectedRealmService";
 
 interface ConnectedRealmCardProps {
-  snapshot: ConnectedRealmSnapshot
+  snapshot: ConnectedRealmSnapshot;
 }
 
-const ConnectedRealmCard = ({ snapshot }: ConnectedRealmCardProps): JSX.Element => {
+const ConnectedRealmCard = ({
+  snapshot,
+}: ConnectedRealmCardProps): JSX.Element => {
   const {
     displayName,
     realmSlugs,
@@ -18,7 +27,7 @@ const ConnectedRealmCard = ({ snapshot }: ConnectedRealmCardProps): JSX.Element 
     statusLabel,
     populationLabel,
     has_queue: hasQueue,
-  } = snapshot
+  } = snapshot;
 
   return (
     <Card
@@ -27,7 +36,8 @@ const ConnectedRealmCard = ({ snapshot }: ConnectedRealmCardProps): JSX.Element 
         height: "100%",
         borderRadius: 3,
         borderColor: "rgba(30, 155, 233, 0.16)",
-        background: "linear-gradient(160deg, rgba(12,18,34,0.78) 0%, rgba(12,18,34,0.92) 35%)",
+        background:
+          "linear-gradient(160deg, rgba(12,18,34,0.78) 0%, rgba(12,18,34,0.92) 35%)",
         display: "flex",
         flexDirection: "column",
       }}
@@ -93,12 +103,14 @@ const ConnectedRealmCard = ({ snapshot }: ConnectedRealmCardProps): JSX.Element 
             Member Realms
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {snapshot.realmDetails.map((realm) => realm.name || realm.slug).join(", ")}
+            {snapshot.realmDetails
+              .map((realm) => realm.name || realm.slug)
+              .join(", ")}
           </Typography>
         </Stack>
       </CardContent>
     </Card>
-  )
-}
+  );
+};
 
-export default ConnectedRealmCard
+export default ConnectedRealmCard;
