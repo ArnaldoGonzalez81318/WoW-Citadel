@@ -1,4 +1,4 @@
-import { createTheme } from "@mui/material/styles"
+import { createTheme } from "@mui/material/styles";
 
 const theme = createTheme({
   palette: {
@@ -69,12 +69,14 @@ const theme = createTheme({
           background: "rgba(10, 16, 32, 0.88)",
         },
         "*::-webkit-scrollbar-thumb": {
-          background: "linear-gradient(180deg, rgba(30, 155, 233, 0.82), rgba(245, 192, 69, 0.72))",
+          background:
+            "linear-gradient(180deg, rgba(30, 155, 233, 0.82), rgba(245, 192, 69, 0.72))",
           borderRadius: "999px",
           border: "2px solid rgba(10, 16, 32, 0.88)",
         },
         "*::-webkit-scrollbar-thumb:hover": {
-          background: "linear-gradient(180deg, rgba(76, 183, 255, 0.96), rgba(245, 192, 69, 0.88))",
+          background:
+            "linear-gradient(180deg, rgba(76, 183, 255, 0.96), rgba(245, 192, 69, 0.88))",
         },
         "*::-webkit-scrollbar-corner": {
           background: "rgba(10, 16, 32, 0.88)",
@@ -138,6 +140,6 @@ const theme = createTheme({
       },
     },
   },
-})
+});
 
-export default theme
+export default theme;
