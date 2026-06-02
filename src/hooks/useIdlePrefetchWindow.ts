@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState } from "react";
 
 type UseIdlePrefetchWindowOptions = {
-  totalCount: number
-  initialCount?: number
-  batchSize?: number
-  resetKey?: string
-}
+  totalCount: number;
+  initialCount?: number;
+  batchSize?: number;
+  resetKey?: string;
+};
 
 const useIdlePrefetchWindow = ({
   totalCount,
@@ -13,49 +13,51 @@ const useIdlePrefetchWindow = ({
   batchSize = 6,
   resetKey = "",
 }: UseIdlePrefetchWindowOptions): number => {
-  const [activeCount, setActiveCount] = useState(() => Math.min(totalCount, initialCount))
+  const [activeCount, setActiveCount] = useState(() =>
+    Math.min(totalCount, initialCount),
+  );
 
   useEffect(() => {
-    setActiveCount(Math.min(totalCount, initialCount))
-  }, [initialCount, resetKey, totalCount])
+    setActiveCount(Math.min(totalCount, initialCount));
+  }, [initialCount, resetKey, totalCount]);
 
   useEffect(() => {
     if (activeCount >= totalCount) {
-      return
+      return;
     }
 
-    let timeoutId: ReturnType<typeof setTimeout> | undefined
-    let idleId: number | undefined
-    let cancelled = false
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let idleId: number | undefined;
+    let cancelled = false;
 
     const expandWindow = () => {
       if (cancelled) {
-        return
+        return;
       }
 
-      setActiveCount((current) => Math.min(totalCount, current + batchSize))
-    }
+      setActiveCount((current) => Math.min(totalCount, current + batchSize));
+    };
 
     if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-      idleId = window.requestIdleCallback(expandWindow, { timeout: 450 })
+      idleId = window.requestIdleCallback(expandWindow, { timeout: 450 });
     } else if (typeof globalThis !== "undefined") {
-      timeoutId = globalThis.setTimeout(expandWindow, 150)
+      timeoutId = globalThis.setTimeout(expandWindow, 150);
     }
 
     return () => {
-      cancelled = true
+      cancelled = true;
 
       if (typeof idleId === "number" && "cancelIdleCallback" in window) {
-        window.cancelIdleCallback(idleId)
+        window.cancelIdleCallback(idleId);
       }
 
       if (timeoutId !== undefined) {
-        globalThis.clearTimeout(timeoutId)
+        globalThis.clearTimeout(timeoutId);
       }
-    }
-  }, [activeCount, batchSize, totalCount])
+    };
+  }, [activeCount, batchSize, totalCount]);
 
-  return activeCount
-}
+  return activeCount;
+};
 
-export default useIdlePrefetchWindow
+export default useIdlePrefetchWindow;
