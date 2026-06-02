@@ -1,78 +1,86 @@
-import AutorenewRoundedIcon from "@mui/icons-material/AutorenewRounded"
-import MonetizationOnRoundedIcon from "@mui/icons-material/MonetizationOnRounded"
-import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded"
-import { Box, Button, CircularProgress, Paper, Stack, Typography } from "@mui/material"
-import { useMemo } from "react"
-import { useWowTokenPrice } from "@/features/search/hooks/useWowTokenPrice"
-import { env } from "@/lib/env"
+import AutorenewRoundedIcon from "@mui/icons-material/AutorenewRounded";
+import MonetizationOnRoundedIcon from "@mui/icons-material/MonetizationOnRounded";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Paper,
+  Stack,
+  Typography,
+} from "@mui/material";
+import { useMemo } from "react";
+import { useWowTokenPrice } from "@/features/search/hooks/useWowTokenPrice";
+import { env } from "@/lib/env";
 
 const formatter = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 0,
   maximumFractionDigits: 0,
-})
+});
 
 const relativeTime = (now: Date, updatedAt: Date): string => {
-  const diffMs = now.getTime() - updatedAt.getTime()
+  const diffMs = now.getTime() - updatedAt.getTime();
   if (Number.isNaN(diffMs)) {
-    return "Unknown"
+    return "Unknown";
   }
 
-  const diffMinutes = Math.round(diffMs / (1000 * 60))
+  const diffMinutes = Math.round(diffMs / (1000 * 60));
   if (diffMinutes < 1) {
-    return "just now"
+    return "just now";
   }
 
   if (diffMinutes < 60) {
-    return `${diffMinutes} min ago`
+    return `${diffMinutes} min ago`;
   }
 
-  const diffHours = Math.round(diffMinutes / 60)
+  const diffHours = Math.round(diffMinutes / 60);
   if (diffHours < 24) {
-    return `${diffHours} hr${diffHours === 1 ? "" : "s"} ago`
+    return `${diffHours} hr${diffHours === 1 ? "" : "s"} ago`;
   }
 
-  const diffDays = Math.round(diffHours / 24)
-  return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`
-}
+  const diffDays = Math.round(diffHours / 24);
+  return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+};
 
 const TokenTicker = (): JSX.Element => {
-  const { data, isLoading, isError, error, refetch, isFetching } = useWowTokenPrice()
+  const { data, isLoading, isError, error, refetch, isFetching } =
+    useWowTokenPrice();
 
   const formattedPrice = useMemo(() => {
     if (!data) {
-      return "--"
+      return "--";
     }
 
-    const totalCopper = data.price
-    const gold = Math.floor(totalCopper / 10000)
-    const silver = Math.floor((totalCopper % 10000) / 100)
-    const copper = totalCopper % 100
+    const totalCopper = data.price;
+    const gold = Math.floor(totalCopper / 10000);
+    const silver = Math.floor((totalCopper % 10000) / 100);
+    const copper = totalCopper % 100;
 
-    const paddedSilver = silver.toString().padStart(2, "0")
-    const paddedCopper = copper.toString().padStart(2, "0")
+    const paddedSilver = silver.toString().padStart(2, "0");
+    const paddedCopper = copper.toString().padStart(2, "0");
 
-    return `${formatter.format(gold)}g ${paddedSilver}s ${paddedCopper}c`
-  }, [data])
+    return `${formatter.format(gold)}g ${paddedSilver}s ${paddedCopper}c`;
+  }, [data]);
 
   const lastUpdated = useMemo(() => {
     if (!data) {
-      return ""
+      return "";
     }
 
-    return relativeTime(new Date(), data.lastUpdated)
-  }, [data])
+    return relativeTime(new Date(), data.lastUpdated);
+  }, [data]);
 
   const friendlyError = useMemo(() => {
     if (!error) {
-      return undefined
+      return undefined;
     }
 
     if (error.name === "BlizzardRequestError") {
-      return "Unable to reach Blizzard’s token service. Confirm your Blizzard API credentials in the .env file and try again."
+      return "Unable to reach Blizzard’s token service. Confirm your Blizzard API credentials in the .env file and try again.";
     }
 
-    return error.message
-  }, [error])
+    return error.message;
+  }, [error]);
 
   return (
     <Paper
@@ -86,8 +94,17 @@ const TokenTicker = (): JSX.Element => {
         borderColor: "rgba(30, 155, 233, 0.28)",
       }}
     >
-      <Stack direction={{ xs: "column", md: "row" }} spacing={3} alignItems="center">
-        <Stack direction="row" spacing={2} alignItems="center" sx={{ minWidth: 0 }}>
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        spacing={3}
+        alignItems="center"
+      >
+        <Stack
+          direction="row"
+          spacing={2}
+          alignItems="center"
+          sx={{ minWidth: 0 }}
+        >
           <Box
             sx={{
               width: 64,
@@ -101,10 +118,15 @@ const TokenTicker = (): JSX.Element => {
               border: "1px solid rgba(245, 192, 69, 0.45)",
             }}
           >
-            <MonetizationOnRoundedIcon sx={{ fontSize: 32, color: "warning.light" }} />
+            <MonetizationOnRoundedIcon
+              sx={{ fontSize: 32, color: "warning.light" }}
+            />
           </Box>
           <Stack spacing={0.5} sx={{ minWidth: 0 }}>
-            <Typography variant="overline" sx={{ letterSpacing: "0.18em", color: "secondary.light" }}>
+            <Typography
+              variant="overline"
+              sx={{ letterSpacing: "0.18em", color: "secondary.light" }}
+            >
               WoW Token Market Watch
             </Typography>
             <Typography
@@ -118,7 +140,11 @@ const TokenTicker = (): JSX.Element => {
             >
               {formattedPrice}
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ whiteSpace: "nowrap" }}
+            >
               {data ? `Updated ${lastUpdated}` : "Awaiting latest trade"}
             </Typography>
           </Stack>
@@ -127,17 +153,29 @@ const TokenTicker = (): JSX.Element => {
           {isError ? (
             <Stack direction="row" spacing={1.5} alignItems="center">
               <WarningAmberRoundedIcon color="warning" fontSize="small" />
-              <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
-                {friendlyError ?? "Unable to fetch the WoW Token just now. Try refreshing."}
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ flex: 1 }}
+              >
+                {friendlyError ??
+                  "Unable to fetch the WoW Token just now. Try refreshing."}
               </Typography>
             </Stack>
           ) : (
             <Typography variant="body2" color="text.secondary">
-              Keep an eye on Azeroth&apos;s economy. Prices reflect region {env.region.toUpperCase()} with {" "}
-              <Typography component="span" variant="body2" color="text.primary" fontWeight={600}>
+              Keep an eye on Azeroth&apos;s economy. Prices reflect region{" "}
+              {env.region.toUpperCase()} with{" "}
+              <Typography
+                component="span"
+                variant="body2"
+                color="text.primary"
+                fontWeight={600}
+              >
                 {data ? formatter.format(Math.floor(data.price / 10000)) : "--"}
               </Typography>{" "}
-              gold per token. Perfect for comparing profession profits against subscription costs.
+              gold per token. Perfect for comparing profession profits against
+              subscription costs.
             </Typography>
           )}
           <Button
@@ -146,7 +184,11 @@ const TokenTicker = (): JSX.Element => {
             onClick={() => refetch()}
             disabled={isLoading || isFetching}
             startIcon={
-              isFetching ? <CircularProgress size={16} thickness={5} /> : <AutorenewRoundedIcon />
+              isFetching ? (
+                <CircularProgress size={16} thickness={5} />
+              ) : (
+                <AutorenewRoundedIcon />
+              )
             }
             sx={{ alignSelf: { xs: "flex-start", md: "flex-end" } }}
           >
@@ -155,7 +197,7 @@ const TokenTicker = (): JSX.Element => {
         </Stack>
       </Stack>
     </Paper>
-  )
-}
+  );
+};
 
-export default TokenTicker
+export default TokenTicker;
