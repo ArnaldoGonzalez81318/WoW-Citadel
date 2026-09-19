@@ -64,14 +64,6 @@ export type ResultCardProps = {
   loading?: boolean;
   /** Position in the list (exposed as `data-index`). */
   index?: number;
-  /** @deprecated Ignored: category identity is icon + label, never a hue. */
-  accentColor?: string;
-  /** @deprecated Use `layout="compact"`. */
-  compact?: boolean;
-  /** @deprecated `"framed"` maps to the tile layout with `object-fit: contain`. */
-  mediaMode?: "fill" | "framed";
-  /** @deprecated Use `onSelect`. */
-  onClick?: () => void;
 };
 
 export type ResolvedResultCardLayout = Exclude<ResultCardLayout, "auto">;
@@ -110,16 +102,9 @@ const SMALL_ICON_PATTERN = /\/icons\/56\//;
 export const resolveResultCardLayout = (
   layout: ResultCardLayout,
   result: Pick<ResultCardResult, "mediaUrl">,
-  options: { compact?: boolean; framed?: boolean } = {},
 ): ResolvedResultCardLayout => {
   if (layout !== "auto") {
     return layout;
-  }
-  if (options.compact) {
-    return "compact";
-  }
-  if (options.framed) {
-    return "tile";
   }
   if (!result.mediaUrl || SMALL_ICON_PATTERN.test(result.mediaUrl)) {
     return "row";
@@ -411,15 +396,8 @@ const ResultCard = ({
   selected = false,
   loading = false,
   index,
-  compact: compactAlias = false,
-  mediaMode,
-  onClick,
 }: ResultCardProps): JSX.Element => {
-  const framed = mediaMode === "framed";
-  const resolvedLayout = resolveResultCardLayout(layout, result, {
-    compact: compactAlias,
-    framed,
-  });
+  const resolvedLayout = resolveResultCardLayout(layout, result);
 
   if (loading) {
     return (
@@ -427,7 +405,7 @@ const ResultCard = ({
     );
   }
 
-  const interactive = Boolean(onSelect) || Boolean(onClick);
+  const interactive = Boolean(onSelect);
   const quality = result.quality;
   const external = showExternalLink ? resolveExternalLink(result) : undefined;
   const isRow = resolvedLayout === "row";
@@ -451,7 +429,6 @@ const ResultCard = ({
 
   const handleActivate = (): void => {
     onSelect?.(result);
-    onClick?.();
   };
 
   const cardSx = (theme: Theme) => {
@@ -593,7 +570,6 @@ const ResultCard = ({
                 src={result.mediaUrl}
                 alt=""
                 size="fill"
-                fit={framed ? "contain" : "cover"}
                 fallbackLabel={result.name}
               />
             </Box>
