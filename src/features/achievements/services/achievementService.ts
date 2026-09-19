@@ -1,173 +1,262 @@
-import { blizzardClient, BlizzardRequestError } from "@/lib/blizzardClient"
-import { env } from "@/lib/env"
-import { SearchResult } from "@/features/search/types"
+import { blizzardClient } from "@/lib/blizzardClient";
+import { env } from "@/lib/env";
+import {
+  cleanMarkup,
+  localized,
+  mapWithConcurrency,
+  namespace,
+  optional404,
+  sortByName,
+} from "@/lib/blizzardHelpers";
+import { getExternalLink } from "@/lib/externalLinks";
+import type { SearchResult } from "@/features/search/types";
 import type {
   Achievement,
   AchievementCategory,
   AchievementCategoryIndexResponse,
   AchievementCategorySummary,
-  AchievementSummary,
+  AchievementGalleryItem,
+  AchievementGalleryPage,
   AchievementMedia,
-} from "@/features/achievements/types"
+  AchievementSummary,
+  LocalizedString,
+} from "@/features/achievements/types";
 
-const STATIC_NAMESPACE = `static-${env.region}`
+type RawCategorySummary = {
+  id: number;
+  name?: LocalizedString;
+  key: { href: string };
+};
 
-const sortByName = <T extends { name?: string }>(items: T[] = []): T[] =>
-  [...items].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+const normalizeCategorySummary = (
+  entry: RawCategorySummary,
+): AchievementCategorySummary => ({
+  id: entry.id,
+  name: localized(entry.name).trim() || `Category #${entry.id}`,
+  key: entry.key,
+});
 
-const extractAchievements = (category: AchievementCategory): AchievementSummary[] =>
-  category.achievements ?? category.root_achievements ?? []
-
-export const fetchAchievementCategoryIndex = async (): Promise<AchievementCategoryIndexResponse> => {
+export const fetchAchievementCategoryIndex = async (
+  signal?: AbortSignal,
+): Promise<AchievementCategoryIndexResponse> => {
   const response = await blizzardClient.get<{
-    categories?: AchievementCategorySummary[]
-    achievement_categories?: AchievementCategorySummary[]
+    categories?: RawCategorySummary[];
+    achievement_categories?: RawCategorySummary[];
+    root_categories?: RawCategorySummary[];
+    guild_categories?: RawCategorySummary[];
   }>(
     "/data/wow/achievement-category/index",
-    {
-      namespace: STATIC_NAMESPACE,
-    }
-  )
+    { namespace: namespace("static") },
+    { signal },
+  );
+
+  const all = (response.categories ?? response.achievement_categories ?? []).map(
+    normalizeCategorySummary,
+  );
+  const roots = (response.root_categories ?? []).map(normalizeCategorySummary);
+  const guildIds = new Set(
+    (response.guild_categories ?? []).map((category) => category.id),
+  );
+  // Player roots first, in Blizzard's order, then the guild root: it is the
+  // in-game tab order and the guild root holds no achievements of its own,
+  // so the default selection lands on a populated category.
+  const orderedRoots = [
+    ...roots.filter((category) => !guildIds.has(category.id)),
+    ...roots.filter((category) => guildIds.has(category.id)),
+  ];
+  const sortedAll = sortByName(all);
 
   return {
-    categories: sortByName<AchievementCategorySummary>(response.categories ?? response.achievement_categories),
-  }
-}
+    categories: sortedAll,
+    rootCategories: orderedRoots.length > 0 ? orderedRoots : sortedAll,
+  };
+};
 
-export const fetchAchievementCategory = (categoryId: number): Promise<AchievementCategory> =>
-  blizzardClient.get<AchievementCategory>(`/data/wow/achievement-category/${categoryId}`, {
-    namespace: STATIC_NAMESPACE,
-  })
-
-export const fetchAchievement = (achievementId: number): Promise<Achievement> =>
-  blizzardClient.get<Achievement>(`/data/wow/achievement/${achievementId}`, {
-    namespace: STATIC_NAMESPACE,
-  })
-
-export const fetchAchievementMedia = (achievementId: number): Promise<AchievementMedia> =>
-  blizzardClient.get<AchievementMedia>(`/data/wow/media/achievement/${achievementId}`, {
-    namespace: STATIC_NAMESPACE,
-  })
-
-const fetchItemMediaAsset = async (itemId: number): Promise<string | undefined> => {
-  try {
-    const response = await blizzardClient.get<{
-      assets?: Array<{ key: string; value: string }>
-    }>(`/data/wow/media/item/${itemId}`, {
-      namespace: STATIC_NAMESPACE,
-    })
-
-    return response.assets?.find((asset) => asset.key === "icon")?.value ?? response.assets?.[0]?.value
-  } catch (error) {
-    if (error instanceof BlizzardRequestError && (error.status === 404 || error.status === 204)) {
-      return undefined
-    }
-
-    throw error
-  }
-}
-
-export type AchievementCategoryDetail = {
-  category: AchievementCategory
-  achievements: Achievement[]
-}
-
-export type AchievementGalleryPage = {
-  category: AchievementCategory
-  page: number
-  pageCount: number
-  achievements: SearchResult[]
-}
-
-export const fetchAchievementCategoryWithDetails = async (
+export const fetchAchievementCategory = (
   categoryId: number,
-  limit = 12
-): Promise<AchievementCategoryDetail> => {
-  const category = await fetchAchievementCategory(categoryId)
-  const achievementRefs = extractAchievements(category).slice(0, limit)
+  signal?: AbortSignal,
+): Promise<AchievementCategory> =>
+  blizzardClient.get<AchievementCategory>(
+    `/data/wow/achievement-category/${categoryId}`,
+    { namespace: namespace("static") },
+    { signal },
+  );
 
-  if (achievementRefs.length === 0) {
-    return { category, achievements: [] }
-  }
+/** `undefined` when the achievement no longer exists (404). */
+export const fetchAchievement = (
+  achievementId: number,
+  signal?: AbortSignal,
+): Promise<Achievement | undefined> =>
+  optional404(() =>
+    blizzardClient.get<Achievement>(
+      `/data/wow/achievement/${achievementId}`,
+      { namespace: namespace("static") },
+      { signal },
+    ),
+  );
 
-  const detailResults = await Promise.all(
-    achievementRefs.map(async ({ id }) => {
-      try {
-        return await fetchAchievement(id)
-      } catch (error) {
-        if (error instanceof BlizzardRequestError && (error.status === 404 || error.status === 204)) {
-          return null
-        }
-        throw error
-      }
-    })
-  )
+/** Achievement media ids always equal the achievement id, so no detail hop is needed. */
+export const fetchAchievementMedia = (
+  achievementId: number,
+  signal?: AbortSignal,
+): Promise<AchievementMedia | undefined> =>
+  optional404(() =>
+    blizzardClient.get<AchievementMedia>(
+      `/data/wow/media/achievement/${achievementId}`,
+      { namespace: namespace("static") },
+      { signal },
+    ),
+  );
 
-  const achievements = detailResults.filter((item): item is Achievement => Boolean(item))
+const fetchItemMediaAsset = async (
+  itemId: number,
+  signal?: AbortSignal,
+): Promise<string | undefined> => {
+  const response = await optional404(() =>
+    blizzardClient.get<{ assets?: Array<{ key: string; value: string }> }>(
+      `/data/wow/media/item/${itemId}`,
+      { namespace: namespace("static") },
+      { signal },
+    ),
+  );
 
-  return {
-    category,
-    achievements,
-  }
-}
+  return (
+    response?.assets?.find((asset) => asset.key === "icon")?.value ??
+    response?.assets?.[0]?.value
+  );
+};
 
+const iconOf = (media: AchievementMedia | undefined): string | undefined =>
+  media?.assets?.find((asset) => asset.key === "icon")?.value ??
+  media?.assets?.[0]?.value;
+
+export type AchievementGalleryOptions = {
+  /** Show each card's subcategory (when browsing a root category). */
+  showCategory?: boolean;
+};
+
+type LoadedAchievement = {
+  detail: Achievement;
+  mediaUrl?: string;
+};
+
+const toGalleryItem = (
+  { detail, mediaUrl }: LoadedAchievement,
+  options: AchievementGalleryOptions,
+): AchievementGalleryItem => {
+  const name = detail.name?.trim() || `Achievement #${detail.id}`;
+  const points = typeof detail.points === "number" ? detail.points : undefined;
+  const rewardText = detail.reward ?? detail.reward_item?.name;
+  const summary =
+    [
+      points !== undefined ? `${points} pts` : undefined,
+      rewardText ? `Reward: ${rewardText}` : undefined,
+    ]
+      .filter(Boolean)
+      .join(" · ") || undefined;
+  const external = getExternalLink("achievement", detail.id, name);
+
+  const meta = [
+    { label: "Points", value: points !== undefined ? String(points) : undefined },
+    { label: "Reward", value: rewardText },
+  ].filter(
+    (entry): entry is { label: string; value: string } =>
+      typeof entry.value === "string" && entry.value.length > 0,
+  );
+
+  const result: SearchResult = {
+    id: detail.id,
+    name,
+    href:
+      detail.media?.key?.href ??
+      detail.reward_item?.key.href ??
+      `https://${env.region}.api.blizzard.com/data/wow/achievement/${detail.id}`,
+    kind: "achievement",
+    summary,
+    details: cleanMarkup(detail.description) || undefined,
+    subtitle: options.showCategory ? detail.category?.name : undefined,
+    tag: detail.is_account_wide ? "Account-wide" : undefined,
+    typeLabel: "Achievement",
+    mediaUrl,
+    meta,
+    externalUrl: external?.url,
+    externalLabel: external?.label,
+  };
+
+  return { result, achievement: detail };
+};
+
+const displayOrderOf = (detail: Achievement): number =>
+  typeof detail.display_order === "number"
+    ? detail.display_order
+    : Number.POSITIVE_INFINITY;
+
+/**
+ * One page of a category's achievements. The caller passes the category's
+ * ref list (fetched once); each ref costs detail + media in parallel, with at
+ * most six achievements in flight. Failures are counted, never fatal, unless
+ * every ref on the page failed.
+ */
 export const fetchAchievementGalleryPage = async (
-  categoryId: number,
+  refs: AchievementSummary[],
   page: number,
-  pageSize = 18
+  pageSize: number,
+  signal?: AbortSignal,
+  options: AchievementGalleryOptions = {},
 ): Promise<AchievementGalleryPage> => {
-  const category = await fetchAchievementCategory(categoryId)
-  const achievementRefs = extractAchievements(category)
-  const pageCount = Math.max(1, Math.ceil(achievementRefs.length / pageSize))
-  const normalizedPage = Math.min(Math.max(page, 1), pageCount)
-  const startIndex = (normalizedPage - 1) * pageSize
-  const visibleRefs = achievementRefs.slice(startIndex, startIndex + pageSize)
+  const pageCount = Math.max(1, Math.ceil(refs.length / pageSize));
+  const normalizedPage = Math.min(Math.max(page, 1), pageCount);
+  const startIndex = (normalizedPage - 1) * pageSize;
+  const pageRefs = refs.slice(startIndex, startIndex + pageSize);
 
-  const achievements = await Promise.all(
-    visibleRefs.map(async ({ id }) => {
-      try {
-        const detail = await fetchAchievement(id)
-        const media = detail.media?.id ? await fetchAchievementMedia(detail.media.id) : await fetchAchievementMedia(id)
-        let mediaUrl: string | undefined = media.assets?.find((asset) => asset.key === "icon")?.value ?? media.assets?.[0]?.value
+  const settled = await mapWithConcurrency(
+    pageRefs,
+    6,
+    async ({ id }): Promise<LoadedAchievement | null> => {
+      const [detail, media] = await Promise.all([
+        fetchAchievement(id, signal),
+        fetchAchievementMedia(id, signal),
+      ]);
 
-        if (!mediaUrl && detail.reward_item?.id) {
-          mediaUrl = await fetchItemMediaAsset(detail.reward_item.id)
-        }
-
-        const details = [
-          detail.reward,
-          detail.reward_item?.name,
-          detail.is_account_wide ? "Account-wide" : undefined,
-        ]
-          .filter(Boolean)
-          .join(" • ")
-
-        return {
-          id: detail.id,
-          name: detail.name,
-          href: detail.media?.key?.href ?? detail.reward_item?.key.href ?? `https://${env.region}.api.blizzard.com/data/wow/achievement/${detail.id}`,
-          summary: typeof detail.points === "number" ? `${detail.points} points` : undefined,
-          details: detail.description || details,
-          tag: detail.is_account_wide ? "Account" : undefined,
-          typeLabel: "Achievement",
-          mediaUrl,
-        } satisfies SearchResult
-      } catch (error) {
-        if (error instanceof BlizzardRequestError && (error.status === 404 || error.status === 204)) {
-          return null
-        }
-
-        throw error
+      if (!detail) {
+        return null;
       }
-    })
-  )
 
-  const galleryAchievements: SearchResult[] = achievements.flatMap((entry) => (entry ? [entry] : []))
+      let mediaUrl = iconOf(media);
+      if (!mediaUrl && detail.reward_item?.id) {
+        mediaUrl = await fetchItemMediaAsset(detail.reward_item.id, signal);
+      }
+
+      return { detail, mediaUrl };
+    },
+    signal,
+  );
+
+  const fulfilled: LoadedAchievement[] = [];
+  const rejected: unknown[] = [];
+
+  settled.forEach((entry) => {
+    if (entry.status === "fulfilled") {
+      if (entry.value) {
+        fulfilled.push(entry.value);
+      }
+    } else {
+      rejected.push(entry.reason);
+    }
+  });
+
+  if (pageRefs.length > 0 && fulfilled.length === 0 && rejected.length > 0) {
+    throw rejected[0];
+  }
+
+  const items = fulfilled
+    .sort((left, right) => displayOrderOf(left.detail) - displayOrderOf(right.detail))
+    .map((entry) => toGalleryItem(entry, options));
 
   return {
-    category,
     page: normalizedPage,
     pageCount,
-    achievements: galleryAchievements,
-  }
-}
+    items,
+    failedCount: rejected.length,
+  };
+};
