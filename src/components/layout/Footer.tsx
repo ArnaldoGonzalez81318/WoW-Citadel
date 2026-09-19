@@ -1,18 +1,30 @@
-import DataObjectRoundedIcon from "@mui/icons-material/DataObjectRounded"
-import HomeRoundedIcon from "@mui/icons-material/HomeRounded"
-import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded"
-import TravelExploreRoundedIcon from "@mui/icons-material/TravelExploreRounded"
-import { Box, Chip, Container, Divider, Link, Stack, Typography } from "@mui/material"
-import { Link as RouterLink } from "react-router-dom"
+import OpenInNewRounded from "@mui/icons-material/OpenInNewRounded";
+import {
+  Box,
+  Container,
+  Divider,
+  Link,
+  Stack,
+  Typography,
+} from "@mui/material";
+import { styled } from "@mui/material/styles";
+import { Link as RouterLink } from "react-router-dom";
 
-const FOOTER_NAV_LINKS = [
-  { label: "Home", path: "/", icon: HomeRoundedIcon },
-  { label: "Items", path: "/category/items", icon: TravelExploreRoundedIcon },
-  { label: "Mounts", path: "/category/mounts", icon: TravelExploreRoundedIcon },
-  { label: "Auction House", path: "/category/auction-house", icon: TravelExploreRoundedIcon },
-]
+import Logo from "@/components/layout/Logo";
+import RegionBadge from "@/components/layout/RegionBadge";
+import { NAV_SECTIONS } from "@/components/layout/navigation/navConfig";
+import { API_REFERENCE_URL } from "@/components/layout/navigation/navUtils";
+import { focusRing } from "@/theme";
 
-const FOOTER_RESOURCE_LINKS = [
+type FooterInternalLink = { label: string; to: string };
+type FooterExternalLink = { label: string; href: string };
+
+const FOOTER_INTERNAL_LINKS: FooterInternalLink[] = [
+  { label: "Home", to: "/" },
+  { label: "Search", to: "/search" },
+];
+
+const FOOTER_RESOURCE_LINKS: FooterExternalLink[] = [
   {
     label: "GitHub Repository",
     href: "https://github.com/ArnaldoGonzalez81318/WoW-Citadel",
@@ -22,144 +34,173 @@ const FOOTER_RESOURCE_LINKS = [
     href: "https://develop.battle.net/",
   },
   {
-    label: "Game Data Docs",
-    href: "https://community.developer.battle.net/documentation/world-of-warcraft/game-data-apis",
+    label: "API Reference",
+    href: API_REFERENCE_URL,
   },
-]
+];
 
-const Footer = (): JSX.Element => (
-  <Box
-    component="footer"
-    sx={{
-      mt: { xs: 6, md: 8 },
-      pt: { xs: 4, md: 5 },
-      pb: { xs: 5, md: 6 },
-      position: "relative",
-      borderTop: "1px solid rgba(30, 155, 233, 0.12)",
-      background:
-        "linear-gradient(180deg, rgba(5, 8, 19, 0.2), rgba(8, 13, 24, 0.88) 22%, rgba(7, 12, 24, 0.98) 100%)",
-      "&::before": {
-        content: "''",
-        position: "absolute",
-        inset: "0 0 auto 0",
-        height: 1,
-        background:
-          "linear-gradient(90deg, rgba(30,155,233,0), rgba(30,155,233,0.34), rgba(245,192,69,0.26), rgba(30,155,233,0))",
-        pointerEvents: "none",
-      },
-    }}
-  >
-    <Container maxWidth="xl">
-      <Stack spacing={4}>
-        <Stack
-          direction={{ xs: "column", lg: "row" }}
-          spacing={{ xs: 3, lg: 5 }}
-          justifyContent="space-between"
-          alignItems={{ xs: "flex-start", lg: "stretch" }}
+/** Build-time version injected by vite.config `define`; absent in plain dev. */
+const APP_VERSION = import.meta.env.VITE_APP_VERSION as string | undefined;
+
+const FooterLink = styled(Link)(({ theme }) => ({
+  ...theme.typography.body2,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: theme.spacing(0.75),
+  minHeight: 32,
+  color: theme.palette.text.secondary,
+  textDecoration: "none",
+  borderRadius: `${theme.wc.radius.sm}px`,
+  transition: theme.transitions.create("color", {
+    duration: theme.wc.motion.base,
+    easing: theme.wc.motion.easing,
+  }),
+  "&:hover": {
+    color: theme.palette.text.primary,
+    textDecoration: "none",
+  },
+  "&:focus-visible": focusRing(theme),
+  // styled() drops Link's polymorphic `component` typing; restore it.
+})) as typeof Link;
+
+const FooterHeading = ({
+  id,
+  children,
+}: {
+  id: string;
+  children: string;
+}): JSX.Element => (
+  <Typography id={id} component="h2" variant="overline" color="text.secondary">
+    {children}
+  </Typography>
+);
+
+/**
+ * Compact site footer: brand + region, a sitemap generated from
+ * NAV_SECTIONS, external resources, and the legal / data line.
+ */
+const Footer = (): JSX.Element => {
+  const year = new Date().getFullYear();
+
+  return (
+    <Box
+      component="footer"
+      sx={(theme) => ({
+        borderTop: `1px solid ${theme.palette.border.subtle}`,
+        bgcolor: "surface.raised",
+        py: { xs: 4, md: 5 },
+      })}
+    >
+      <Container maxWidth="xl">
+        <Box
+          sx={{
+            display: "grid",
+            gap: { xs: 3, md: 4 },
+            gridTemplateColumns: {
+              xs: "repeat(2, minmax(0, 1fr))",
+              md: "repeat(3, minmax(0, 1fr))",
+              lg: "1.5fr repeat(5, minmax(0, 1fr))",
+            },
+          }}
         >
-          <Stack spacing={2.25} sx={{ maxWidth: 460 }}>
-            <Chip
-              icon={<DataObjectRoundedIcon />}
-              label="Warcraft Data Hub"
-              sx={{
-                alignSelf: "flex-start",
-                borderRadius: 999,
-                border: "1px solid rgba(30, 155, 233, 0.18)",
-                backgroundColor: "rgba(18, 29, 54, 0.72)",
-                color: "#9edbff",
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-              }}
-            />
-            <Stack spacing={1}>
-              <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: "-0.02em" }}>
-                WoW Citadel keeps Blizzard&apos;s live game data readable.
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Explore curated Warcraft tools for items, spells, mounts, realms, auctions, and more without dropping into raw endpoint payloads unless you want to.
-              </Typography>
-            </Stack>
+          <Stack
+            spacing={2}
+            alignItems="flex-start"
+            sx={{ gridColumn: { xs: "1 / -1", lg: "auto" } }}
+          >
+            <Logo />
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ maxWidth: "40ch" }}
+            >
+              Blizzard&apos;s live game data, readable.
+            </Typography>
+            <RegionBadge />
           </Stack>
 
-          <Stack direction={{ xs: "column", md: "row" }} spacing={{ xs: 3, md: 6 }} sx={{ flexShrink: 0 }}>
-            <Stack spacing={1.5}>
-              <Typography variant="overline" sx={{ color: "#8fd3ff", letterSpacing: "0.18em" }}>
-                Explore
-              </Typography>
-              {FOOTER_NAV_LINKS.map(({ label, path, icon: Icon }) => (
-                <Link
-                  key={path}
-                  component={RouterLink}
-                  to={path}
-                  underline="none"
-                  color="text.secondary"
-                  sx={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 1,
-                    transition: "color 0.18s ease, transform 0.18s ease",
-                    "&:hover": {
-                      color: "text.primary",
-                      transform: "translateX(2px)",
-                    },
-                  }}
+          <Box component="nav" aria-label="Site map" sx={{ display: "contents" }}>
+            {NAV_SECTIONS.map((section) => {
+              const headingId = `footer-${section.id}`;
+              return (
+                <Stack
+                  key={section.id}
+                  component="section"
+                  aria-labelledby={headingId}
+                  spacing={0.5}
+                  alignItems="flex-start"
                 >
-                  <Icon sx={{ fontSize: 18 }} />
-                  {label}
-                </Link>
-              ))}
-            </Stack>
+                  <FooterHeading id={headingId}>{section.label}</FooterHeading>
+                  {section.items.map((item) => (
+                    <FooterLink key={item.id} component={RouterLink} to={item.path}>
+                      {item.label}
+                    </FooterLink>
+                  ))}
+                </Stack>
+              );
+            })}
+          </Box>
 
-            <Stack spacing={1.5}>
-              <Typography variant="overline" sx={{ color: "secondary.light", letterSpacing: "0.18em" }}>
-                Resources
-              </Typography>
-              {FOOTER_RESOURCE_LINKS.map(({ label, href }) => (
-                <Link
-                  key={href}
-                  href={href}
-                  target="_blank"
-                  rel="noreferrer"
-                  underline="none"
-                  color="text.secondary"
-                  sx={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 1,
-                    transition: "color 0.18s ease, transform 0.18s ease",
-                    "&:hover": {
-                      color: "text.primary",
-                      transform: "translateX(2px)",
-                    },
-                  }}
-                >
-                  <LaunchRoundedIcon sx={{ fontSize: 18 }} />
-                  {label}
-                </Link>
-              ))}
-            </Stack>
+          <Stack
+            component="section"
+            aria-labelledby="footer-resources"
+            spacing={0.5}
+            alignItems="flex-start"
+          >
+            <FooterHeading id="footer-resources">Resources</FooterHeading>
+            {FOOTER_INTERNAL_LINKS.map((link) => (
+              <FooterLink key={link.to} component={RouterLink} to={link.to}>
+                {link.label}
+              </FooterLink>
+            ))}
+            {FOOTER_RESOURCE_LINKS.map((link) => (
+              <FooterLink
+                key={link.href}
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`${link.label} (opens in a new tab)`}
+              >
+                {link.label}
+                <OpenInNewRounded fontSize="inherit" aria-hidden="true" />
+              </FooterLink>
+            ))}
           </Stack>
-        </Stack>
+        </Box>
 
-        <Divider sx={{ borderColor: "rgba(30, 155, 233, 0.1)" }} />
+        <Divider sx={{ my: { xs: 3, md: 4 } }} />
 
         <Stack
-          direction={{ xs: "column", md: "row" }}
-          spacing={2}
-          alignItems={{ xs: "flex-start", md: "center" }}
+          direction="row"
+          flexWrap="wrap"
           justifyContent="space-between"
+          alignItems="flex-start"
+          gap={2}
         >
-          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 760 }}>
-            Data powered by Blizzard Entertainment. World of Warcraft and Blizzard Entertainment are trademarks or registered trademarks of Blizzard Entertainment, Inc. WoW Citadel is an independent fan-built explorer and is not affiliated with or endorsed by Blizzard Entertainment.
+          <Typography
+            variant="caption"
+            component="p"
+            color="text.secondary"
+            sx={{ maxWidth: "72ch", m: 0 }}
+          >
+            &copy; {year} WoW Citadel &middot; Independent fan project, not
+            affiliated with or endorsed by Blizzard Entertainment. World of
+            Warcraft and Blizzard Entertainment are trademarks or registered
+            trademarks of Blizzard Entertainment, Inc.
           </Typography>
-          <Typography variant="caption" sx={{ color: "rgba(156, 167, 199, 0.72)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-            Built for live game data browsing
+          <Typography
+            variant="caption"
+            component="p"
+            color="text.secondary"
+            sx={{ m: 0, ml: { sm: "auto" }, whiteSpace: "nowrap" }}
+          >
+            Data: Blizzard Game Data API
+            {APP_VERSION ? ` · v${APP_VERSION}` : null}
           </Typography>
         </Stack>
-      </Stack>
-    </Container>
-  </Box>
-)
+      </Container>
+    </Box>
+  );
+};
 
-export default Footer
+export default Footer;
