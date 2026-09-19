@@ -1,145 +1,70 @@
 import { createTheme } from "@mui/material/styles";
 
-const theme = createTheme({
-  palette: {
-    mode: "dark",
-    primary: {
-      main: "#1e9be9",
-      light: "#4cb7ff",
-      dark: "#0b4f7a",
-    },
-    secondary: {
-      main: "#f5c045",
-      light: "#ffe082",
-      dark: "#b8860b",
-    },
-    background: {
-      default: "#040813",
-      paper: "rgba(12, 18, 34, 0.92)",
-    },
-    text: {
-      primary: "#f6f8ff",
-      secondary: "#9ca7c7",
-    },
-    divider: "rgba(30, 155, 233, 0.22)",
-  },
-  typography: {
-    fontFamily: "'Roboto', 'Helvetica Neue', Arial, sans-serif",
-    h1: {
-      fontWeight: 600,
-      letterSpacing: "-0.03em",
-    },
-    h2: {
-      fontWeight: 600,
-      letterSpacing: "-0.015em",
-    },
-    h3: {
-      fontWeight: 600,
-    },
-    subtitle1: {
-      color: "#b6c1df",
-      fontWeight: 500,
-    },
-    body1: {
-      lineHeight: 1.7,
-    },
-  },
-  shape: {
-    borderRadius: 16,
-  },
-  components: {
-    MuiCssBaseline: {
-      styleOverrides: {
-        html: {
-          scrollbarColor: "#1e9be9 rgba(10, 16, 32, 0.88)",
-        },
-        body: {
-          backgroundImage:
-            "radial-gradient(circle at top, rgba(30,155,233,0.12), transparent 45%), radial-gradient(circle at 20% 80%, rgba(245,192,69,0.12), transparent 55%)",
-          backgroundColor: "#040813",
-        },
-        "*": {
-          scrollbarWidth: "thin",
-        },
-        "*::-webkit-scrollbar": {
-          width: "12px",
-          height: "12px",
-        },
-        "*::-webkit-scrollbar-track": {
-          background: "rgba(10, 16, 32, 0.88)",
-        },
-        "*::-webkit-scrollbar-thumb": {
-          background:
-            "linear-gradient(180deg, rgba(30, 155, 233, 0.82), rgba(245, 192, 69, 0.72))",
-          borderRadius: "999px",
-          border: "2px solid rgba(10, 16, 32, 0.88)",
-        },
-        "*::-webkit-scrollbar-thumb:hover": {
-          background:
-            "linear-gradient(180deg, rgba(76, 183, 255, 0.96), rgba(245, 192, 69, 0.88))",
-        },
-        "*::-webkit-scrollbar-corner": {
-          background: "rgba(10, 16, 32, 0.88)",
-        },
-      },
-    },
-    MuiButton: {
-      styleOverrides: {
-        root: {
-          textTransform: "none",
-          fontWeight: 600,
-          letterSpacing: "0.02em",
-          borderRadius: 999,
-          paddingInline: "1.5rem",
-        },
-      },
-    },
-    MuiPaper: {
-      styleOverrides: {
-        root: {
-          backgroundImage: "none",
-          backdropFilter: "blur(24px)",
-          backgroundColor: "rgba(10, 16, 32, 0.9)",
-          border: "1px solid rgba(30, 155, 233, 0.08)",
-        },
-      },
-    },
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          backgroundImage:
-            "linear-gradient(135deg, rgba(10, 16, 32, 0.96), rgba(13, 24, 46, 0.96))",
-          border: "1px solid rgba(30, 155, 233, 0.18)",
-          boxShadow: "0 18px 48px rgba(5, 8, 21, 0.5)",
-        },
-      },
-    },
-    MuiCardHeader: {
-      styleOverrides: {
-        root: {
-          paddingBottom: 0,
-        },
-        subheader: {
-          color: "#9ca7c7",
-        },
-      },
-    },
-    MuiDivider: {
-      styleOverrides: {
-        root: {
-          borderColor: "rgba(30, 155, 233, 0.12)",
-        },
-      },
-    },
-    MuiChip: {
-      styleOverrides: {
-        root: {
-          backgroundColor: "rgba(30, 155, 233, 0.16)",
-          color: "#d4e5ff",
-        },
-      },
-    },
-  },
+import { components } from "./components";
+import { mixins, qualityColor } from "./mixins";
+import { QUALITY_KEYS, palette, shape, tokens, transitions, wc } from "./tokens";
+import { typography, typographyBase } from "./typography";
+
+/*
+ * Module augmentation (Palette surface/border/glow/quality, Theme.wc) lives in
+ * ./tokens and is pulled in by this import; importing "@/theme" anywhere is
+ * enough to make `theme.palette.surface.*` and `theme.wc.*` type-check.
+ */
+
+/**
+ * Step 1: resolve palette, shape, breakpoints, transitions, the font stack
+ * and the `wc` tokens so the type scale and component overrides can read them.
+ */
+const base = createTheme({
+  palette,
+  shape,
+  transitions,
+  typography: typographyBase,
+  wc,
+});
+
+/**
+ * Step 2: layer the type scale and component overrides on top. Dark-only,
+ * no CSS variables.
+ */
+const theme = createTheme(base, {
+  typography: typography(base),
+  components: components(base),
+  wc,
 });
 
 export default theme;
+
+export { tokens, mixins, qualityColor, QUALITY_KEYS };
+export { isQualityKey } from "./tokens";
+export {
+  focusRing,
+  lineClamp,
+  surface,
+  truncate,
+  visuallyHidden,
+} from "./mixins";
+
+export type {
+  BorderTokens,
+  GlowTokens,
+  QualityKey,
+  QualityTokens,
+  SurfaceTokens,
+  Tokens,
+  WcColumnPreset,
+  WcColumns,
+  WcLayout,
+  WcMotion,
+  WcRadius,
+  WcTokens,
+} from "./tokens";
+export type {
+  FocusRingStyles,
+  LineClampStyles,
+  Mixins,
+  SurfaceLevel,
+  SurfaceStyles,
+  TruncateStyles,
+  VisuallyHiddenStyles,
+} from "./mixins";
