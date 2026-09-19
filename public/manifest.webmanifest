@@ -1,0 +1,19 @@
+{
+  "name": "WoW Citadel",
+  "short_name": "WoW Citadel",
+  "description": "Search World of Warcraft items, spells, achievements and mounts through Blizzard's official Game Data APIs.",
+  "lang": "en",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#040813",
+  "theme_color": "#040813",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
