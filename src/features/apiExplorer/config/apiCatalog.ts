@@ -1,7 +1,8 @@
-import {
+import type {
   ApiEndpointDefinition,
   ApiEndpointParameter,
   ApiFamilyConfig,
+  ApiFamilyTone,
   ApiNamespaceKind,
 } from "@/features/apiExplorer/types";
 
@@ -51,12 +52,23 @@ const endpoint = (
   parameters,
 });
 
+/**
+ * Every Blizzard API family the explorer knows about.
+ *
+ * `accentColor` is a *tone*, not a colour: `"secondary"` (gold) marks the
+ * value families (auction house, WoW Token) and `"primary"` everything else.
+ * Read it through `getApiFamilyTone`; never interpolate it into CSS.
+ * `presentation` says how a family is surfaced (`page` = dedicated route,
+ * `dataset` = the record gallery fed by `datasetSources`, `family` = the
+ * endpoint workbench only).
+ */
 export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
   {
     slug: "achievement",
     label: "Achievement API",
     description: "Achievements, media, and category hierarchies.",
-    accentColor: "#f5c045",
+    accentColor: "primary",
+    presentation: "page",
     endpoints: [
       endpoint(
         "achievement-index",
@@ -102,7 +114,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "auction-house",
     label: "Auction House API",
     description: "Commodity and connected-realm auction listings.",
-    accentColor: "#f5c045",
+    accentColor: "secondary",
+    presentation: "page",
     endpoints: [
       endpoint(
         "auctions",
@@ -132,7 +145,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "azerite-essence",
     label: "Azerite Essence API",
     description: "Essence index, detail, search, and media.",
-    accentColor: "#7dd3fc",
+    accentColor: "primary",
+    presentation: "page",
     endpoints: [
       endpoint(
         "azerite-essence-index",
@@ -185,7 +199,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "connected-realm",
     label: "Connected Realm API",
     description: "Connected realm index, detail, and search.",
-    accentColor: "#38bdf8",
+    accentColor: "primary",
+    presentation: "page",
     endpoints: [
       endpoint(
         "connected-realm-index",
@@ -230,7 +245,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "covenant",
     label: "Covenant API",
     description: "Covenants, soulbinds, conduits, and media.",
-    accentColor: "#a78bfa",
+    accentColor: "primary",
+    presentation: "page",
     endpoints: [
       endpoint(
         "covenant-index",
@@ -312,7 +328,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "creatures",
     label: "Creature API",
     description: "Creatures, searches, families, types, and media.",
-    accentColor: "#fb7185",
+    accentColor: "primary",
+    presentation: "page",
     endpoints: [
       endpoint(
         "creature",
@@ -417,7 +434,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "guild-crest",
     label: "Guild Crest API",
     description: "Guild crest component indexes and media assets.",
-    accentColor: "#f59e0b",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "guild-crest-index",
@@ -462,7 +480,11 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "heirloom",
     label: "Heirloom API",
     description: "Heirloom index and detail records.",
-    accentColor: "#f59e0b",
+    accentColor: "primary",
+    presentation: "dataset",
+    datasetSources: [
+      "heirloom-index",
+    ],
     endpoints: [
       endpoint(
         "heirloom-index",
@@ -492,7 +514,14 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "housing-decor",
     label: "Housing Decor API",
     description: "Decor, fixtures, hooks, and rooms for housing data.",
-    accentColor: "#34d399",
+    accentColor: "primary",
+    presentation: "dataset",
+    datasetSources: [
+      "decor-index",
+      "fixture-index",
+      "fixture-hook-index",
+      "room-index",
+    ],
     endpoints: [
       endpoint(
         "decor-index",
@@ -599,7 +628,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "items",
     label: "Item API",
     description: "Items, searches, classes, sets, subclasses, and media.",
-    accentColor: "#38bdf8",
+    accentColor: "primary",
+    presentation: "page",
     endpoints: [
       endpoint(
         "item",
@@ -684,7 +714,13 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "item-appearance",
     label: "Item Appearance API",
     description: "Appearance detail, searches, sets, and slot references.",
-    accentColor: "#60a5fa",
+    accentColor: "primary",
+    presentation: "dataset",
+    datasetSources: [
+      "item-appearance-search",
+      "item-appearance-set-index",
+      "item-appearance-slot-index",
+    ],
     endpoints: [
       endpoint(
         "item-appearance",
@@ -760,7 +796,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     label: "Journal API",
     description:
       "Encounter journal expansions, instances, encounters, and media.",
-    accentColor: "#fb7185",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "journal-expansion-index",
@@ -857,7 +894,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "media-search",
     label: "Media Search API",
     description: "Search media assets across the game data corpus.",
-    accentColor: "#34d399",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "media-search",
@@ -880,7 +918,13 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "modified-crafting",
     label: "Modified Crafting API",
     description: "Modified crafting, categories, and reagent slot types.",
-    accentColor: "#34d399",
+    accentColor: "primary",
+    presentation: "dataset",
+    datasetSources: [
+      "modified-crafting-index",
+      "modified-crafting-category-index",
+      "modified-crafting-slot-type-index",
+    ],
     endpoints: [
       endpoint(
         "modified-crafting-index",
@@ -939,7 +983,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "mounts",
     label: "Mount API",
     description: "Mount index, detail, and search.",
-    accentColor: "#6ee7b7",
+    accentColor: "primary",
+    presentation: "page",
     endpoints: [
       endpoint(
         "mount-index",
@@ -977,7 +1022,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "mythic-keystone-affix",
     label: "Mythic Keystone Affix API",
     description: "Affix index, detail, and media.",
-    accentColor: "#a78bfa",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "keystone-affix-index",
@@ -1022,7 +1068,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "mythic-keystone-dungeon",
     label: "Mythic Keystone Dungeon API",
     description: "Keystone dungeons, periods, seasons, and static indexes.",
-    accentColor: "#8b5cf6",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "mythic-keystone-index",
@@ -1082,7 +1129,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "mythic-keystone-leaderboard",
     label: "Mythic Keystone Leaderboard API",
     description: "Connected-realm leaderboard indexes and period views.",
-    accentColor: "#8b5cf6",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "mythic-leaderboard-index",
@@ -1127,7 +1175,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "mythic-raid-leaderboard",
     label: "Mythic Raid Leaderboard API",
     description: "Hall of fame raid rankings by raid and faction.",
-    accentColor: "#ef4444",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "mythic-raid-leaderboard",
@@ -1146,7 +1195,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "neighborhood",
     label: "Neighborhood API",
     description: "Neighborhood maps and nested neighborhoods.",
-    accentColor: "#22c55e",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "neighborhood-map-index",
@@ -1197,7 +1247,11 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "pet",
     label: "Pet API",
     description: "Pets, pet abilities, and media assets.",
-    accentColor: "#34d399",
+    accentColor: "primary",
+    presentation: "dataset",
+    datasetSources: [
+      "pet-index",
+    ],
     endpoints: [
       endpoint(
         "pet-index",
@@ -1265,7 +1319,11 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "playable-class",
     label: "Playable Class API",
     description: "Classes, class media, and PvP talent slots.",
-    accentColor: "#60a5fa",
+    accentColor: "primary",
+    presentation: "dataset",
+    datasetSources: [
+      "playable-class-index",
+    ],
     endpoints: [
       endpoint(
         "playable-class-index",
@@ -1304,7 +1362,11 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "playable-race",
     label: "Playable Race API",
     description: "Playable race index and detail data.",
-    accentColor: "#22c55e",
+    accentColor: "primary",
+    presentation: "dataset",
+    datasetSources: [
+      "playable-race-index",
+    ],
     endpoints: [
       endpoint(
         "playable-race-index",
@@ -1327,7 +1389,11 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "playable-specialization",
     label: "Playable Specialization API",
     description: "Specialization index, detail, and media.",
-    accentColor: "#38bdf8",
+    accentColor: "primary",
+    presentation: "dataset",
+    datasetSources: [
+      "playable-specialization-index",
+    ],
     endpoints: [
       endpoint(
         "playable-specialization-index",
@@ -1358,7 +1424,11 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "power-type",
     label: "Power Type API",
     description: "Class resource index and detail data.",
-    accentColor: "#f59e0b",
+    accentColor: "primary",
+    presentation: "dataset",
+    datasetSources: [
+      "power-type-index",
+    ],
     endpoints: [
       endpoint(
         "power-type-index",
@@ -1388,7 +1458,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "profession",
     label: "Profession API",
     description: "Professions, skill tiers, recipes, and media.",
-    accentColor: "#f97316",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "profession-index",
@@ -1465,7 +1536,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "pvp-season",
     label: "PvP Season API",
     description: "PvP seasons, leaderboards, and rewards.",
-    accentColor: "#ef4444",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "pvp-season-index",
@@ -1541,7 +1613,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "pvp-tier",
     label: "PvP Tier API",
     description: "PvP tiers and associated media.",
-    accentColor: "#ef4444",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "pvp-tier-index",
@@ -1572,7 +1645,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "quest",
     label: "Quest API",
     description: "Quest index, detail, categories, areas, and types.",
-    accentColor: "#22c55e",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "quest-index",
@@ -1661,7 +1735,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "realm",
     label: "Realm API",
     description: "Realm index, slug detail, and search.",
-    accentColor: "#38bdf8",
+    accentColor: "primary",
+    presentation: "page",
     endpoints: [
       endpoint(
         "realm-index",
@@ -1692,7 +1767,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "region",
     label: "Region API",
     description: "Region index and region detail data.",
-    accentColor: "#38bdf8",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "region-index",
@@ -1715,7 +1791,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "reputations",
     label: "Reputations API",
     description: "Reputation factions and reputation tiers.",
-    accentColor: "#22c55e",
+    accentColor: "primary",
+    presentation: "family",
     endpoints: [
       endpoint(
         "reputation-faction-index",
@@ -1767,7 +1844,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "spells",
     label: "Spell API",
     description: "Spell detail, media, and search.",
-    accentColor: "#a78bfa",
+    accentColor: "primary",
+    presentation: "page",
     endpoints: [
       endpoint(
         "spell",
@@ -1820,7 +1898,13 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "talent",
     label: "Talent API",
     description: "Talent trees, talents, and PvP talents.",
-    accentColor: "#a78bfa",
+    accentColor: "primary",
+    presentation: "dataset",
+    datasetSources: [
+      "talent-tree-index",
+      "talent-index",
+      "pvp-talent-index",
+    ],
     endpoints: [
       endpoint(
         "talent-tree-index",
@@ -1908,7 +1992,12 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "tech-talent",
     label: "Tech Talent API",
     description: "Tech talent trees, talents, and media.",
-    accentColor: "#c084fc",
+    accentColor: "primary",
+    presentation: "dataset",
+    datasetSources: [
+      "tech-talent-tree-index",
+      "tech-talent-index",
+    ],
     endpoints: [
       endpoint(
         "tech-talent-tree-index",
@@ -1975,7 +2064,11 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "title",
     label: "Title API",
     description: "Title index and title detail records.",
-    accentColor: "#f59e0b",
+    accentColor: "primary",
+    presentation: "dataset",
+    datasetSources: [
+      "title-index",
+    ],
     endpoints: [
       endpoint(
         "title-index",
@@ -1998,7 +2091,11 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "toy",
     label: "Toy API",
     description: "Toy index and toy detail records.",
-    accentColor: "#34d399",
+    accentColor: "primary",
+    presentation: "dataset",
+    datasetSources: [
+      "toy-index",
+    ],
     endpoints: [
       endpoint(
         "toy-index",
@@ -2021,7 +2118,8 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     slug: "wow-token",
     label: "WoW Token API",
     description: "Regional WoW token pricing.",
-    accentColor: "#f5c045",
+    accentColor: "secondary",
+    presentation: "page",
     endpoints: [
       endpoint(
         "wow-token-index",
@@ -2038,3 +2136,44 @@ export const getApiFamilyConfigBySlug = (
   slug: string,
 ): ApiFamilyConfig | undefined =>
   API_FAMILY_CONFIGS.find((family) => family.slug === slug);
+
+/**
+ * The canonical family slug for a URL segment. Family slugs mix singular and
+ * plural forms (`items`, `creatures` vs `achievement`, `quest`), so the other
+ * number is accepted and resolved to the catalog's spelling.
+ */
+export const resolveApiFamilySlug = (slug: string): string | undefined => {
+  const normalized = slug.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  const candidates = [
+    normalized,
+    normalized.endsWith("s") ? normalized.slice(0, -1) : `${normalized}s`,
+  ];
+  return candidates.find((candidate) =>
+    API_FAMILY_CONFIGS.some((family) => family.slug === candidate),
+  );
+};
+
+export type { ApiFamilyTone } from "@/features/apiExplorer/types";
+
+export const getApiFamilyTone = (
+  family: Pick<ApiFamilyConfig, "accentColor">,
+): ApiFamilyTone =>
+  family.accentColor === "secondary" ? "secondary" : "primary";
+
+/** Slugs rendered by the dataset gallery (`presentation: "dataset"`). */
+export const DATASET_FAMILY_SLUGS: ReadonlySet<string> = new Set(
+  API_FAMILY_CONFIGS.filter((family) => family.presentation === "dataset").map(
+    (family) => family.slug,
+  ),
+);
+
+/** The index endpoints whose responses feed a dataset family's gallery. */
+export const getDatasetSourceEndpoints = (
+  family: ApiFamilyConfig,
+): ApiEndpointDefinition[] =>
+  family.endpoints.filter((endpoint) =>
+    (family.datasetSources ?? []).includes(endpoint.id),
+  );
