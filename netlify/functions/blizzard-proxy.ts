@@ -29,6 +29,7 @@ export const handler = async (
       return {
         statusCode: 404,
         headers: {
+          "cache-control": "no-store",
           "content-type": "application/json; charset=utf-8",
         },
         body: JSON.stringify({ message: "Not found." }),
@@ -40,7 +41,10 @@ export const handler = async (
       path,
       search: event.rawQuery ?? "",
       method: event.httpMethod,
-      acceptHeader: event.headers?.accept,
+      requestHeaders: event.headers,
+      clientIp:
+        event.headers?.["x-nf-client-connection-ip"] ??
+        event.headers?.["x-forwarded-for"]?.split(",")[0]?.trim(),
     })
 
     return {
