@@ -2,16 +2,20 @@
   "name": "wow-citadel",
   "private": true,
   "version": "1.0.0",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:node": "tsc -p tsconfig.node.json",
+    "build": "npm run typecheck && npm run typecheck:node && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
     "@emotion/react": "^11.11.4",
     "@emotion/styled": "^11.11.5",
     "@mui/icons-material": "^6.1.0",
-    "@mui/lab": "^6.0.0-beta.17",
     "@mui/material": "^6.1.0",
     "@tanstack/react-query": "^5.59.8",
     "react": "^18.3.1",
