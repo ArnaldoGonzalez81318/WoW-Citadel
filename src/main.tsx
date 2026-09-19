@@ -1,20 +1,40 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+
 import AppProviders from "@/app/providers/AppProviders";
+import { isChunkReloadPending, markChunkReload } from "@/app/RootLayout";
 import App from "./App";
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <BrowserRouter
-      future={{
-        v7_startTransition: true,
-        v7_relativeSplatPath: true,
-      }}
-    >
-      <AppProviders>
-        <App />
-      </AppProviders>
-    </BrowserRouter>
-  </React.StrictMode>,
+/**
+ * After a deploy, an open tab still holds the old `index.html`, and its lazy
+ * route imports 404. Vite reports those as `vite:preloadError`: reload once,
+ * guarded by a session flag with a cooldown (see `RootLayout`), and when the
+ * fresh bundle fails too let the error reach `RouteErrorBoundary`, which then
+ * offers a hard "Go home".
+ */
+const installChunkReloadRecovery = (): void => {
+  window.addEventListener("vite:preloadError", (event) => {
+    if (isChunkReloadPending() || !markChunkReload()) {
+      return;
+    }
+
+    event.preventDefault();
+    window.location.reload();
+  });
+};
+
+installChunkReloadRecovery();
+
+const container = document.getElementById("root");
+
+if (!container) {
+  throw new Error('Root element "#root" is missing from index.html.');
+}
+
+createRoot(container).render(
+  <StrictMode>
+    <AppProviders>
+      <App />
+    </AppProviders>
+  </StrictMode>,
 );
