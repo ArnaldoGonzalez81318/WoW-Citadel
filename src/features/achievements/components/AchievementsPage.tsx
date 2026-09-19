@@ -1,310 +1,270 @@
-import CategoryRoundedIcon from "@mui/icons-material/CategoryRounded";
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
+import { Alert, Box, Button, Chip, Stack } from "@mui/material";
+import { useMemo, useState } from "react";
+
+import { GRID_PRESETS } from "@/components/common/gridColumns";
+import PageHeader from "@/components/common/PageHeader";
+import ResultCard, {
+  getResultCardHeight,
+} from "@/components/common/ResultCard";
+import SectionCard from "@/components/common/SectionCard";
 import {
-  Alert,
-  Box,
-  Chip,
-  CircularProgress,
-  Grid,
-  Paper,
-  Skeleton,
-  Stack,
-  Typography,
-} from "@mui/material";
-import { useInfiniteQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import ResultCard from "@/components/common/ResultCard";
+  EmptyState,
+  ErrorState,
+  LiveStatus,
+  LoadingSkeleton,
+} from "@/components/common/StateBlocks";
 import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid";
+import AchievementCategoryTree from "@/features/achievements/components/AchievementCategoryTree";
+import AchievementDetailDialog from "@/features/achievements/components/AchievementDetailDialog";
 import { useAchievementCategoryIndex } from "@/features/achievements/hooks/useAchievementCategoryIndex";
-import { fetchAchievementGalleryPage } from "@/features/achievements/services/achievementService";
+import { useAchievementGallery } from "@/features/achievements/hooks/useAchievementGallery";
+import type {
+  AchievementCategorySummary,
+  AchievementGalleryItem,
+} from "@/features/achievements/types";
 import useInfiniteScrollTrigger from "@/hooks/useInfiniteScrollTrigger";
-import { usePerformanceOverlayEntry } from "@/devtools/PerformanceOverlayContext";
+import { useSearchParamState } from "@/hooks/useSearchParamState";
+import { env } from "@/lib/env";
+import { formatNumber } from "@/lib/format";
 
 const PAGE_SIZE = 18;
+const ROW_HEIGHT = getResultCardHeight("row");
+const GRID_GAP = 16;
+const EMPTY_CATEGORIES: AchievementCategorySummary[] = [];
 
 const AchievementsPage = (): JSX.Element => {
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
-    null,
-  );
-  const [renderedCount, setRenderedCount] = useState(0);
-  const { data, isLoading, isError, error } = useAchievementCategoryIndex();
+  const [categoryParam, setCategoryParam] = useSearchParamState("category");
+  const [selected, setSelected] = useState<AchievementGalleryItem | null>(null);
 
-  const categories = useMemo(() => data?.categories ?? [], [data]);
-  const groupedCategories = useMemo(() => {
-    const groups: Record<string, typeof categories> = {};
-    for (const cat of categories) {
-      const letter = cat.name[0].toUpperCase();
-      if (!groups[letter]) groups[letter] = [];
-      groups[letter].push(cat);
-    }
-    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
-  }, [categories]);
-  const errorMessage = error instanceof Error ? error.message : undefined;
+  const indexQuery = useAchievementCategoryIndex();
+  const rootCategories = indexQuery.data?.rootCategories ?? EMPTY_CATEGORIES;
+  const allCategories = indexQuery.data?.categories ?? EMPTY_CATEGORIES;
 
-  useEffect(() => {
-    if (categories.length > 0 && selectedCategoryId === null) {
-      setSelectedCategoryId(categories[0].id);
-    }
-  }, [categories, selectedCategoryId]);
+  // The URL is the source of truth; the first root is the default selection.
+  const parsedId = Number(categoryParam);
+  const selectedCategoryId: number | null =
+    Number.isInteger(parsedId) && parsedId > 0
+      ? parsedId
+      : (rootCategories[0]?.id ?? null);
 
-  const galleryQuery = useInfiniteQuery({
-    queryKey: ["achievement-gallery", selectedCategoryId],
-    initialPageParam: 1,
-    queryFn: ({ pageParam }) =>
-      fetchAchievementGalleryPage(
-        Number(selectedCategoryId),
-        pageParam,
-        PAGE_SIZE,
-      ),
-    enabled: selectedCategoryId !== null,
-    getNextPageParam: (lastPage) =>
-      lastPage.page < lastPage.pageCount ? lastPage.page + 1 : undefined,
-  });
+  const {
+    categoryQuery,
+    rootId,
+    parent,
+    subcategories,
+    refs,
+    galleryQuery,
+    items,
+    failedCount,
+    loadMore,
+  } = useAchievementGallery(selectedCategoryId, PAGE_SIZE);
 
-  const friendlyError =
-    galleryQuery.error instanceof Error
-      ? galleryQuery.error.message
-      : errorMessage;
-  const galleryPages = galleryQuery.data?.pages ?? [];
-  const galleryAchievements = useMemo(
-    () => galleryPages.flatMap((pageEntry) => pageEntry.achievements),
-    [galleryPages],
+  const selectedName = useMemo(
+    () =>
+      categoryQuery.data?.name ??
+      allCategories.find((category) => category.id === selectedCategoryId)?.name,
+    [allCategories, categoryQuery.data?.name, selectedCategoryId],
   );
 
-  const loadMoreAchievements = useCallback(() => {
-    if (!galleryQuery.hasNextPage || galleryQuery.isFetchingNextPage) {
-      return;
+  const handleSelect = (id: number): void => {
+    if (id !== selectedCategoryId) {
+      setCategoryParam(String(id));
     }
+  };
 
-    void galleryQuery.fetchNextPage();
-  }, [
-    galleryQuery.fetchNextPage,
-    galleryQuery.hasNextPage,
-    galleryQuery.isFetchingNextPage,
-  ]);
+  const hasGalleryData = Boolean(galleryQuery.data);
+  const isLoading =
+    indexQuery.isLoading ||
+    (categoryQuery.isLoading && !hasGalleryData) ||
+    (galleryQuery.isLoading && !hasGalleryData);
+  const isRefreshing =
+    categoryQuery.isFetching ||
+    (galleryQuery.isFetching && galleryQuery.isPlaceholderData);
 
   const infiniteScrollRef = useInfiniteScrollTrigger({
-    enabled: selectedCategoryId !== null && !friendlyError,
+    enabled:
+      Boolean(galleryQuery.hasNextPage) &&
+      !galleryQuery.isError &&
+      !galleryQuery.isPlaceholderData,
     hasMore: galleryQuery.hasNextPage,
     isLoading: galleryQuery.isFetchingNextPage,
-    onLoadMore: loadMoreAchievements,
+    onLoadMore: loadMore,
   });
 
-  usePerformanceOverlayEntry(
-    import.meta.env.DEV
-      ? {
-          id: "achievements",
-          label: "Achievements",
-          renderedCount,
-          totalCount: galleryAchievements.length,
-          notes: galleryPages[0]?.category.name ?? "Achievement gallery",
-        }
-      : null,
-  );
+  const renderBody = (): JSX.Element => {
+    if (indexQuery.isError) {
+      return (
+        <ErrorState
+          error={indexQuery.error}
+          context="achievement categories"
+          onRetry={() => void indexQuery.refetch()}
+        />
+      );
+    }
 
-  return (
-    <Stack spacing={{ xs: 4, md: 6 }}>
-      <Stack spacing={1.5}>
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <EmojiEventsRoundedIcon color="primary" fontSize="large" />
-          <Typography variant="h3" sx={{ fontWeight: 700 }}>
-            Achievement Atlas
-          </Typography>
-        </Stack>
-        <Typography variant="body1" color="text.secondary">
-          Browse achievements as a visual gallery. Filter by category and keep
-          scrolling through live Blizzard records with points, rewards, and icon
-          media.
-        </Typography>
-      </Stack>
+    if (categoryQuery.isError) {
+      return (
+        <ErrorState
+          error={categoryQuery.error}
+          context="this achievement category"
+          onRetry={() => void categoryQuery.refetch()}
+        />
+      );
+    }
 
-      <Paper
-        variant="outlined"
-        sx={{
-          p: { xs: 2, md: 2.5 },
-          borderRadius: 3,
-          borderColor: "rgba(30, 155, 233, 0.18)",
-          backgroundColor: "rgba(12, 18, 34, 0.65)",
-        }}
-      >
-        <Stack spacing={1.5}>
-          <Stack direction="row" spacing={0.75} alignItems="center">
-            <CategoryRoundedIcon
-              sx={{ fontSize: "0.9rem", color: "text.disabled" }}
-            />
-            <Typography
-              variant="caption"
-              sx={{
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: "text.disabled",
-                fontSize: "0.68rem",
-              }}
-            >
-              Achievement category
-            </Typography>
-          </Stack>
-          <Box
-            sx={{
-              maxHeight: 220,
-              overflowY: "auto",
-              pr: 0.5,
-              "&::-webkit-scrollbar": { width: 4 },
-              "&::-webkit-scrollbar-thumb": {
-                borderRadius: 2,
-                backgroundColor: "rgba(30, 155, 233, 0.25)",
-              },
-              "&::-webkit-scrollbar-track": { background: "transparent" },
-            }}
-          >
-            <Stack spacing={0.75}>
-              {groupedCategories.map(([letter, cats]) => (
-                <Stack
-                  key={letter}
-                  direction="row"
-                  alignItems="flex-start"
-                  spacing={1}
-                >
-                  <Typography
-                    sx={{
-                      fontSize: "0.65rem",
-                      fontWeight: 700,
-                      color: "rgba(30, 155, 233, 0.5)",
-                      letterSpacing: "0.06em",
-                      lineHeight: "24px",
-                      minWidth: 14,
-                      textAlign: "right",
-                      flexShrink: 0,
-                      userSelect: "none",
-                    }}
-                  >
-                    {letter}
-                  </Typography>
-                  <Stack
-                    direction="row"
-                    useFlexGap
-                    flexWrap="wrap"
-                    sx={{ gap: 0.75 }}
-                  >
-                    {cats.map((category) => {
-                      const isSelected = selectedCategoryId === category.id;
-                      return (
-                        <Chip
-                          key={category.id}
-                          label={category.name}
-                          clickable
-                          size="small"
-                          variant={isSelected ? "filled" : "outlined"}
-                          onClick={() => setSelectedCategoryId(category.id)}
-                          sx={{
-                            borderRadius: 1.5,
-                            height: 24,
-                            fontSize: "0.72rem",
-                            fontWeight: isSelected ? 700 : 400,
-                            ...(isSelected
-                              ? {
-                                  backgroundColor: "rgba(30, 155, 233, 0.9)",
-                                  color: "#fff",
-                                  boxShadow: "0 0 8px rgba(30, 155, 233, 0.45)",
-                                  "&:hover": {
-                                    backgroundColor: "rgba(30, 155, 233, 1)",
-                                  },
-                                }
-                              : {
-                                  borderColor: "rgba(30, 155, 233, 0.2)",
-                                  color: "text.secondary",
-                                  "&:hover": {
-                                    borderColor: "rgba(30, 155, 233, 0.5)",
-                                    backgroundColor: "rgba(30, 155, 233, 0.08)",
-                                  },
-                                }),
-                          }}
-                        />
-                      );
-                    })}
-                  </Stack>
-                </Stack>
-              ))}
-            </Stack>
-          </Box>
-        </Stack>
-      </Paper>
+    if (galleryQuery.isError) {
+      return (
+        <ErrorState
+          error={galleryQuery.error}
+          context="achievements"
+          onRetry={() => void galleryQuery.refetch()}
+        />
+      );
+    }
 
-      {isError ? (
-        <Alert severity="error" sx={{ borderRadius: 3 }}>
-          {errorMessage ??
-            "Unable to load the achievement index. Double-check your Blizzard API credentials and try again."}
-        </Alert>
-      ) : null}
+    if (isLoading) {
+      return (
+        <LoadingSkeleton
+          variant="grid"
+          columns={GRID_PRESETS.rows}
+          itemHeight={ROW_HEIGHT}
+          count={PAGE_SIZE}
+          gap={GRID_GAP}
+          label="Loading achievements"
+        />
+      );
+    }
 
-      {galleryQuery.isError ? (
-        <Alert severity="error" sx={{ borderRadius: 3 }}>
-          {friendlyError ??
-            "Unable to load achievement data for this category."}
-        </Alert>
-      ) : null}
+    if (categoryQuery.data && refs.length === 0) {
+      return (
+        <EmptyState
+          title="No achievements in this category"
+          description="Pick a subcategory above."
+        />
+      );
+    }
 
-      {isLoading || galleryQuery.isLoading ? (
-        <Grid container spacing={3}>
-          {Array.from({ length: 12 }).map((_, index) => (
-            <Grid item xs={12} md={6} lg={4} key={index}>
-              <Skeleton
-                variant="rounded"
-                height={320}
-                sx={{
-                  borderRadius: 3,
-                  backgroundColor: "rgba(12, 18, 34, 0.45)",
-                }}
-              />
-            </Grid>
-          ))}
-        </Grid>
-      ) : (
-        <Stack spacing={3}>
-          <Stack spacing={0.75}>
-            <Typography variant="h5" sx={{ fontWeight: 600 }}>
-              {galleryPages[0]?.category.name ?? "Achievements"}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Loaded {galleryAchievements.length} achievements across{" "}
-              {galleryPages.length || 1} page
-              {galleryPages.length === 1 ? "" : "s"}.
-            </Typography>
-          </Stack>
-
-          <VirtualizedCardGrid
-            items={galleryAchievements}
-            itemHeight={260}
-            getItemKey={(achievement) => achievement.id}
-            onVisibleRangeChange={(range) =>
-              setRenderedCount(range.end - range.start)
+    return (
+      <Stack spacing={2}>
+        {failedCount > 0 ? (
+          <Alert
+            severity="warning"
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => void galleryQuery.refetch()}
+              >
+                Retry
+              </Button>
             }
-            renderItem={(achievement) => (
-              <ResultCard result={achievement} accentColor="#f5c045" />
+          >
+            {failedCount === 1
+              ? "1 achievement could not be loaded."
+              : `${formatNumber(failedCount)} achievements could not be loaded.`}
+          </Alert>
+        ) : null}
+
+        <SectionCard
+          title={selectedName ?? "Achievements"}
+          titleAs="h2"
+          description={
+            parent && selectedName ? `${parent.name} › ${selectedName}` : undefined
+          }
+          padding="compact"
+        >
+          <VirtualizedCardGrid
+            items={items}
+            getItemKey={(item) => item.achievement.id}
+            columns={GRID_PRESETS.rows}
+            itemHeight={ROW_HEIGHT}
+            gap={GRID_GAP}
+            aria-label="Achievements"
+            renderItem={(item) => (
+              <ResultCard
+                result={item.result}
+                layout="row"
+                onSelect={() => setSelected(item)}
+              />
             )}
           />
+        </SectionCard>
 
-          <Stack spacing={1.5} alignItems="center">
-            {galleryQuery.hasNextPage ? (
-              <Typography variant="body2" color="text.secondary">
-                Keep scrolling to load more achievements.
-              </Typography>
-            ) : galleryAchievements.length > 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                Reached the end of this achievement category.
-              </Typography>
-            ) : null}
-            {galleryQuery.isFetchingNextPage ? (
-              <CircularProgress color="primary" size={28} />
-            ) : null}
-            {galleryQuery.hasNextPage ? (
-              <Box ref={infiniteScrollRef} sx={{ width: "100%", height: 1 }} />
-            ) : null}
-          </Stack>
+        <Stack spacing={1} alignItems="center">
+          <LiveStatus busy={galleryQuery.isFetchingNextPage}>
+            {galleryQuery.isFetchingNextPage
+              ? "Loading more achievements"
+              : galleryQuery.hasNextPage
+                ? `${formatNumber(items.length)} of ${formatNumber(refs.length)} achievements loaded`
+                : `All ${formatNumber(items.length)} achievements loaded`}
+          </LiveStatus>
+          {galleryQuery.hasNextPage ? (
+            <Box
+              ref={infiniteScrollRef}
+              aria-hidden="true"
+              sx={{ width: "100%", height: 1 }}
+            />
+          ) : null}
         </Stack>
-      )}
-    </Stack>
+      </Stack>
+    );
+  };
+
+  return (
+    <Box
+      sx={(theme) => ({
+        display: "flex",
+        flexDirection: "column",
+        gap: {
+          xs: theme.spacing(theme.wc.layout.sectionGap.xs),
+          md: theme.spacing(theme.wc.layout.sectionGap.md),
+        },
+      })}
+    >
+      <PageHeader
+        eyebrow="Character Progression"
+        title="Achievements"
+        documentTitle="Achievements"
+        icon={<EmojiEventsRoundedIcon />}
+        description="Browse Blizzard's achievement categories and their achievements, points and rewards."
+        meta={
+          <>
+            <Chip size="small" label={`Region ${env.region.toUpperCase()}`} />
+            {categoryQuery.data ? (
+              <Chip
+                size="small"
+                label={`${formatNumber(refs.length)} achievements`}
+              />
+            ) : null}
+          </>
+        }
+      />
+
+      {indexQuery.isSuccess ? (
+        <AchievementCategoryTree
+          rootCategories={rootCategories}
+          rootId={rootId}
+          subcategories={subcategories}
+          selectedId={selectedCategoryId}
+          onSelect={handleSelect}
+          summary={
+            categoryQuery.data
+              ? `${formatNumber(refs.length)} achievements`
+              : undefined
+          }
+          progress={isRefreshing}
+        />
+      ) : null}
+
+      {renderBody()}
+
+      <AchievementDetailDialog
+        open={selected !== null}
+        onClose={() => setSelected(null)}
+        item={selected}
+      />
+    </Box>
   );
 };
 
