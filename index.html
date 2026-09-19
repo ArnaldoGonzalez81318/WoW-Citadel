@@ -2,24 +2,63 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/src/favicon.svg" />
-    <link rel="apple-touch-icon" href="/src/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WoW Citadel</title>
     <meta
       name="description"
       content="WoW Citadel makes it effortless for World of Warcraft players to search items, spells, achievements, and mounts using Blizzard's official Game Data APIs."
     />
+    <meta name="theme-color" content="#040813" />
+    <meta name="color-scheme" content="dark" />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="WoW Citadel" />
+    <meta property="og:title" content="WoW Citadel" />
+    <meta
+      property="og:description"
+      content="WoW Citadel makes it effortless for World of Warcraft players to search items, spells, achievements, and mounts using Blizzard's official Game Data APIs."
+    />
+    <meta property="og:image" content="/favicon.svg" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="WoW Citadel" />
+    <meta
+      name="twitter:description"
+      content="WoW Citadel makes it effortless for World of Warcraft players to search items, spells, achievements, and mounts using Blizzard's official Game Data APIs."
+    />
+    <meta name="twitter:image" content="/favicon.svg" />
+
+    <!-- Icon CDN: <img> fetches are no-CORS, so no crossorigin here. -->
+    <link rel="preconnect" href="https://render.worldofwarcraft.com" />
+    <link rel="dns-prefetch" href="https://render.worldofwarcraft.com" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Non-blocking font stylesheet: applied once loaded; noscript keeps it for users without JS. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap"
       rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
+      media="print"
+      onload="this.media='all'"
     />
-    <title>WoW Citadel</title>
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
+      />
+    </noscript>
   </head>
 
   <body>
     <div id="root"></div>
+    <noscript>
+      <p style="margin: 2rem; font-family: system-ui, sans-serif">
+        WoW Citadel needs JavaScript to search Blizzard's game data. Please
+        enable it and reload the page.
+      </p>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
