@@ -1,37 +1,63 @@
-import { Box, Container } from "@mui/material"
-import { PropsWithChildren } from "react"
-import PerformanceOverlay from "@/devtools/PerformanceOverlay"
-import Footer from "@/components/layout/Footer"
-import Header from "@/components/layout/Header"
+import { Box, Container } from "@mui/material";
+import { useEffect, useRef } from "react";
+import type { PropsWithChildren } from "react";
+import { useLocation } from "react-router-dom";
 
-const AppShell = ({ children }: PropsWithChildren): JSX.Element => (
-  <Box
-    sx={{
-      minHeight: "100vh",
-      display: "flex",
-      flexDirection: "column",
-      position: "relative",
-      background: "radial-gradient(circle at 20% 20%, rgba(30,155,233,0.18), transparent 55%)",
-      "&::before": {
-        content: "''",
-        position: "absolute",
-        inset: 0,
-        background:
-          "radial-gradient(circle at 80% 0%, rgba(245,192,69,0.18), transparent 45%)",
-        pointerEvents: "none",
-        zIndex: 0,
-      },
-    }}
-  >
-    <Box sx={{ position: "relative", zIndex: 1, flex: 1, display: "flex", flexDirection: "column" }}>
+import Footer from "@/components/layout/Footer";
+import Header from "@/components/layout/Header";
+
+/**
+ * Header, main landmark and footer. The body paints the only background
+ * (theme CssBaseline); nothing here adds a wash, an overlay layer or debug UI.
+ *
+ * RootLayout owns the skip link and the `#main-content` target, and the
+ * router's ScrollRestoration owns scroll position. This shell only moves
+ * keyboard focus to `main` after a route change so the next Tab starts in
+ * the new page rather than deep inside the header.
+ */
+const AppShell = ({ children }: PropsWithChildren): JSX.Element => {
+  const mainRef = useRef<HTMLElement>(null);
+  const { pathname } = useLocation();
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    mainRef.current?.focus({ preventScroll: true });
+  }, [pathname]);
+
+  return (
+    <Box
+      sx={{
+        minHeight: "100vh",
+        "@supports (height: 100dvh)": { minHeight: "100dvh" },
+        display: "flex",
+        flexDirection: "column",
+        // Transparent on purpose: body paints background.default plus the one
+        // radial wash (CssBaseline); an opaque shell would hide it.
+      }}
+    >
       <Header />
-      <Container component="main" maxWidth="xl" sx={{ flex: 1, py: { xs: 6, md: 10 } }}>
+      <Container
+        component="main"
+        ref={mainRef}
+        tabIndex={-1}
+        maxWidth="xl"
+        sx={(theme) => ({
+          flex: 1,
+          pt: { xs: 3, md: 4 },
+          pb: { xs: 6, md: 8 },
+          outline: "none",
+          scrollMarginTop: theme.wc.layout.headerHeight.md,
+        })}
+      >
         {children}
       </Container>
       <Footer />
-      <PerformanceOverlay />
     </Box>
-  </Box>
-)
+  );
+};
 
-export default AppShell
+export default AppShell;
