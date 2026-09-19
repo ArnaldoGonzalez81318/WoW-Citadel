@@ -3,8 +3,22 @@
   publish = "dist"
   functions = "netlify/functions"
 
+# Order matters: the API proxy rule must come before the SPA fallback.
+# The `from` here must match the browser's proxy prefix; if you customise
+# VITE_BNET_PROXY_PATH for a production build, change this `from` to match.
 [[redirects]]
   from = "/api/blizzard/*"
   to = "/.netlify/functions/blizzard-proxy/:splat"
   status = 200
   force = true
+
+# SPA fallback so deep links (/category/items, /achievements, ...) load
+# index.html and react-router takes over. No `force`: real files under
+# /assets/* and /index.html keep serving as-is.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[functions]
+  node_bundler = "esbuild"
