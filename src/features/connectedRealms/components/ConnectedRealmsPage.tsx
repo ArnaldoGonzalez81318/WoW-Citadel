@@ -1,158 +1,143 @@
 import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
-import TravelExploreRoundedIcon from "@mui/icons-material/TravelExploreRounded";
-import {
-  Alert,
-  Grid,
-  Skeleton,
-  Stack,
-  ToggleButton,
-  ToggleButtonGroup,
-  Typography,
-} from "@mui/material";
-import { SyntheticEvent, useMemo, useState } from "react";
-import ConnectedRealmCard from "@/features/connectedRealms/components/ConnectedRealmCard";
-import { useConnectedRealmSnapshots } from "@/features/connectedRealms/hooks/useConnectedRealmSnapshots";
-import { usePerformanceOverlayEntry } from "@/devtools/PerformanceOverlayContext";
-import SearchInput from "@/features/search/components/SearchInput";
+import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
+import { Button, Chip, Stack } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
+import { useMemo } from "react";
 
-const SAMPLE_SIZES = [6, 12, 18, 24];
+import { GRID_PRESETS } from "@/components/common/gridColumns";
+import PageHeader from "@/components/common/PageHeader";
+import {
+  EmptyState,
+  ErrorState,
+  LiveStatus,
+  LoadingSkeleton,
+} from "@/components/common/StateBlocks";
+import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid";
+import ConnectedRealmCard, {
+  CONNECTED_REALM_CARD_HEIGHT,
+} from "@/features/connectedRealms/components/ConnectedRealmCard";
+import ConnectedRealmFilters, {
+  useConnectedRealmFilters,
+} from "@/features/connectedRealms/components/ConnectedRealmFilters";
+import { useConnectedRealmCatalog } from "@/features/connectedRealms/hooks/useConnectedRealmSnapshots";
+import type { ConnectedRealmSnapshot } from "@/features/connectedRealms/types";
+import { env } from "@/lib/env";
+import { formatNumber } from "@/lib/format";
+
+const EYEBROW = "World & Factions";
+const SKELETON_COUNT = 9;
+const EMPTY_SNAPSHOTS: ConnectedRealmSnapshot[] = [];
 
 const ConnectedRealmsPage = (): JSX.Element => {
-  const [limit, setLimit] = useState<number>(SAMPLE_SIZES[1]);
-  const [filterQuery, setFilterQuery] = useState("");
-  const { data, isLoading, isError, error } = useConnectedRealmSnapshots(limit);
+  const theme = useTheme();
+  const catalogQuery = useConnectedRealmCatalog();
+  const snapshots = catalogQuery.data?.snapshots ?? EMPTY_SNAPSHOTS;
+  const failedCount = catalogQuery.data?.failedCount ?? 0;
+  const filterState = useConnectedRealmFilters(snapshots);
+  const { visible, filters, clearFilters, hasActiveFilters } = filterState;
 
-  const allSnapshots = useMemo(() => data ?? [], [data]);
+  const highlightQuery = useMemo(() => filters.q.trim(), [filters.q]);
 
-  const snapshots = useMemo(() => {
-    const trimmed = filterQuery.trim().toLowerCase();
-    if (!trimmed) {
-      return allSnapshots;
+  const renderBody = (): JSX.Element => {
+    if (catalogQuery.isPending) {
+      return (
+        <LoadingSkeleton
+          variant="grid"
+          columns={GRID_PRESETS.rows}
+          itemHeight={CONNECTED_REALM_CARD_HEIGHT}
+          count={SKELETON_COUNT}
+          label="Loading connected realms"
+        />
+      );
     }
 
-    return allSnapshots.filter(
-      (snapshot) =>
-        snapshot.displayName.toLowerCase().includes(trimmed) ||
-        snapshot.realmSlugs.some((slug) =>
-          slug.toLowerCase().includes(trimmed),
-        ),
-    );
-  }, [allSnapshots, filterQuery]);
+    if (catalogQuery.isError) {
+      return (
+        <ErrorState
+          error={catalogQuery.error}
+          context="connected realms"
+          onRetry={() => void catalogQuery.refetch()}
+        />
+      );
+    }
 
-  const errorMessage = error instanceof Error ? error.message : undefined;
-
-  usePerformanceOverlayEntry(
-    import.meta.env.DEV
-      ? {
-          id: "connected-realms",
-          label: "Connected Realms",
-          renderedCount: snapshots.length,
-          totalCount: allSnapshots.length,
-          notes: filterQuery
-            ? `Filter: "${filterQuery}" (${snapshots.length}/${allSnapshots.length})`
-            : `Sample ${limit}`,
+    return (
+      <VirtualizedCardGrid
+        items={visible}
+        columns={GRID_PRESETS.rows}
+        itemHeight={CONNECTED_REALM_CARD_HEIGHT}
+        gap={16}
+        aria-label="Connected realms"
+        getItemKey={(snapshot) => snapshot.id}
+        renderItem={(snapshot) => (
+          <ConnectedRealmCard snapshot={snapshot} highlightQuery={highlightQuery} />
+        )}
+        emptyState={
+          <EmptyState
+            title="No connected realms match"
+            description="Try another realm name or clear the filters"
+            action={
+              hasActiveFilters ? (
+                <Button variant="outlined" size="small" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              ) : undefined
+            }
+          />
         }
-      : null,
-  );
-
-  const handleLimitChange = (_event: SyntheticEvent, value: number | null) => {
-    if (value) {
-      setLimit(value);
-    }
+      />
+    );
   };
 
   return (
-    <Stack spacing={{ xs: 4, md: 6 }}>
-      <Stack spacing={1.5}>
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <PublicRoundedIcon color="primary" fontSize="large" />
-          <Typography variant="h3" sx={{ fontWeight: 700 }}>
-            Connected Realm Observatory
-          </Typography>
-        </Stack>
-        <Typography variant="body1" color="text.secondary">
-          Inspect live connected realm clusters for your region. Each card
-          aggregates the member realms, queue state, population, and realm types
-          straight from Blizzard&apos;s game data APIs.
-        </Typography>
-      </Stack>
+    <Stack
+      spacing={{
+        xs: theme.wc.layout.sectionGap.xs,
+        md: theme.wc.layout.sectionGap.md,
+      }}
+    >
+      <PageHeader
+        eyebrow={EYEBROW}
+        title="Connected Realms"
+        icon={<PublicRoundedIcon />}
+        description={`Live connected-realm clusters for ${env.region.toUpperCase()}: member realms, status, population and queue state.`}
+        meta={
+          <>
+            <Chip size="small" label={`Region ${env.region.toUpperCase()}`} />
+            <Chip
+              size="small"
+              label={`${formatNumber(snapshots.length)} clusters`}
+            />
+          </>
+        }
+      />
 
-      <Stack
-        direction={{ xs: "column", sm: "row" }}
-        spacing={2}
-        alignItems={{ xs: "stretch", sm: "center" }}
-        flexWrap="wrap"
-      >
-        <Stack direction="row" spacing={1} alignItems="center">
-          <TravelExploreRoundedIcon color="primary" />
-          <Typography variant="subtitle1" color="text.secondary">
-            Sample size
-          </Typography>
-        </Stack>
-        <ToggleButtonGroup
-          value={limit}
-          exclusive
-          size="small"
-          onChange={handleLimitChange}
-          color="primary"
-        >
-          {SAMPLE_SIZES.map((size) => (
-            <ToggleButton key={size} value={size} sx={{ borderRadius: 999 }}>
-              {size}
-            </ToggleButton>
-          ))}
-        </ToggleButtonGroup>
-        <Stack sx={{ flex: 1, minWidth: 240 }}>
-          <SearchInput
-            value={filterQuery}
-            onChange={setFilterQuery}
-            onClear={() => setFilterQuery("")}
-            autoFocus={false}
-            placeholder="Filter by realm name..."
-          />
-        </Stack>
-        {filterQuery && !isLoading ? (
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ whiteSpace: "nowrap" }}
+      <ConnectedRealmFilters
+        filterState={filterState}
+        total={snapshots.length}
+        isFetching={catalogQuery.isFetching}
+      />
+
+      {failedCount > 0 ? (
+        <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+          <LiveStatus busy={catalogQuery.isFetching}>
+            {`${formatNumber(failedCount)} ${
+              failedCount === 1 ? "cluster" : "clusters"
+            } could not be loaded`}
+          </LiveStatus>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<RefreshRoundedIcon />}
+            disabled={catalogQuery.isFetching}
+            onClick={() => void catalogQuery.refetch()}
           >
-            {snapshots.length} of {allSnapshots.length} shown
-          </Typography>
-        ) : null}
-      </Stack>
-
-      {isError ? (
-        <Alert severity="error" sx={{ borderRadius: 3 }}>
-          {errorMessage ??
-            "Unable to load connected realm data. Ensure your Blizzard credentials are valid and try again."}
-        </Alert>
+            Retry
+          </Button>
+        </Stack>
       ) : null}
 
-      {isLoading ? (
-        <Grid container spacing={2} columns={{ xs: 1, sm: 2, md: 3 }}>
-          {Array.from({ length: limit }).map((_, index) => (
-            <Grid item xs={1} key={index}>
-              <Skeleton
-                variant="rounded"
-                sx={{
-                  height: 220,
-                  borderRadius: 3,
-                  backgroundColor: "rgba(12, 18, 34, 0.45)",
-                }}
-              />
-            </Grid>
-          ))}
-        </Grid>
-      ) : (
-        <Grid container spacing={2} columns={{ xs: 1, sm: 2, md: 3 }}>
-          {snapshots.map((snapshot) => (
-            <Grid item xs={1} key={snapshot.id}>
-              <ConnectedRealmCard snapshot={snapshot} />
-            </Grid>
-          ))}
-        </Grid>
-      )}
+      {renderBody()}
     </Stack>
   );
 };
