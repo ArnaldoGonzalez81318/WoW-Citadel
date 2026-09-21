@@ -48,3 +48,9 @@ export type AzeriteEssenceMediaAsset = {
 export type AzeriteEssenceMedia = {
   assets: AzeriteEssenceMediaAsset[];
 };
+
+/** Everything one essence card (and its dialog) needs, fetched together. */
+export type AzeriteEssenceCardData = {
+  detail: AzeriteEssenceDetail;
+  iconUrl?: string;
+};
