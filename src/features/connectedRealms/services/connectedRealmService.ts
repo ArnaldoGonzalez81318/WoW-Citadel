@@ -1,32 +1,40 @@
+import type { ChipProps } from "@mui/material";
 import { blizzardClient, BlizzardRequestError } from "@/lib/blizzardClient";
-import { env } from "@/lib/env";
+import {
+  localized,
+  mapWithConcurrency,
+  namespace,
+  optional404,
+} from "@/lib/blizzardHelpers";
+import { humanizeEnum } from "@/lib/format";
 import type {
   ConnectedRealm,
+  ConnectedRealmCatalog,
   ConnectedRealmIndexResponse,
-  LocalizedValue,
+  ConnectedRealmMember,
+  ConnectedRealmSearchEntry,
+  ConnectedRealmSnapshot,
+  RealmPopulationType,
   RealmReference,
+  RealmStatusType,
 } from "@/features/connectedRealms/types";
 
-const DYNAMIC_NAMESPACE = `dynamic-${env.region}`;
+export type { ConnectedRealmSnapshot } from "@/features/connectedRealms/types";
 
-const resolveLocalized = (value: LocalizedValue | undefined): string => {
-  if (!value) {
-    return "";
-  }
-
-  if (typeof value === "string") {
-    return value;
-  }
-
-  return (
-    value[env.locale] ??
-    value.en_US ??
-    Object.values(value).find(
-      (entry) => typeof entry === "string" && entry.length > 0,
-    ) ??
-    ""
-  );
+type ConnectedRealmSearchResponse = {
+  page?: number;
+  pageSize?: number;
+  pageCount?: number;
+  results?: Array<{
+    key: { href: string };
+    data: ConnectedRealmSearchEntry;
+  }>;
 };
+
+const SEARCH_PAGE_SIZE = 1000;
+const MAX_SEARCH_PAGES = 3;
+const DETAIL_CONCURRENCY = 6;
+const SHORT_LABEL_NAMES = 3;
 
 const extractRealmId = (href: string): number | null => {
   const match = /connected-realm\/(\d+)/i.exec(href);
@@ -42,94 +50,212 @@ const uniqueStrings = (values: Array<string | undefined>): string[] =>
     ),
   );
 
-const normalizeRealm = (realm: RealmReference) => ({
+const normalizeRealm = (realm: RealmReference): ConnectedRealmMember => ({
   id: realm.id,
   slug: realm.slug,
-  name: resolveLocalized(realm.name),
+  name: localized(realm.name) || realm.slug,
   timezone: realm.timezone,
-  type: resolveLocalized(realm.type?.name),
-  category: resolveLocalized(realm.category?.name),
+  type: localized(realm.type?.name),
+  typeCode: realm.type?.type,
+  category: localized(realm.category?.name),
+  locale: realm.locale,
 });
 
-export const fetchConnectedRealmIndex =
-  (): Promise<ConnectedRealmIndexResponse> =>
-    blizzardClient.get<ConnectedRealmIndexResponse>(
-      "/data/wow/connected-realm/index",
-      {
-        namespace: DYNAMIC_NAMESPACE,
-      },
-    );
+const compareNames = (left: string, right: string): number =>
+  left.localeCompare(right, undefined, { sensitivity: "base" });
+
+/** Flattens one connected-realm record into the shape the UI consumes. */
+export const toSnapshot = (realm: ConnectedRealm): ConnectedRealmSnapshot => {
+  const realmDetails = (realm.realms ?? [])
+    .map(normalizeRealm)
+    .sort((left, right) => compareNames(left.name, right.name));
+  const realmNames = realmDetails.map((detail) => detail.name);
+  const leadName = realmNames[0] ?? `Connected realm #${realm.id}`;
+  const shortLabel =
+    realmNames.length > SHORT_LABEL_NAMES
+      ? `${realmNames.slice(0, SHORT_LABEL_NAMES).join(", ")} +${
+          realmNames.length - SHORT_LABEL_NAMES
+        }`
+      : realmNames.join(", ") || leadName;
+  const statusType = realm.status?.type;
+  const populationType = realm.population?.type;
+
+  return {
+    ...realm,
+    realmDetails,
+    displayName: realmNames.join(", "),
+    leadName,
+    shortLabel,
+    realmSlugs: realmDetails.map((detail) => detail.slug),
+    realmTypes: uniqueStrings(
+      realmDetails.map((detail) => detail.type || detail.category),
+    ),
+    timezones: uniqueStrings(realmDetails.map((detail) => detail.timezone)),
+    populationLabel:
+      humanizeEnum(populationType) ||
+      localized(realm.population?.name) ||
+      undefined,
+    statusLabel:
+      humanizeEnum(statusType) || localized(realm.status?.name) || undefined,
+    statusType,
+    populationType,
+  };
+};
+
+export const fetchConnectedRealmIndex = (
+  signal?: AbortSignal,
+): Promise<ConnectedRealmIndexResponse> =>
+  blizzardClient.get<ConnectedRealmIndexResponse>(
+    "/data/wow/connected-realm/index",
+    { namespace: namespace("dynamic") },
+    { signal },
+  );
 
 export const fetchConnectedRealm = (
   connectedRealmId: number,
+  signal?: AbortSignal,
 ): Promise<ConnectedRealm> =>
   blizzardClient.get<ConnectedRealm>(
     `/data/wow/connected-realm/${connectedRealmId}`,
-    {
-      namespace: DYNAMIC_NAMESPACE,
-    },
+    { namespace: namespace("dynamic") },
+    { signal },
   );
 
-export type ConnectedRealmSnapshot = ConnectedRealm & {
-  realmDetails: ReturnType<typeof normalizeRealm>[];
-  displayName: string;
-  realmSlugs: string[];
-  realmTypes: string[];
-  timezones: string[];
-  populationLabel?: string;
-  statusLabel?: string;
-};
+const searchConnectedRealms = async (
+  signal?: AbortSignal,
+): Promise<ConnectedRealm[]> => {
+  // Keyed by id: search paging is only stable with an explicit `orderby`.
+  const recordsById = new Map<number, ConnectedRealm>();
 
-export const fetchConnectedRealmSnapshots = async (
-  limit = 12,
-): Promise<ConnectedRealmSnapshot[]> => {
-  const index = await fetchConnectedRealmIndex();
-  const ids = index.connected_realms
-    .map((entry) => extractRealmId(entry.href))
-    .filter((id): id is number => typeof id === "number")
-    .slice(0, limit);
+  for (let page = 1; page <= MAX_SEARCH_PAGES; page += 1) {
+    const response = await optional404(() =>
+      blizzardClient.get<ConnectedRealmSearchResponse>(
+        "/data/wow/search/connected-realm",
+        {
+          namespace: namespace("dynamic"),
+          orderby: "id",
+          _pageSize: SEARCH_PAGE_SIZE,
+          _page: page,
+        },
+        { signal },
+      ),
+    );
 
-  if (ids.length === 0) {
-    return [];
+    const results = response?.results ?? [];
+    results.forEach(({ data }) => {
+      if (data && typeof data.id === "number" && !recordsById.has(data.id)) {
+        recordsById.set(data.id, data);
+      }
+    });
+
+    const pageCount = response?.pageCount ?? 1;
+    if (results.length === 0 || page >= pageCount) {
+      break;
+    }
   }
 
-  const results = await Promise.all(
-    ids.map(async (id) => {
-      try {
-        return await fetchConnectedRealm(id);
-      } catch (error) {
-        if (
-          error instanceof BlizzardRequestError &&
-          (error.status === 404 || error.status === 204)
-        ) {
-          return null;
-        }
-        throw error;
-      }
-    }),
+  return [...recordsById.values()];
+};
+
+/**
+ * Index + one detail request per cluster with settled results: a 404/204
+ * skips the cluster silently, any other failure is skipped but counted so
+ * one bad cluster never blanks the page.
+ */
+const fetchCatalogFromIndex = async (
+  signal?: AbortSignal,
+): Promise<ConnectedRealmCatalog> => {
+  const index = await fetchConnectedRealmIndex(signal);
+  const ids = (index.connected_realms ?? [])
+    .map((entry) => extractRealmId(entry.href))
+    .filter((id): id is number => typeof id === "number");
+
+  const results = await mapWithConcurrency(
+    ids,
+    DETAIL_CONCURRENCY,
+    (id) => fetchConnectedRealm(id, signal),
+    signal,
   );
 
-  return results
-    .filter((realm): realm is ConnectedRealm => Boolean(realm))
-    .map((realm) => {
-      const realmDetails = realm.realms?.map(normalizeRealm) ?? [];
-      const realmNames = realmDetails.map((detail) => detail.name);
-      const realmTypes = uniqueStrings(
-        realmDetails.map((detail) => detail.type || detail.category),
-      );
-      const timezones = uniqueStrings(
-        realmDetails.map((detail) => detail.timezone),
-      );
+  const snapshots: ConnectedRealmSnapshot[] = [];
+  let failedCount = 0;
 
-      return {
-        ...realm,
-        displayName: realmNames.join(", "),
-        realmDetails,
-        realmSlugs: realmDetails.map((detail) => detail.slug),
-        realmTypes,
-        timezones,
-        populationLabel: resolveLocalized(realm.population?.name),
-        statusLabel: resolveLocalized(realm.status?.name),
-      };
-    });
+  results.forEach((result) => {
+    if (result.status === "fulfilled") {
+      if (result.value) {
+        snapshots.push(toSnapshot(result.value));
+      }
+      return;
+    }
+
+    const reason: unknown = result.reason;
+    if (reason instanceof BlizzardRequestError && reason.isNotFound) {
+      return;
+    }
+    failedCount += 1;
+  });
+
+  return { snapshots, failedCount };
 };
+
+const sortSnapshots = (
+  snapshots: ConnectedRealmSnapshot[],
+): ConnectedRealmSnapshot[] =>
+  snapshots.sort((left, right) => compareNames(left.leadName, right.leadName));
+
+/**
+ * Every connected realm in the region, in one search request (three at
+ * most). Falls back to the index + per-cluster details when the search
+ * endpoint is unavailable or empty.
+ */
+export const fetchConnectedRealmCatalog = async (
+  signal?: AbortSignal,
+): Promise<ConnectedRealmCatalog> => {
+  const searched = await searchConnectedRealms(signal);
+
+  if (searched.length > 0) {
+    return {
+      snapshots: sortSnapshots(searched.map(toSnapshot)),
+      failedCount: 0,
+    };
+  }
+
+  const fallback = await fetchCatalogFromIndex(signal);
+  return {
+    snapshots: sortSnapshots(fallback.snapshots),
+    failedCount: fallback.failedCount,
+  };
+};
+
+/* ------------------------------------------------------------------ */
+/* Status / population presentation                                    */
+/* ------------------------------------------------------------------ */
+
+export type RealmChipColor = NonNullable<ChipProps["color"]>;
+
+export const statusChipColor = (type?: RealmStatusType): RealmChipColor => {
+  if (type === "UP") {
+    return "success";
+  }
+  if (type === "DOWN") {
+    return "error";
+  }
+  return "default";
+};
+
+const POPULATION_CHIP_COLORS: Record<string, RealmChipColor> = {
+  LOW: "default",
+  MEDIUM: "info",
+  HIGH: "warning",
+  FULL: "error",
+  LOCKED: "error",
+  RECOMMENDED: "success",
+  NEW_PLAYERS: "success",
+};
+
+export const populationChipColor = (
+  type?: RealmPopulationType,
+): RealmChipColor => POPULATION_CHIP_COLORS[type ?? ""] ?? "default";
+
+export const populationHint =
+  "Blizzard's current login population tier for this realm group";
