@@ -1,7 +1,8 @@
 import { blizzardClient } from "@/lib/blizzardClient";
-import { env } from "@/lib/env";
+import { namespace } from "@/lib/blizzardHelpers";
 
 export type WowTokenPrice = {
+  /** Price in copper (always a whole-gold multiple). */
   price: number;
   lastUpdated: Date;
 };
@@ -11,14 +12,17 @@ type WowTokenResponse = {
   last_updated_timestamp: number;
 };
 
-const namespace = `dynamic-${env.region}`;
+export type FetchWowTokenPriceOptions = {
+  signal?: AbortSignal;
+};
 
-export const fetchWowTokenPrice = async (): Promise<WowTokenPrice> => {
+export const fetchWowTokenPrice = async ({
+  signal,
+}: FetchWowTokenPriceOptions = {}): Promise<WowTokenPrice> => {
   const response = await blizzardClient.get<WowTokenResponse>(
     "/data/wow/token/index",
-    {
-      namespace,
-    },
+    { namespace: namespace("dynamic") },
+    { signal },
   );
 
   return {
