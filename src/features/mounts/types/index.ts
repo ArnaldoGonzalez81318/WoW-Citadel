@@ -1,8 +1,10 @@
+import type { SearchResult } from "@/features/search/types";
+
+export type { LocalizedString } from "@/lib/blizzardHelpers";
+
 export type LinkReference = {
   href: string;
 };
-
-export type LocalizedString = string | { [locale: string]: string | undefined };
 
 export type MountSummary = {
   id: number;
@@ -26,8 +28,18 @@ export type MountIndexResponse = {
 export type MountDetail = {
   id: number;
   name: string;
-  description: string;
+  /** Cleaned prose; absent when Blizzard has none (never filler). */
+  description?: string;
   source?: string;
   href: string;
+  displayId?: number;
+};
+
+/**
+ * Card-ready mount: a `SearchResult` plus the creature display id so the
+ * detail dialog can load artwork without a preceding detail request.
+ */
+export type MountGalleryResult = SearchResult & {
+  kind: "mount";
   displayId?: number;
 };
