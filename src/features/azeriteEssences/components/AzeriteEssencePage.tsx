@@ -1,584 +1,252 @@
 import PsychologyRoundedIcon from "@mui/icons-material/PsychologyRounded";
-import ReportProblemRoundedIcon from "@mui/icons-material/ReportProblemRounded";
-import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import SearchInput from "@/features/search/components/SearchInput";
-import {
-  Alert,
-  Box,
-  Chip,
-  CircularProgress,
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  Grid,
-  IconButton,
-  Link,
-  Paper,
-  Skeleton,
-  Stack,
-  Typography,
-} from "@mui/material";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Box, Button, Chip } from "@mui/material";
+import { useMemo, useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import ResultCard from "@/components/common/ResultCard";
-import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid";
-import useInfiniteScrollTrigger from "@/hooks/useInfiniteScrollTrigger";
-import useIdlePrefetchWindow from "@/hooks/useIdlePrefetchWindow";
-import { SearchResult } from "@/features/search/types";
+
 import {
-  fetchAzeriteEssenceDetail,
-  fetchAzeriteEssenceIcon,
+  ExplorerFilterBar,
+  SearchField,
+} from "@/components/common/ExplorerFilterBar";
+import { GRID_PRESETS } from "@/components/common/gridColumns";
+import PageHeader from "@/components/common/PageHeader";
+import type { PageHeaderBreadcrumb } from "@/components/common/PageHeader";
+import ResultCard, {
+  getResultCardHeight,
+} from "@/components/common/ResultCard";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingSkeleton,
+} from "@/components/common/StateBlocks";
+import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid";
+import EssenceDetailDialog from "@/features/azeriteEssences/components/EssenceDetailDialog";
+import {
+  fetchAzeriteEssenceCard,
   fetchAzeriteEssenceIndex,
-  searchAzeriteEssences,
 } from "@/features/azeriteEssences/services/azeriteEssenceService";
-import { usePerformanceOverlayEntry } from "@/devtools/PerformanceOverlayContext";
+import type {
+  AzeriteEssenceCardData,
+  AzeriteEssenceSummary,
+} from "@/features/azeriteEssences/types";
+import type { SearchResult } from "@/features/search/types";
+import useIdlePrefetchWindow from "@/hooks/useIdlePrefetchWindow";
+import { useSearchParamState } from "@/hooks/useSearchParamState";
 import { env } from "@/lib/env";
-import { BlizzardRequestError } from "@/lib/blizzardClient";
 
-const AZERITE_SEARCH_MIN_LENGTH = 2;
-const PAGE_SIZE = 18;
+export type AzeriteEssencePageProps = {
+  /** Nav section shown as the gold eyebrow (CategoryPage passes it). */
+  eyebrow?: string;
+  /** Home › Section › Page trail (CategoryPage passes it). */
+  breadcrumbs?: PageHeaderBreadcrumb[];
+};
 
-const AzeriteEssencePage = (): JSX.Element => {
-  const [query, setQuery] = useState("");
-  const [visiblePages, setVisiblePages] = useState(1);
-  const [renderedCount, setRenderedCount] = useState(0);
-  const [selectedEssence, setSelectedEssence] = useState<SearchResult | null>(
-    null,
+const ONE_HOUR = 3_600_000;
+const ROW_HEIGHT = getResultCardHeight("row");
+const GRID_GAP = 16;
+
+const toGalleryItem = (
+  essence: AzeriteEssenceSummary,
+  data: AzeriteEssenceCardData | undefined,
+): SearchResult => {
+  const detail = data?.detail;
+  const firstPower = detail?.powers[0];
+  const major = firstPower?.mainPowerSpell?.name;
+  const minor = firstPower?.passivePowerSpell?.name;
+  const specs = detail?.allowedSpecializations ?? [];
+
+  const meta = [
+    { label: "Major", value: major },
+    { label: "Minor", value: minor },
+  ].filter(
+    (entry): entry is { label: string; value: string } =>
+      typeof entry.value === "string" && entry.value.length > 0,
   );
+
+  return {
+    id: essence.id,
+    name: essence.name,
+    href: essence.key.href,
+    kind: "azerite-essence",
+    summary: major ?? undefined,
+    details: minor ?? undefined,
+    subtitle: major,
+    meta,
+    tag: detail ? (specs.length ? `${specs.length} specs` : "All specs") : undefined,
+    typeLabel: "Azerite Essence",
+    mediaUrl: data?.iconUrl,
+  };
+};
+
+const AzeriteEssencePage = ({
+  eyebrow = "Collectibles & Gear",
+  breadcrumbs,
+}: AzeriteEssencePageProps): JSX.Element => {
+  const [q, setQ] = useSearchParamState("q");
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const indexQuery = useQuery({
     queryKey: ["azerite-essence-index", env.region],
-    queryFn: fetchAzeriteEssenceIndex,
-    staleTime: 1000 * 60 * 60,
+    queryFn: ({ signal }) => fetchAzeriteEssenceIndex(signal),
+    staleTime: ONE_HOUR,
   });
 
-  const trimmedQuery = query.trim();
-  const searchQuery = useQuery({
-    queryKey: ["azerite-essence-search", trimmedQuery, env.region],
-    queryFn: () => searchAzeriteEssences(trimmedQuery),
-    enabled: trimmedQuery.length >= AZERITE_SEARCH_MIN_LENGTH,
-    staleTime: 1000 * 60 * 10,
-  });
-
-  const candidateEssences = useMemo(() => {
-    if (trimmedQuery.length >= AZERITE_SEARCH_MIN_LENGTH) {
-      return searchQuery.data ?? [];
-    }
-
-    return indexQuery.data?.azerite_essences ?? [];
-  }, [indexQuery.data, searchQuery.data, trimmedQuery.length]);
-
-  const visibleEssences = useMemo(
-    () =>
-      trimmedQuery.length >= AZERITE_SEARCH_MIN_LENGTH
-        ? candidateEssences
-        : candidateEssences.slice(0, visiblePages * PAGE_SIZE),
-    [candidateEssences, trimmedQuery.length, visiblePages],
+  const allEssences = useMemo(
+    () => indexQuery.data?.azerite_essences ?? [],
+    [indexQuery.data],
   );
-  const activeEnrichmentCount = useIdlePrefetchWindow({
-    totalCount: visibleEssences.length,
-    initialCount: 9,
+  const normalizedQuery = q.trim().toLowerCase();
+
+  const filtered = useMemo(
+    () =>
+      normalizedQuery
+        ? allEssences.filter((essence) =>
+            essence.name.toLowerCase().includes(normalizedQuery),
+          )
+        : allEssences,
+    [allEssences, normalizedQuery],
+  );
+
+  // Staggers the ~30 detail+icon requests instead of firing them all at once.
+  const activeCount = useIdlePrefetchWindow({
+    totalCount: filtered.length,
+    initialCount: 12,
     batchSize: 6,
-    resetKey: `${trimmedQuery}-${visiblePages}-${visibleEssences.length}`,
+    resetKey: normalizedQuery,
   });
 
-  const detailQueries = useQueries({
-    queries: visibleEssences.map((essence, index) => ({
-      queryKey: ["azerite-essence-detail-card", essence.id, env.region],
-      queryFn: () => fetchAzeriteEssenceDetail(essence.id),
-      enabled: index < activeEnrichmentCount,
-      staleTime: 300000,
+  const cardQueries = useQueries({
+    queries: filtered.map((essence, index) => ({
+      queryKey: ["azerite-essence-card", essence.id, env.region],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        fetchAzeriteEssenceCard(essence.id, signal),
+      // An un-prefetched card still loads when its dialog opens.
+      enabled: index < activeCount || essence.id === selectedId,
+      staleTime: ONE_HOUR,
       retry: false,
     })),
   });
 
-  const mediaQueries = useQueries({
-    queries: visibleEssences.map((essence, index) => ({
-      queryKey: ["azerite-essence-media-card", essence.id, env.region],
-      queryFn: () => fetchAzeriteEssenceIcon(essence.id),
-      enabled: index < activeEnrichmentCount,
-      staleTime: 300000,
-      retry: false,
-    })),
-  });
-
-  const selectedEssenceDetailQuery = useQuery({
-    queryKey: [
-      "azerite-essence-detail-dialog",
-      selectedEssence?.id,
-      env.region,
-    ],
-    queryFn: () => fetchAzeriteEssenceDetail(Number(selectedEssence?.id)),
-    enabled: selectedEssence !== null,
-    staleTime: 300000,
-    retry: false,
-  });
-
-  const selectedEssenceMediaQuery = useQuery({
-    queryKey: ["azerite-essence-media-dialog", selectedEssence?.id, env.region],
-    queryFn: () => fetchAzeriteEssenceIcon(Number(selectedEssence?.id)),
-    enabled: selectedEssence !== null && !selectedEssence?.mediaUrl,
-    staleTime: 300000,
-    retry: false,
-  });
-
-  const friendlyError = useMemo(() => {
-    const error =
-      indexQuery.error ??
-      searchQuery.error ??
-      detailQueries.find((entry) => entry.error)?.error ??
-      mediaQueries.find((entry) => entry.error)?.error;
-    if (!error) {
-      return undefined;
-    }
-
-    if (error instanceof BlizzardRequestError) {
-      if (error.status === 401 || error.status === 403) {
-        return "We couldn’t authenticate with Blizzard’s Azerite Essence API. Update your Blizzard credentials in the .env file and refresh.";
-      }
-
-      if (error.status === 429) {
-        return "The Blizzard API rate limit has been reached. Please wait a few minutes and try again.";
-      }
-    }
-
-    return error instanceof Error
-      ? error.message
-      : "Unable to load Azerite essence data right now.";
-  }, [detailQueries, indexQuery.error, mediaQueries, searchQuery.error]);
-
-  const isLoading =
-    indexQuery.isLoading ||
-    (trimmedQuery.length >= AZERITE_SEARCH_MIN_LENGTH && searchQuery.isLoading);
-
-  const galleryItems = useMemo(
+  const galleryItems = useMemo<SearchResult[]>(
     () =>
-      visibleEssences.map((essence, index) => {
-        const detail = detailQueries[index]?.data;
-
-        return {
-          id: essence.id,
-          name: essence.name,
-          href: essence.key.href,
-          summary: detail ? `${detail.powers.length} ranks` : undefined,
-          details: detail
-            ? [
-                `${detail.allowedSpecializations.length} specializations`,
-                detail.powers
-                  .slice(0, 2)
-                  .map(
-                    (power) =>
-                      power.mainPowerSpell?.name ??
-                      power.passivePowerSpell?.name,
-                  )
-                  .filter(Boolean)
-                  .join(", "),
-              ]
-                .filter(Boolean)
-                .join(" • ")
-            : "",
-          tag: detail?.powers[0] ? `Rank ${detail.powers[0].rank}` : undefined,
-          typeLabel: "Azerite Essence",
-          mediaUrl: mediaQueries[index]?.data,
-        };
-      }),
-    [detailQueries, mediaQueries, visibleEssences],
+      filtered.map((essence, index) =>
+        toGalleryItem(essence, cardQueries[index]?.data),
+      ),
+    [filtered, cardQueries],
   );
 
-  const selectedEssenceUsesIconAsset = Boolean(
-    (selectedEssenceMediaQuery.data ?? selectedEssence?.mediaUrl) &&
-    /\/icons\/56\//.test(
-      selectedEssenceMediaQuery.data ?? selectedEssence?.mediaUrl ?? "",
-    ),
+  const selectedIndex = filtered.findIndex(
+    (essence) => essence.id === selectedId,
   );
-  const selectedEssenceMediaUrl =
-    selectedEssenceMediaQuery.data ?? selectedEssence?.mediaUrl;
+  const selectedSummary =
+    selectedIndex >= 0
+      ? filtered[selectedIndex]
+      : allEssences.find((essence) => essence.id === selectedId);
+  const selectedEntry =
+    selectedIndex >= 0 ? cardQueries[selectedIndex] : undefined;
 
-  const selectedEssenceDescription = useMemo(() => {
-    const detail = selectedEssenceDetailQuery.data;
-    if (!detail) {
-      return selectedEssence?.details;
-    }
-
-    if (detail.allowedSpecializations.length === 0) {
-      return selectedEssence?.details;
-    }
-
-    return detail.allowedSpecializations
-      .map((specialization) => specialization.name)
-      .join(", ");
-  }, [selectedEssence?.details, selectedEssenceDetailQuery.data]);
-
-  const selectedEssencePowerRows = useMemo(() => {
-    const detail = selectedEssenceDetailQuery.data;
-    if (!detail) {
-      return [];
-    }
-
-    return detail.powers.map((power) => {
-      const powerNames = [
-        power.mainPowerSpell?.name,
-        power.passivePowerSpell?.name,
-      ].filter(Boolean);
-
-      return powerNames.length > 0
-        ? `Rank ${power.rank}: ${powerNames.join(" • ")}`
-        : `Rank ${power.rank}`;
-    });
-  }, [selectedEssenceDetailQuery.data]);
-
-  const selectedEssenceChipLabels = useMemo(
-    () =>
-      [
-        selectedEssence?.tag,
-        selectedEssence?.typeLabel,
-        selectedEssenceDetailQuery.data
-          ? `${selectedEssenceDetailQuery.data.allowedSpecializations.length} specializations`
-          : undefined,
-        selectedEssenceDetailQuery.data
-          ? `${selectedEssenceDetailQuery.data.powers.length} ranks`
-          : selectedEssence?.summary,
-      ].filter((value): value is string => Boolean(value)),
-    [selectedEssence, selectedEssenceDetailQuery.data],
-  );
-
-  const hasMoreEssences =
-    trimmedQuery.length < AZERITE_SEARCH_MIN_LENGTH &&
-    visibleEssences.length < candidateEssences.length;
-
-  const loadMoreEssences = useCallback(() => {
-    if (!hasMoreEssences) {
-      return;
-    }
-
-    setVisiblePages((current) => current + 1);
-  }, [hasMoreEssences]);
-
-  const infiniteScrollRef = useInfiniteScrollTrigger({
-    enabled: !friendlyError,
-    hasMore: hasMoreEssences,
-    isLoading,
-    onLoadMore: loadMoreEssences,
-  });
-
-  useEffect(() => {
-    setVisiblePages(1);
-  }, [query]);
-
-  usePerformanceOverlayEntry(
-    import.meta.env.DEV
-      ? {
-          id: "azerite-essences",
-          label: "Azerite Essences",
-          renderedCount,
-          totalCount: galleryItems.length,
-          enrichmentCount: activeEnrichmentCount,
-          notes:
-            trimmedQuery.length >= AZERITE_SEARCH_MIN_LENGTH
-              ? "Search results"
-              : "Index gallery",
-        }
-      : null,
-  );
+  const showEmpty =
+    indexQuery.isSuccess && normalizedQuery.length > 0 && filtered.length === 0;
 
   return (
-    <Stack spacing={{ xs: 4, md: 6 }}>
-      <Stack spacing={1.5}>
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <PsychologyRoundedIcon color="primary" fontSize="large" />
-          <Typography variant="h3" sx={{ fontWeight: 700 }}>
-            Azerite Essence Archive
-          </Typography>
-        </Stack>
-        <Typography variant="body1" color="text.secondary">
-          Browse Azerite essences as cards with live icon media, specialization
-          counts, and highlighted power names instead of drilling into one
-          essence at a time.
-        </Typography>
-      </Stack>
+    <Box
+      sx={(theme) => ({
+        display: "flex",
+        flexDirection: "column",
+        gap: {
+          xs: theme.spacing(theme.wc.layout.sectionGap.xs),
+          md: theme.spacing(theme.wc.layout.sectionGap.md),
+        },
+      })}
+    >
+      <PageHeader
+        eyebrow={eyebrow}
+        breadcrumbs={breadcrumbs}
+        title="Azerite Essences"
+        documentTitle="Azerite Essences"
+        icon={<PsychologyRoundedIcon />}
+        description="Every Heart of Azeroth essence with its major and minor powers by rank."
+        meta={
+          <>
+            <Chip size="small" label={`Region ${env.region.toUpperCase()}`} />
+            {indexQuery.isSuccess ? (
+              <Chip size="small" label={`${allEssences.length} essences`} />
+            ) : null}
+          </>
+        }
+      />
 
-      <Paper
-        variant="outlined"
-        sx={{
-          p: { xs: 3, md: 4 },
-          borderRadius: 4,
-          borderColor: "rgba(30, 155, 233, 0.22)",
-          backgroundColor: "rgba(12, 18, 34, 0.72)",
-        }}
+      <ExplorerFilterBar
+        label="Essence filters"
+        summary={`Showing ${filtered.length} of ${allEssences.length} essences`}
+        progress={indexQuery.isFetching}
       >
-        <Stack spacing={2.5}>
-          <SearchInput
-            value={query}
-            onChange={setQuery}
-            onClear={() => setQuery("")}
-            autoFocus={false}
-            placeholder="Search Azerite essences by name..."
-          />
-          {trimmedQuery.length >= AZERITE_SEARCH_MIN_LENGTH &&
-          candidateEssences.length === 0 &&
-          !searchQuery.isLoading ? (
-            <Typography variant="body2" color="text.secondary">
-              No Azerite essences matched that search. Try a broader term like
-              Memory or Life.
-            </Typography>
-          ) : null}
-        </Stack>
-      </Paper>
+        <SearchField
+          value={q}
+          onChange={(value) => setQ(value, { replace: true })}
+          onClear={() => setQ(null, { replace: true })}
+          label="Search Azerite essences"
+          placeholder="Filter by name"
+          minLength={1}
+          debounceMs={150}
+        />
+      </ExplorerFilterBar>
 
-      {friendlyError ? (
-        <Alert
-          severity="error"
-          icon={<ReportProblemRoundedIcon fontSize="small" />}
-          sx={{ borderRadius: 3 }}
-        >
-          {friendlyError}
-        </Alert>
-      ) : null}
-
-      {isLoading ? (
-        <Grid container spacing={3}>
-          {Array.from({ length: 12 }).map((_, index) => (
-            <Grid item xs={12} md={6} lg={4} key={index}>
-              <Skeleton
-                variant="rounded"
-                height={320}
-                sx={{
-                  borderRadius: 3,
-                  backgroundColor: "rgba(12, 18, 34, 0.45)",
-                }}
-              />
-            </Grid>
-          ))}
-        </Grid>
-      ) : null}
-
-      {!isLoading && !friendlyError ? (
-        <Stack spacing={3}>
-          <Stack spacing={0.75}>
-            <Typography variant="h5" sx={{ fontWeight: 600 }}>
-              {trimmedQuery.length >= AZERITE_SEARCH_MIN_LENGTH
-                ? "Search matches"
-                : "Azerite gallery"}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {trimmedQuery.length >= AZERITE_SEARCH_MIN_LENGTH
-                ? `Showing ${galleryItems.length} matching essences.`
-                : `Loaded ${galleryItems.length} of ${candidateEssences.length} Azerite essences.`}
-            </Typography>
-          </Stack>
-
-          <VirtualizedCardGrid
-            items={galleryItems}
-            getItemKey={(item) => item.id}
-            itemHeight={244}
-            gap={12}
-            columns={{ xs: 1, sm: 2, md: 4, lg: 6, xl: 10 }}
-            onVisibleRangeChange={(range) =>
-              setRenderedCount(range.end - range.start)
-            }
-            renderItem={(item) => (
-              <ResultCard
-                result={item}
-                accentColor="#7dd3fc"
-                compact
-                onClick={() => setSelectedEssence(item)}
-              />
-            )}
-          />
-
-          <Stack spacing={1.5} alignItems="center">
-            {hasMoreEssences ? (
-              <Typography variant="body2" color="text.secondary">
-                Keep scrolling to load more essences.
-              </Typography>
-            ) : trimmedQuery.length < AZERITE_SEARCH_MIN_LENGTH &&
-              galleryItems.length > 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                Reached the end of the Azerite essence archive.
-              </Typography>
-            ) : null}
-            {activeEnrichmentCount < visibleEssences.length ? (
-              <Typography variant="caption" color="text.secondary">
-                Prefetching additional essence details and media during idle
-                time.
-              </Typography>
-            ) : null}
-            {hasMoreEssences ? (
-              <Box ref={infiniteScrollRef} sx={{ width: "100%", height: 1 }} />
-            ) : null}
-          </Stack>
-        </Stack>
-      ) : null}
-
-      <Dialog
-        open={selectedEssence !== null}
-        onClose={() => setSelectedEssence(null)}
-        fullWidth
-        maxWidth="md"
-      >
-        <DialogTitle sx={{ pr: 7 }}>
-          {selectedEssence?.name ?? "Azerite Essence details"}
-          <IconButton
-            aria-label="Close Azerite Essence details"
-            onClick={() => setSelectedEssence(null)}
-            sx={{ position: "absolute", right: 12, top: 12 }}
-          >
-            <CloseRoundedIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent dividers>
-          <Stack
-            direction={{ xs: "column", md: "row" }}
-            spacing={3}
-            alignItems={{ xs: "stretch", md: "flex-start" }}
-          >
-            <Box
-              sx={{
-                width: selectedEssenceUsesIconAsset
-                  ? { xs: 56, md: 56 }
-                  : { xs: "100%", md: 220 },
-                flexShrink: 0,
-              }}
+      {indexQuery.isLoading ? (
+        <LoadingSkeleton
+          variant="grid"
+          columns={GRID_PRESETS.rows}
+          itemHeight={ROW_HEIGHT}
+          count={12}
+          gap={GRID_GAP}
+          label="Loading Azerite essences"
+        />
+      ) : indexQuery.isError ? (
+        <ErrorState
+          error={indexQuery.error}
+          context="Azerite essences"
+          onRetry={() => void indexQuery.refetch()}
+        />
+      ) : showEmpty ? (
+        <EmptyState
+          title="No essences match"
+          description={`Nothing named "${q.trim()}". Try Memory or Life.`}
+          action={
+            <Button
+              variant="outlined"
+              onClick={() => setQ(null, { replace: true })}
             >
-              <Box
-                sx={{
-                  width: selectedEssenceUsesIconAsset ? 56 : "100%",
-                  height: selectedEssenceUsesIconAsset ? 56 : "auto",
-                  minHeight: selectedEssenceUsesIconAsset
-                    ? 56
-                    : { xs: 180, md: 220 },
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: selectedEssenceUsesIconAsset ? 1 : 3,
-                  border: selectedEssenceUsesIconAsset
-                    ? "none"
-                    : "1px solid rgba(125, 211, 252, 0.18)",
-                  backgroundColor: selectedEssenceUsesIconAsset
-                    ? "transparent"
-                    : "rgba(7, 12, 24, 0.72)",
-                  p: selectedEssenceUsesIconAsset ? 0 : 3,
-                }}
-              >
-                {selectedEssence && selectedEssenceMediaUrl ? (
-                  <Box
-                    component="img"
-                    src={selectedEssenceMediaUrl}
-                    alt={selectedEssence.name}
-                    sx={{
-                      width: selectedEssenceUsesIconAsset ? 56 : "auto",
-                      height: selectedEssenceUsesIconAsset ? 56 : "auto",
-                      maxWidth: selectedEssenceUsesIconAsset ? 56 : 160,
-                      maxHeight: selectedEssenceUsesIconAsset ? 56 : 160,
-                      objectFit: "contain",
-                    }}
-                  />
-                ) : selectedEssence ? (
-                  <Typography
-                    variant="h2"
-                    sx={{ fontWeight: 700, color: "text.secondary" }}
-                  >
-                    {selectedEssence.name.slice(0, 1)}
-                  </Typography>
-                ) : null}
-              </Box>
-            </Box>
+              Clear search
+            </Button>
+          }
+        />
+      ) : (
+        <VirtualizedCardGrid
+          items={galleryItems}
+          getItemKey={(item) => item.id}
+          columns={GRID_PRESETS.rows}
+          itemHeight={ROW_HEIGHT}
+          gap={GRID_GAP}
+          aria-label="Azerite essences"
+          renderItem={(item) => (
+            <ResultCard
+              result={item}
+              layout="row"
+              onSelect={() => setSelectedId(item.id)}
+            />
+          )}
+        />
+      )}
 
-            <Stack spacing={3} sx={{ minWidth: 0, flex: 1 }}>
-              {selectedEssenceDetailQuery.isLoading ? (
-                <Stack direction="row" spacing={1.5} alignItems="center">
-                  <CircularProgress size={22} />
-                  <Typography variant="body2" color="text.secondary">
-                    Loading live Azerite Essence details...
-                  </Typography>
-                </Stack>
-              ) : null}
-
-              {selectedEssenceDetailQuery.isError ? (
-                <Alert severity="error" sx={{ borderRadius: 2 }}>
-                  {selectedEssenceDetailQuery.error instanceof Error
-                    ? selectedEssenceDetailQuery.error.message
-                    : "Unable to load Azerite Essence details right now."}
-                </Alert>
-              ) : null}
-
-              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                {selectedEssenceChipLabels.map((label) => (
-                  <Chip key={label} label={label} size="small" />
-                ))}
-              </Stack>
-
-              {selectedEssenceDescription ? (
-                <Box>
-                  <Typography
-                    variant="subtitle2"
-                    sx={{ fontWeight: 700, mb: 0.75 }}
-                  >
-                    Description
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ whiteSpace: "pre-wrap" }}
-                  >
-                    {selectedEssenceDescription}
-                  </Typography>
-                </Box>
-              ) : null}
-
-              {selectedEssencePowerRows.length > 0 ? (
-                <Box>
-                  <Typography
-                    variant="subtitle2"
-                    sx={{ fontWeight: 700, mb: 0.75 }}
-                  >
-                    Details
-                  </Typography>
-                  <Stack spacing={0.75}>
-                    {selectedEssencePowerRows.map((row) => (
-                      <Typography
-                        key={row}
-                        variant="body2"
-                        color="text.secondary"
-                      >
-                        {row}
-                      </Typography>
-                    ))}
-                  </Stack>
-                </Box>
-              ) : selectedEssence?.details ? (
-                <Box>
-                  <Typography
-                    variant="subtitle2"
-                    sx={{ fontWeight: 700, mb: 0.75 }}
-                  >
-                    Details
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ whiteSpace: "pre-wrap" }}
-                  >
-                    {selectedEssence.details}
-                  </Typography>
-                </Box>
-              ) : null}
-
-              <Link
-                href={selectedEssence?.href}
-                target="_blank"
-                rel="noreferrer"
-                color="primary"
-                underline="hover"
-                sx={{ alignSelf: "flex-start" }}
-              >
-                View full record on Blizzard
-              </Link>
-            </Stack>
-          </Stack>
-        </DialogContent>
-      </Dialog>
-    </Stack>
+      <EssenceDetailDialog
+        open={selectedId !== null}
+        onClose={() => setSelectedId(null)}
+        essence={selectedSummary}
+        data={selectedEntry?.data}
+        loading={selectedEntry?.isPending}
+        error={selectedEntry?.error ?? undefined}
+        onRetry={() => void selectedEntry?.refetch()}
+      />
+    </Box>
   );
 };
 
