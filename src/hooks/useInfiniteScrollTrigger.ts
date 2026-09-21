@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
+import type { RefObject } from "react";
 
-type UseInfiniteScrollTriggerOptions = {
+export type UseInfiniteScrollTriggerOptions = {
   enabled?: boolean;
   hasMore?: boolean;
   isLoading?: boolean;
@@ -8,27 +9,39 @@ type UseInfiniteScrollTriggerOptions = {
   rootMargin?: string;
 };
 
+/**
+ * Returns a ref for a sentinel element; `onLoadMore` fires once each time the
+ * sentinel scrolls into the root margin while more pages are available.
+ *
+ * The callback is read through a ref so a new `onLoadMore` identity on every
+ * render does not tear down and recreate the IntersectionObserver.
+ */
 const useInfiniteScrollTrigger = ({
   enabled = true,
   hasMore = false,
   isLoading = false,
   onLoadMore,
   rootMargin = "900px 0px",
-}: UseInfiniteScrollTriggerOptions): React.RefObject<HTMLDivElement> => {
+}: UseInfiniteScrollTriggerOptions): RefObject<HTMLDivElement> => {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const wasIntersectingRef = useRef(false);
+  const onLoadMoreRef = useRef(onLoadMore);
+
+  useEffect(() => {
+    onLoadMoreRef.current = onLoadMore;
+  }, [onLoadMore]);
 
   useEffect(() => {
     wasIntersectingRef.current = false;
 
     if (!enabled || !hasMore || isLoading) {
-      return;
+      return undefined;
     }
 
     const node = sentinelRef.current;
 
     if (!node || typeof IntersectionObserver === "undefined") {
-      return;
+      return undefined;
     }
 
     const observer = new IntersectionObserver(
@@ -46,7 +59,7 @@ const useInfiniteScrollTrigger = ({
         }
 
         wasIntersectingRef.current = true;
-        onLoadMore();
+        onLoadMoreRef.current();
       },
       {
         rootMargin,
@@ -59,7 +72,7 @@ const useInfiniteScrollTrigger = ({
     return () => {
       observer.disconnect();
     };
-  }, [enabled, hasMore, isLoading, onLoadMore, rootMargin]);
+  }, [enabled, hasMore, isLoading, rootMargin]);
 
   return sentinelRef;
 };
