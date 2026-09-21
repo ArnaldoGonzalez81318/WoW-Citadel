@@ -1,7 +1,14 @@
-import { env } from "@/lib/env";
-import { blizzardClient, BlizzardRequestError } from "@/lib/blizzardClient";
+import { blizzardClient } from "@/lib/blizzardClient";
+import {
+  cleanMarkup,
+  localized,
+  namespace,
+  optional404,
+  sortByName,
+} from "@/lib/blizzardHelpers";
 import {
   CovenantAbility,
+  CovenantCardData,
   CovenantDetail,
   CovenantIndexResponse,
   CovenantMedia,
@@ -10,41 +17,26 @@ import {
   RenownReward,
 } from "@/features/covenants/types";
 
-const STATIC_NAMESPACE = `static-${env.region}`;
-
-const localized = (value: LocalizedString | undefined): string => {
-  if (!value) {
-    return "";
-  }
-
-  if (typeof value === "string") {
-    return value;
-  }
-
-  return (
-    value[env.locale] ??
-    value.en_US ??
-    Object.values(value).find(
-      (entry) => typeof entry === "string" && entry.length > 0,
-    ) ??
-    ""
-  );
+type RawSpellTooltip = {
+  spell?: { id: number; name: LocalizedString; key: { href: string } };
+  description?: string;
+  cast_time?: string;
+  range?: string;
+  cooldown?: string;
 };
 
-const sortByName = <T extends { name: string }>(items: T[]): T[] =>
-  [...items].sort((left, right) => left.name.localeCompare(right.name));
-
-const normalizeAbility = (entry: {
+type RawAbility = {
   id: number;
   playable_class?: { id: number; name: LocalizedString };
-  spell_tooltip?: {
-    spell?: { id: number; name: LocalizedString; key: { href: string } };
-    description?: string;
-    cast_time?: string;
-    range?: string;
-    cooldown?: string;
-  };
-}): CovenantAbility => ({
+  spell_tooltip?: RawSpellTooltip;
+};
+
+type RawRenownReward = {
+  level: number;
+  reward: { id: number; name: LocalizedString; key: { href: string } };
+};
+
+const normalizeAbility = (entry: RawAbility): CovenantAbility => ({
   id: entry.id,
   playableClass: entry.playable_class
     ? {
@@ -61,8 +53,8 @@ const normalizeAbility = (entry: {
               key: entry.spell_tooltip.spell.key,
             }
           : undefined,
-        description: entry.spell_tooltip.description,
-        cast_time: entry.spell_tooltip.cast_time,
+        description: cleanMarkup(entry.spell_tooltip.description),
+        castTime: entry.spell_tooltip.cast_time,
         range: entry.spell_tooltip.range,
         cooldown: entry.spell_tooltip.cooldown,
       }
@@ -70,32 +62,33 @@ const normalizeAbility = (entry: {
 });
 
 const normalizeRenownRewards = (
-  entries: Array<{
-    level: number;
-    reward: { id: number; name: LocalizedString; key: { href: string } };
-  }> = [],
+  entries: RawRenownReward[] = [],
 ): RenownReward[] =>
   [...entries]
     .map((entry) => ({
       level: entry.level,
       reward: {
         id: entry.reward.id,
-        name: localized(entry.reward.name),
+        name: localized(entry.reward.name) || `Reward #${entry.reward.id}`,
         key: entry.reward.key,
       },
     }))
     .sort((left, right) => left.level - right.level);
 
-export const fetchCovenantIndex = async (): Promise<CovenantIndexResponse> => {
+export const fetchCovenantIndex = async (
+  signal?: AbortSignal,
+): Promise<CovenantIndexResponse> => {
   const response = await blizzardClient.get<{
     covenants: Array<{
       id: number;
       name: LocalizedString;
       key: { href: string };
     }>;
-  }>("/data/wow/covenant/index", {
-    namespace: STATIC_NAMESPACE,
-  });
+  }>(
+    "/data/wow/covenant/index",
+    { namespace: namespace("static") },
+    { signal },
+  );
 
   const covenants: CovenantSummary[] = sortByName(
     (response.covenants ?? []).map((entry) => ({
@@ -110,44 +103,25 @@ export const fetchCovenantIndex = async (): Promise<CovenantIndexResponse> => {
 
 export const fetchCovenantDetail = async (
   covenantId: number,
+  signal?: AbortSignal,
 ): Promise<CovenantDetail> => {
   const response = await blizzardClient.get<{
     id: number;
     name: LocalizedString;
     description?: string;
-    signature_ability?: {
-      id: number;
-      spell_tooltip?: {
-        spell?: { id: number; name: LocalizedString; key: { href: string } };
-        description?: string;
-        cast_time?: string;
-        range?: string;
-        cooldown?: string;
-      };
-    };
-    class_abilities?: Array<{
-      id: number;
-      playable_class?: { id: number; name: LocalizedString };
-      spell_tooltip?: {
-        spell?: { id: number; name: LocalizedString; key: { href: string } };
-        description?: string;
-        cast_time?: string;
-        range?: string;
-        cooldown?: string;
-      };
-    }>;
-    renown_rewards?: Array<{
-      level: number;
-      reward: { id: number; name: LocalizedString; key: { href: string } };
-    }>;
-  }>(`/data/wow/covenant/${covenantId}`, {
-    namespace: STATIC_NAMESPACE,
-  });
+    signature_ability?: RawAbility;
+    class_abilities?: RawAbility[];
+    renown_rewards?: RawRenownReward[];
+  }>(
+    `/data/wow/covenant/${covenantId}`,
+    { namespace: namespace("static") },
+    { signal },
+  );
 
   return {
     id: response.id,
     name: localized(response.name),
-    description: response.description ?? "",
+    description: cleanMarkup(response.description),
     signatureAbility: response.signature_ability
       ? normalizeAbility(response.signature_ability)
       : undefined,
@@ -158,26 +132,28 @@ export const fetchCovenantDetail = async (
 
 export const fetchCovenantIcon = async (
   covenantId: number,
+  signal?: AbortSignal,
 ): Promise<string | null> => {
-  try {
-    const response = await blizzardClient.get<CovenantMedia>(
+  const response = await optional404(() =>
+    blizzardClient.get<CovenantMedia>(
       `/data/wow/media/covenant/${covenantId}`,
-      {
-        namespace: STATIC_NAMESPACE,
-      },
-    );
+      { namespace: namespace("static") },
+      { signal },
+    ),
+  );
 
-    return (
-      response.assets?.find((asset) => asset.key === "icon")?.value ?? null
-    );
-  } catch (error) {
-    if (
-      error instanceof BlizzardRequestError &&
-      (error.status === 404 || error.status === 204)
-    ) {
-      return null;
-    }
+  return response?.assets?.find((asset) => asset.key === "icon")?.value ?? null;
+};
 
-    throw error;
-  }
+/** Detail and icon together: one query per card, shared with the dialog. */
+export const fetchCovenantCard = async (
+  covenantId: number,
+  signal?: AbortSignal,
+): Promise<CovenantCardData> => {
+  const [detail, iconUrl] = await Promise.all([
+    fetchCovenantDetail(covenantId, signal),
+    fetchCovenantIcon(covenantId, signal),
+  ]);
+
+  return { detail, iconUrl };
 };
