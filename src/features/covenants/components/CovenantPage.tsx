@@ -1,188 +1,152 @@
-import ReportProblemRoundedIcon from "@mui/icons-material/ReportProblemRounded";
 import ShieldMoonRoundedIcon from "@mui/icons-material/ShieldMoonRounded";
-import { Alert, Grid, Paper, Skeleton, Stack, Typography } from "@mui/material";
-import { useMemo } from "react";
+import { Box, Chip } from "@mui/material";
+import { useMemo, useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import ResultCard from "@/components/common/ResultCard";
-import useIdlePrefetchWindow from "@/hooks/useIdlePrefetchWindow";
+
+import { gridTemplateColumnsSx } from "@/components/common/gridColumns";
+import type { GridColumns } from "@/components/common/gridColumns";
+import PageHeader from "@/components/common/PageHeader";
+import type { PageHeaderBreadcrumb } from "@/components/common/PageHeader";
+import { ErrorState, LoadingSkeleton } from "@/components/common/StateBlocks";
+import CovenantCard from "@/features/covenants/components/CovenantCard";
+import CovenantDetailDialog from "@/features/covenants/components/CovenantDetailDialog";
 import {
-  fetchCovenantDetail,
-  fetchCovenantIcon,
+  fetchCovenantCard,
   fetchCovenantIndex,
 } from "@/features/covenants/services/covenantService";
-import { usePerformanceOverlayEntry } from "@/devtools/PerformanceOverlayContext";
 import { env } from "@/lib/env";
-import { BlizzardRequestError } from "@/lib/blizzardClient";
 
-const CovenantPage = (): JSX.Element => {
+export type CovenantPageProps = {
+  /** Nav section shown as the gold eyebrow (CategoryPage passes it). */
+  eyebrow?: string;
+  /** Home › Section › Page trail (CategoryPage passes it). */
+  breadcrumbs?: PageHeaderBreadcrumb[];
+};
+
+const ONE_HOUR = 3_600_000;
+const CARD_HEIGHT = 232;
+
+/** Four fixed items: the rows preset would orphan one card at xl. */
+const COLS: GridColumns = { xs: 1, sm: 2, lg: 4 };
+
+const CovenantPage = ({
+  eyebrow = "World & Factions",
+  breadcrumbs,
+}: CovenantPageProps): JSX.Element => {
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+
   const indexQuery = useQuery({
     queryKey: ["covenant-index", env.region],
-    queryFn: fetchCovenantIndex,
-    staleTime: 1000 * 60 * 60,
+    queryFn: ({ signal }) => fetchCovenantIndex(signal),
+    staleTime: ONE_HOUR,
   });
 
   const covenants = useMemo(
     () => indexQuery.data?.covenants ?? [],
     [indexQuery.data],
   );
-  const activeEnrichmentCount = useIdlePrefetchWindow({
-    totalCount: covenants.length,
-    initialCount: 2,
-    batchSize: 1,
-    resetKey: `${covenants.length}`,
-  });
 
-  const detailQueries = useQueries({
-    queries: covenants.map((covenant, index) => ({
-      queryKey: ["covenant-detail-card", covenant.id, env.region],
-      queryFn: () => fetchCovenantDetail(covenant.id),
-      enabled: index < activeEnrichmentCount,
-      staleTime: 300000,
+  const cardQueries = useQueries({
+    queries: covenants.map((covenant) => ({
+      queryKey: ["covenant-card", covenant.id, env.region],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        fetchCovenantCard(covenant.id, signal),
+      staleTime: ONE_HOUR,
       retry: false,
     })),
   });
 
-  const mediaQueries = useQueries({
-    queries: covenants.map((covenant, index) => ({
-      queryKey: ["covenant-media-card", covenant.id, env.region],
-      queryFn: () => fetchCovenantIcon(covenant.id),
-      enabled: index < activeEnrichmentCount,
-      staleTime: 300000,
-      retry: false,
-    })),
-  });
-
-  const friendlyError = useMemo(() => {
-    const error =
-      indexQuery.error ??
-      detailQueries.find((entry) => entry.error)?.error ??
-      mediaQueries.find((entry) => entry.error)?.error;
-    if (!error) {
-      return undefined;
-    }
-
-    if (error instanceof BlizzardRequestError) {
-      if (error.status === 401 || error.status === 403) {
-        return "We couldn’t authenticate with Blizzard’s Covenant API. Update your Blizzard credentials in the .env file and refresh.";
-      }
-
-      if (error.status === 429) {
-        return "The Blizzard API rate limit has been reached. Please wait a few minutes and try again.";
-      }
-    }
-
-    return error instanceof Error
-      ? error.message
-      : "Unable to load covenant data right now.";
-  }, [detailQueries, indexQuery.error, mediaQueries]);
-
-  const isLoading = indexQuery.isLoading;
-
-  const galleryItems = useMemo(
-    () =>
-      covenants.map((covenant, index) => {
-        const detail = detailQueries[index]?.data;
-
-        return {
-          id: covenant.id,
-          name: covenant.name,
-          href: covenant.key.href,
-          summary:
-            detail?.signatureAbility?.spellTooltip?.spell?.name ??
-            "Covenant overview",
-          details: [
-            detail?.description,
-            detail
-              ? `${detail.classAbilities.length} class abilities`
-              : undefined,
-            detail
-              ? `${detail.renownRewards.length} renown rewards`
-              : undefined,
-          ]
-            .filter(Boolean)
-            .join(" • "),
-          tag: detail?.signatureAbility ? "Signature" : undefined,
-          typeLabel: "Covenant",
-          mediaUrl: mediaQueries[index]?.data ?? undefined,
-        };
-      }),
-    [covenants, detailQueries, mediaQueries],
+  const selectedIndex = covenants.findIndex(
+    (covenant) => covenant.id === selectedId,
   );
-
-  usePerformanceOverlayEntry(
-    import.meta.env.DEV
-      ? {
-          id: "covenants",
-          label: "Covenants",
-          renderedCount: galleryItems.length,
-          totalCount: covenants.length,
-          enrichmentCount: activeEnrichmentCount,
-          notes: "Index gallery",
-        }
-      : null,
-  );
+  const selectedSummary =
+    selectedIndex >= 0 ? covenants[selectedIndex] : undefined;
+  const selectedEntry =
+    selectedIndex >= 0 ? cardQueries[selectedIndex] : undefined;
 
   return (
-    <Stack spacing={{ xs: 4, md: 6 }}>
-      <Stack spacing={1.5}>
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <ShieldMoonRoundedIcon color="primary" fontSize="large" />
-          <Typography variant="h3" sx={{ fontWeight: 700 }}>
-            Covenant Compendium
-          </Typography>
-        </Stack>
-        <Typography variant="body1" color="text.secondary">
-          Browse covenants as a gallery. Each card is enriched with live
-          covenant details, signature ability data, and media when Blizzard
-          exposes it.
-        </Typography>
-      </Stack>
+    <Box
+      sx={(theme) => ({
+        display: "flex",
+        flexDirection: "column",
+        gap: {
+          xs: theme.spacing(theme.wc.layout.sectionGap.xs),
+          md: theme.spacing(theme.wc.layout.sectionGap.md),
+        },
+      })}
+    >
+      <PageHeader
+        eyebrow={eyebrow}
+        breadcrumbs={breadcrumbs}
+        title="Covenants"
+        documentTitle="Covenants"
+        icon={<ShieldMoonRoundedIcon />}
+        description="Every covenant in Blizzard's index, from the Shadowlands four to later renown factions, with signature and class abilities and renown rewards."
+        meta={
+          <>
+            <Chip size="small" label={`Region ${env.region.toUpperCase()}`} />
+            {covenants.length > 0 ? (
+              <Chip size="small" label={`${covenants.length} covenants`} />
+            ) : null}
+          </>
+        }
+      />
 
-      {friendlyError ? (
-        <Alert
-          severity="error"
-          icon={<ReportProblemRoundedIcon fontSize="small" />}
-          sx={{ borderRadius: 3 }}
+      {indexQuery.isLoading ? (
+        <LoadingSkeleton
+          variant="grid"
+          columns={COLS}
+          itemHeight={CARD_HEIGHT}
+          count={4}
+          label="Loading covenants"
+        />
+      ) : indexQuery.isError ? (
+        <ErrorState
+          error={indexQuery.error}
+          context="covenants"
+          onRetry={() => void indexQuery.refetch()}
+        />
+      ) : (
+        <Box
+          component="ul"
+          aria-label="Covenants"
+          sx={{
+            display: "grid",
+            gap: 2,
+            listStyle: "none",
+            margin: 0,
+            padding: 0,
+            ...gridTemplateColumnsSx(COLS),
+          }}
         >
-          {friendlyError}
-        </Alert>
-      ) : null}
+          {covenants.map((covenant, index) => {
+            const entry = cardQueries[index];
 
-      {isLoading ? (
-        <Grid container spacing={3}>
-          {Array.from({ length: 4 }).map((_, index) => (
-            <Grid item xs={12} md={6} lg={4} key={index}>
-              <Skeleton
-                variant="rounded"
-                height={320}
-                sx={{
-                  borderRadius: 3,
-                  backgroundColor: "rgba(12, 18, 34, 0.45)",
-                }}
-              />
-            </Grid>
-          ))}
-        </Grid>
-      ) : null}
+            return (
+              <Box component="li" key={covenant.id} sx={{ minWidth: 0 }}>
+                <CovenantCard
+                  summary={covenant}
+                  data={entry?.data}
+                  loading={entry?.isPending ?? true}
+                  failed={entry?.isError ?? false}
+                  onSelect={() => setSelectedId(covenant.id)}
+                />
+              </Box>
+            );
+          })}
+        </Box>
+      )}
 
-      {!isLoading && !friendlyError ? (
-        <Stack spacing={2}>
-          {activeEnrichmentCount < covenants.length ? (
-            <Typography variant="caption" color="text.secondary">
-              Prefetching additional covenant details and media during idle
-              time.
-            </Typography>
-          ) : null}
-          <Grid container spacing={3}>
-            {galleryItems.map((item) => (
-              <Grid item xs={12} md={6} lg={4} key={item.id}>
-                <ResultCard result={item} accentColor="#a78bfa" />
-              </Grid>
-            ))}
-          </Grid>
-        </Stack>
-      ) : null}
-    </Stack>
+      <CovenantDetailDialog
+        open={selectedId !== null}
+        onClose={() => setSelectedId(null)}
+        covenant={selectedSummary}
+        data={selectedEntry?.data}
+        loading={selectedEntry?.isPending}
+        error={selectedEntry?.error ?? undefined}
+        onRetry={() => void selectedEntry?.refetch()}
+      />
+    </Box>
   );
 };
 
