@@ -1,68 +1,20 @@
-import { Stack } from "@mui/material";
-import { useEffect, useRef } from "react";
-import SearchHero from "@/features/search/components/SearchHero";
-import SearchResults from "@/features/search/components/SearchResults";
-import LegendaryShowcase from "@/features/search/components/LegendaryShowcase";
-import TokenTicker from "@/features/search/components/TokenTicker";
-import CategoryShowcase from "@/features/search/components/CategoryShowcase";
-import { useBlizzardSearch } from "@/features/search/hooks/useBlizzardSearch";
-import { useSearchState } from "@/features/search/context/SearchContext";
-import { SearchCategoryId } from "@/features/search/types";
+import type { SearchCategoryId } from "@/features/search/types";
+import SearchPage from "@/pages/SearchPage";
 
-type SearchExperienceProps = {
-  focusCategoryId?: SearchCategoryId;
-  variant?: "home" | "category";
-};
+export interface SearchExperienceProps {
+  /** The one category this page searches (e.g. "creatures"). */
+  focusCategoryId: SearchCategoryId;
+}
 
+/**
+ * Single-category search embedded in a category route. The host
+ * (CategoryPage) renders the route's PageHeader, so the search page runs
+ * headless: one query, one grid, its own SearchField, no scrolling.
+ */
 const SearchExperience = ({
   focusCategoryId,
-  variant = "home",
-}: SearchExperienceProps = {}): JSX.Element => {
-  const { query, setQuery } = useSearchState();
-  const {
-    query: activeQuery,
-    categoryStates,
-    hasAnyResults,
-  } = useBlizzardSearch(query);
-  const scrollTargetRef = useRef<string | null>(null);
-
-  const isHomeVariant = variant === "home";
-  const spacing = isHomeVariant ? { xs: 8, md: 12 } : { xs: 6, md: 8 };
-
-  useEffect(() => {
-    if (!focusCategoryId) {
-      scrollTargetRef.current = null;
-      return;
-    }
-
-    if (scrollTargetRef.current === focusCategoryId) {
-      return;
-    }
-
-    const anchorId = `category-${focusCategoryId}`;
-    const element = document.getElementById(anchorId);
-
-    if (element) {
-      window.requestAnimationFrame(() => {
-        element.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-      scrollTargetRef.current = focusCategoryId;
-    }
-  }, [focusCategoryId, activeQuery, hasAnyResults]);
-
-  return (
-    <Stack spacing={spacing}>
-      {isHomeVariant ? <SearchHero onQuickSearch={setQuery} /> : null}
-      {isHomeVariant ? <TokenTicker /> : null}
-      {isHomeVariant ? <LegendaryShowcase onSelect={setQuery} /> : null}
-      {isHomeVariant ? <CategoryShowcase /> : null}
-      <SearchResults
-        query={activeQuery}
-        categoryStates={categoryStates}
-        hasAnyResults={hasAnyResults}
-      />
-    </Stack>
-  );
-};
+}: SearchExperienceProps): JSX.Element => (
+  <SearchPage categoryIds={[focusCategoryId]} hideHeader />
+);
 
 export default SearchExperience;
