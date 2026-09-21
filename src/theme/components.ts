@@ -648,6 +648,17 @@ export const components = (base: Theme): ComponentOverrides => {
       },
     },
 
+    MuiTableContainer: {
+      styleOverrides: {
+        // The container scrolls horizontally, so it must also be the
+        // containing block: otherwise visually hidden (position: absolute)
+        // text inside wide tables escapes it and widens the whole page.
+        root: {
+          position: "relative",
+        },
+      },
+    },
+
     MuiTableCell: {
       styleOverrides: {
         root: {
