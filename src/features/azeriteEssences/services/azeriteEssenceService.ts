@@ -1,7 +1,13 @@
-import { env } from "@/lib/env";
-import { blizzardClient, BlizzardRequestError } from "@/lib/blizzardClient";
+import { blizzardClient } from "@/lib/blizzardClient";
+import {
+  localized,
+  namespace,
+  optional404,
+  sortByName,
+} from "@/lib/blizzardHelpers";
 import {
   AllowedSpecialization,
+  AzeriteEssenceCardData,
   AzeriteEssenceDetail,
   AzeriteEssenceIndexResponse,
   AzeriteEssenceMedia,
@@ -10,53 +16,27 @@ import {
   LocalizedString,
 } from "@/features/azeriteEssences/types";
 
-const STATIC_NAMESPACE = `static-${env.region}`;
-
-type SearchResponse<T> = {
-  results?: Array<{
-    key: { href: string };
-    data: T;
-  }>;
-};
-
-const localized = (value: LocalizedString | undefined): string => {
-  if (!value) {
-    return "";
-  }
-
-  if (typeof value === "string") {
-    return value;
-  }
-
-  return (
-    value[env.locale] ??
-    value.en_US ??
-    Object.values(value).find(
-      (entry) => typeof entry === "string" && entry.length > 0,
-    ) ??
-    ""
-  );
-};
-
-const sortByName = <T extends { name: string }>(items: T[]): T[] =>
-  [...items].sort((left, right) => left.name.localeCompare(right.name));
-
-const normalizeSummary = (entry: {
+type RawReference = {
   id: number;
   name: LocalizedString;
   key: { href: string };
-}): AzeriteEssenceSummary => ({
+};
+
+type RawPower = {
+  id: number;
+  rank: number;
+  main_power_spell?: RawReference;
+  passive_power_spell?: RawReference;
+};
+
+const normalizeSummary = (entry: RawReference): AzeriteEssenceSummary => ({
   id: entry.id,
   name: localized(entry.name),
   key: entry.key,
 });
 
 const normalizeSpecializations = (
-  entries: Array<{
-    id: number;
-    name: LocalizedString;
-    key: { href: string };
-  }> = [],
+  entries: RawReference[] = [],
 ): AllowedSpecialization[] =>
   sortByName(
     entries.map((entry) => ({
@@ -66,22 +46,7 @@ const normalizeSpecializations = (
     })),
   );
 
-const normalizePowers = (
-  entries: Array<{
-    id: number;
-    rank: number;
-    main_power_spell?: {
-      id: number;
-      name: LocalizedString;
-      key: { href: string };
-    };
-    passive_power_spell?: {
-      id: number;
-      name: LocalizedString;
-      key: { href: string };
-    };
-  }> = [],
-): AzeriteEssencePower[] =>
+const normalizePowers = (entries: RawPower[] = []): AzeriteEssencePower[] =>
   [...entries]
     .map((entry) => ({
       id: entry.id,
@@ -103,94 +68,38 @@ const normalizePowers = (
     }))
     .sort((left, right) => left.rank - right.rank);
 
-export const fetchAzeriteEssenceIndex =
-  async (): Promise<AzeriteEssenceIndexResponse> => {
-    const response = await blizzardClient.get<{
-      azerite_essences: Array<{
-        id: number;
-        name: LocalizedString;
-        key: { href: string };
-      }>;
-    }>("/data/wow/azerite-essence/index", {
-      namespace: STATIC_NAMESPACE,
-    });
+export const fetchAzeriteEssenceIndex = async (
+  signal?: AbortSignal,
+): Promise<AzeriteEssenceIndexResponse> => {
+  const response = await blizzardClient.get<{
+    azerite_essences: RawReference[];
+  }>(
+    "/data/wow/azerite-essence/index",
+    { namespace: namespace("static") },
+    { signal },
+  );
 
-    return {
-      azerite_essences: sortByName(
-        (response.azerite_essences ?? []).map(normalizeSummary),
-      ),
-    };
+  return {
+    azerite_essences: sortByName(
+      (response.azerite_essences ?? []).map(normalizeSummary),
+    ),
   };
-
-export const searchAzeriteEssences = async (
-  query: string,
-  limit = 12,
-): Promise<AzeriteEssenceSummary[]> => {
-  if (!query.trim()) {
-    return [];
-  }
-
-  const nameParamKey = `name.${env.locale}`;
-
-  try {
-    const response = await blizzardClient.get<
-      SearchResponse<{
-        id: number;
-        name: LocalizedString;
-      }>
-    >("/data/wow/search/azerite-essence", {
-      namespace: STATIC_NAMESPACE,
-      _pageSize: limit,
-      [nameParamKey]: query.trim(),
-    });
-
-    return sortByName(
-      (response.results ?? []).map(({ key, data }) => ({
-        id: data.id,
-        name: localized(data.name),
-        key,
-      })),
-    );
-  } catch (error) {
-    if (
-      error instanceof BlizzardRequestError &&
-      (error.status === 404 || error.status === 204)
-    ) {
-      return [];
-    }
-
-    throw error;
-  }
 };
 
 export const fetchAzeriteEssenceDetail = async (
   essenceId: number,
+  signal?: AbortSignal,
 ): Promise<AzeriteEssenceDetail> => {
   const response = await blizzardClient.get<{
     id: number;
     name: LocalizedString;
-    allowed_specializations?: Array<{
-      id: number;
-      name: LocalizedString;
-      key: { href: string };
-    }>;
-    powers?: Array<{
-      id: number;
-      rank: number;
-      main_power_spell?: {
-        id: number;
-        name: LocalizedString;
-        key: { href: string };
-      };
-      passive_power_spell?: {
-        id: number;
-        name: LocalizedString;
-        key: { href: string };
-      };
-    }>;
-  }>(`/data/wow/azerite-essence/${essenceId}`, {
-    namespace: STATIC_NAMESPACE,
-  });
+    allowed_specializations?: RawReference[];
+    powers?: RawPower[];
+  }>(
+    `/data/wow/azerite-essence/${essenceId}`,
+    { namespace: namespace("static") },
+    { signal },
+  );
 
   return {
     id: response.id,
@@ -204,24 +113,28 @@ export const fetchAzeriteEssenceDetail = async (
 
 export const fetchAzeriteEssenceIcon = async (
   essenceId: number,
+  signal?: AbortSignal,
 ): Promise<string | undefined> => {
-  try {
-    const response = await blizzardClient.get<AzeriteEssenceMedia>(
+  const response = await optional404(() =>
+    blizzardClient.get<AzeriteEssenceMedia>(
       `/data/wow/media/azerite-essence/${essenceId}`,
-      {
-        namespace: STATIC_NAMESPACE,
-      },
-    );
+      { namespace: namespace("static") },
+      { signal },
+    ),
+  );
 
-    return response.assets?.find((asset) => asset.key === "icon")?.value;
-  } catch (error) {
-    if (
-      error instanceof BlizzardRequestError &&
-      (error.status === 404 || error.status === 204)
-    ) {
-      return undefined;
-    }
+  return response?.assets?.find((asset) => asset.key === "icon")?.value;
+};
 
-    throw error;
-  }
+/** Detail and icon together: one query per card, shared with the dialog. */
+export const fetchAzeriteEssenceCard = async (
+  essenceId: number,
+  signal?: AbortSignal,
+): Promise<AzeriteEssenceCardData> => {
+  const [detail, iconUrl] = await Promise.all([
+    fetchAzeriteEssenceDetail(essenceId, signal),
+    fetchAzeriteEssenceIcon(essenceId, signal),
+  ]);
+
+  return { detail, iconUrl };
 };
