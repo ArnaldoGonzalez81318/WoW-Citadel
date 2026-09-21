@@ -21,7 +21,7 @@ export type SpellTooltip = {
     key: LinkReference;
   };
   description?: string;
-  cast_time?: string;
+  castTime?: string;
   range?: string;
   cooldown?: string;
 };
@@ -60,4 +60,10 @@ export type CovenantMediaAsset = {
 
 export type CovenantMedia = {
   assets: CovenantMediaAsset[];
+};
+
+/** Everything one covenant card (and its dialog) needs, fetched together. */
+export type CovenantCardData = {
+  detail: CovenantDetail;
+  iconUrl: string | null;
 };
