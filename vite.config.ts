@@ -3,59 +3,70 @@ import type { Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 import {
-  DEFAULT_PROXY_PATH,
   getProxySubpath,
+  normalizeProxyPrefix,
   proxyBlizzardRequest,
   resolveBlizzardServerConfig,
   toProxyErrorResponse,
 } from "./server/blizzardProxy.ts";
+import type { BlizzardProxyResponse } from "./server/blizzardProxy.ts";
 
-const blizzardDevProxyPlugin = (env: Record<string, string>): Plugin => ({
-  name: "blizzard-dev-proxy",
-  configureServer(server) {
-    server.middlewares.use(async (req, res, next) => {
-      const rawUrl = req.url;
+const blizzardDevProxyPlugin = (env: Record<string, string>): Plugin => {
+  // Same normalization src/lib/env.ts applies, so the browser and the
+  // middleware agree on the prefix when VITE_BNET_PROXY_PATH is customised.
+  const proxyPrefix = normalizeProxyPrefix(env.VITE_BNET_PROXY_PATH);
 
-      if (!rawUrl) {
-        next();
-        return;
-      }
+  return {
+    name: "blizzard-dev-proxy",
+    configureServer(server) {
+      server.config.logger.info(
+        `  blizzard-dev-proxy: forwarding ${proxyPrefix}/* to Blizzard`,
+      );
 
-      const requestUrl = new URL(rawUrl, "http://localhost");
-      const path = getProxySubpath(requestUrl.pathname, DEFAULT_PROXY_PATH);
+      server.middlewares.use(async (req, res, next) => {
+        const rawUrl = req.url;
 
-      if (!path) {
-        next();
-        return;
-      }
+        if (!rawUrl || !rawUrl.startsWith(proxyPrefix)) {
+          next();
+          return;
+        }
 
-      try {
-        const response = await proxyBlizzardRequest({
-          config: resolveBlizzardServerConfig(env),
-          path,
-          search: requestUrl.search,
-          method: req.method,
-          acceptHeader: Array.isArray(req.headers.accept)
-            ? req.headers.accept.join(",")
-            : req.headers.accept,
-        });
+        const requestUrl = new URL(rawUrl, "http://localhost");
+        const path = getProxySubpath(requestUrl.pathname, proxyPrefix);
 
-        res.statusCode = response.status;
-        Object.entries(response.headers).forEach(([header, value]) => {
-          res.setHeader(header, value);
-        });
-        res.end(response.body);
-      } catch (error) {
-        const response = toProxyErrorResponse(error);
-        res.statusCode = response.status;
-        Object.entries(response.headers).forEach(([header, value]) => {
-          res.setHeader(header, value);
-        });
-        res.end(response.body);
-      }
-    });
-  },
-});
+        if (!path) {
+          next();
+          return;
+        }
+
+        const send = (response: BlizzardProxyResponse): void => {
+          res.statusCode = response.status;
+          Object.entries(response.headers).forEach(([header, value]) => {
+            res.setHeader(header, value);
+          });
+          res.end(response.body);
+        };
+
+        try {
+          // Resolved per request so missing credentials surface as a 500 JSON
+          // body instead of crashing the dev server at startup.
+          send(
+            await proxyBlizzardRequest({
+              config: resolveBlizzardServerConfig(env),
+              path,
+              search: requestUrl.search,
+              method: req.method,
+              requestHeaders: req.headers,
+              clientIp: req.socket?.remoteAddress,
+            }),
+          );
+        } catch (error) {
+          send(toProxyErrorResponse(error));
+        }
+      });
+    },
+  };
+};
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
@@ -65,55 +76,34 @@ export default defineConfig(({ mode }) => {
     build: {
       rollupOptions: {
         output: {
+          // Vendor-only splitting. Route-level chunks come from the lazy()
+          // boundaries in the app, so nothing here references src/ paths.
           manualChunks(id) {
-            if (
-              id.includes(
-                "/src/features/search/components/SearchExperience.tsx",
-              ) ||
-              id.includes(
-                "/src/features/search/components/SearchQueryResults.tsx",
-              ) ||
-              id.includes(
-                "/src/features/search/components/SearchResults.tsx",
-              ) ||
-              id.includes(
-                "/src/features/search/components/SearchResultSection.tsx",
-              ) ||
-              id.includes("/src/features/search/hooks/useBlizzardSearch.ts") ||
-              id.includes("/src/features/search/services/searchService.ts") ||
-              id.includes("/src/features/search/categories.ts")
-            ) {
-              return "search-experience";
-            }
-
             if (!id.includes("node_modules")) {
               return undefined;
             }
 
-            if (
-              id.includes("/react/") ||
-              id.includes("react-dom") ||
-              id.includes("scheduler")
-            ) {
+            if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) {
               return "react-vendor";
             }
 
             if (
-              id.includes("react-router") ||
-              id.includes("@remix-run/router")
+              /node_modules\/(react-router|react-router-dom|@remix-run\/router)\//.test(
+                id,
+              )
             ) {
               return "router-vendor";
             }
 
-            if (id.includes("@tanstack/react-query")) {
+            if (/node_modules\/@tanstack\//.test(id)) {
               return "query-vendor";
             }
 
-            if (id.includes("@mui/icons-material")) {
+            if (id.includes("/node_modules/@mui/icons-material/")) {
               return "mui-icons";
             }
 
-            if (id.includes("@mui/") || id.includes("@emotion/")) {
+            if (/node_modules\/(@mui|@emotion)\//.test(id)) {
               return "mui-core";
             }
 
