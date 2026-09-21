@@ -1,61 +1,48 @@
-const SUPPORTED_REGIONS = ["us", "eu", "kr", "tw"] as const;
+import {
+  apiHostForRegion,
+  normalize,
+  normalizeProxyPrefix,
+  parseRegion,
+  withFallback,
+} from "./region";
 
-type Region = (typeof SUPPORTED_REGIONS)[number];
-
-const FALLBACK_REGION: Region = "us";
-const FALLBACK_LOCALE = "en_US";
-const DEFAULT_PROXY_PATH = "/api/blizzard";
-
-const normalize = (value: string | undefined): string => (value ?? "").trim();
-
-const parseRegion = (
-  value: string | undefined,
-  apiUri?: string | undefined,
-): Region => {
-  const normalized = normalize(value).toLowerCase() as Region | "";
-  if (SUPPORTED_REGIONS.includes(normalized as Region)) {
-    return normalized as Region;
-  }
-
-  if (apiUri) {
-    const match = /https?:\/\/(\w+)\.api\.blizzard\.com/i.exec(apiUri);
-    if (match && SUPPORTED_REGIONS.includes(match[1].toLowerCase() as Region)) {
-      return match[1].toLowerCase() as Region;
-    }
-  }
-
-  return FALLBACK_REGION;
-};
-
-const withFallback = (value: string | undefined, fallback: string): string => {
-  const normalized = normalize(value);
-  return normalized.length > 0 ? normalized : fallback;
-};
-
-const trimTrailingSlash = (value: string): string => {
-  if (value === "/") {
-    return value;
-  }
-
-  return value.replace(/\/+$/, "") || "/";
-};
+export const FALLBACK_LOCALE = "en_US";
 
 const legacyApiUri = normalize(import.meta.env.VITE_REACT_APP_API_URI);
 
-const staticAccessToken = normalize(
-  import.meta.env.VITE_BNET_ACCESS_TOKEN ??
-    import.meta.env.VITE_REACT_APP_ACCESS_TOKEN,
-);
+/**
+ * A browser-side bearer token is a dev-only shortcut. Production builds ignore
+ * it so a token left in `.env` can never be inlined into the public bundle.
+ */
+const staticAccessToken = import.meta.env.DEV
+  ? normalize(
+      import.meta.env.VITE_BNET_ACCESS_TOKEN ??
+        import.meta.env.VITE_REACT_APP_ACCESS_TOKEN,
+    )
+  : "";
+
+if (import.meta.env.DEV && staticAccessToken) {
+  console.warn(
+    "[WoW Citadel] VITE_BNET_ACCESS_TOKEN is being sent from the browser. This only works in `vite dev`; production builds ignore it and use the proxy.",
+  );
+}
 
 const region = parseRegion(import.meta.env.VITE_BNET_REGION, legacyApiUri);
-const apiBaseUrl = withFallback(
-  legacyApiUri,
-  `https://${region}.api.blizzard.com`,
-);
-const proxyPath = trimTrailingSlash(
-  withFallback(import.meta.env.VITE_BNET_PROXY_PATH, DEFAULT_PROXY_PATH),
-);
+const apiBaseUrl = withFallback(legacyApiUri, apiHostForRegion(region));
+const proxyPath = normalizeProxyPrefix(import.meta.env.VITE_BNET_PROXY_PATH);
 
+/**
+ * Build-time environment, inlined by Vite.
+ *
+ * - `staticAccessToken`: `VITE_BNET_ACCESS_TOKEN` (legacy `VITE_REACT_APP_ACCESS_TOKEN`);
+ *   only honoured by `vite dev`, always empty in production builds.
+ * - `region`: `VITE_BNET_REGION`, falling back to the host of
+ *   `VITE_REACT_APP_API_URI`, then `us`.
+ * - `locale`: `VITE_BNET_LOCALE`, default `en_US`.
+ * - `apiBaseUrl`: `VITE_REACT_APP_API_URI` (legacy), otherwise
+ *   `https://{region}.api.blizzard.com`. Only used when a static token bypasses the proxy.
+ * - `proxyPath`: `VITE_BNET_PROXY_PATH`, default `/api/blizzard`, no trailing slash.
+ */
 export const env = {
   staticAccessToken,
   region,
