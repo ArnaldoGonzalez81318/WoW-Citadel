@@ -28,12 +28,18 @@ export interface ApiEndpointDefinition {
   parameters?: ApiEndpointParameter[];
 }
 
+/** Accent tone of a family: gold (`secondary`) for value families, arcane blue otherwise. */
+export type ApiFamilyTone = "primary" | "secondary";
+
 export interface ApiFamilyConfig {
   slug: string;
   label: string;
   description: string;
-  /** @deprecated Category identity is icon + label; the catalog drops this field. */
-  accentColor: string;
+  /**
+   * A palette *tone*, never a colour: category identity is icon + label.
+   * Read it through `getApiFamilyTone`; never interpolate it into CSS.
+   */
+  accentColor: ApiFamilyTone;
   endpoints: ApiEndpointDefinition[];
   presentation?: ApiFamilyPresentation;
   /** Endpoint ids whose index responses feed the dataset gallery. */
