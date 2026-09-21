@@ -1,200 +1,241 @@
-import AutorenewRoundedIcon from "@mui/icons-material/AutorenewRounded";
-import MonetizationOnRoundedIcon from "@mui/icons-material/MonetizationOnRounded";
-import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import ArrowForwardRounded from "@mui/icons-material/ArrowForwardRounded";
+import AutorenewRounded from "@mui/icons-material/AutorenewRounded";
+import MonetizationOnRounded from "@mui/icons-material/MonetizationOnRounded";
 import {
   Box,
   Button,
-  CircularProgress,
+  Chip,
   Paper,
   Stack,
+  Tooltip,
   Typography,
+  alpha,
 } from "@mui/material";
-import { useMemo } from "react";
-import { useWowTokenPrice } from "@/features/search/hooks/useWowTokenPrice";
+import { useEffect, useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
+
+import GoldAmount from "@/components/common/GoldAmount";
+import {
+  ErrorState,
+  LiveStatus,
+  LoadingSkeleton,
+} from "@/components/common/StateBlocks";
+import {
+  TOKEN_REFRESH_MINUTES,
+  useWowTokenPrice,
+} from "@/features/search/hooks/useWowTokenPrice";
 import { env } from "@/lib/env";
+import { formatRelativeTime } from "@/lib/format";
 
-const formatter = new Intl.NumberFormat("en-US", {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 0,
-});
+export interface TokenTickerProps {
+  /** Home variant: smaller padding, a "Price history" link, fewer chips. */
+  compact?: boolean;
+  /**
+   * Element for the "WoW Token" label: a section heading on the home page,
+   * a plain paragraph on /category/wow-token where the route's h1 already
+   * says the same thing.
+   */
+  titleAs?: "h2" | "h3" | "p";
+}
 
-const relativeTime = (now: Date, updatedAt: Date): string => {
-  const diffMs = now.getTime() - updatedAt.getTime();
-  if (Number.isNaN(diffMs)) {
-    return "Unknown";
-  }
+const WOW_TOKEN_PATH = "/category/wow-token";
+/** Re-render cadence for "Updated N min ago" (no refetch involved). */
+const CLOCK_TICK_MS = 30_000;
+/** Blizzard publishes roughly every 20 minutes; past this the price is suspect. */
+const STALE_AFTER_MS = 30 * 60_000;
 
-  const diffMinutes = Math.round(diffMs / (1000 * 60));
-  if (diffMinutes < 1) {
-    return "just now";
-  }
+/** Wall-clock `now`, ticked every 30s so relative times keep advancing. */
+const useNow = (): number => {
+  const [now, setNow] = useState(() => Date.now());
 
-  if (diffMinutes < 60) {
-    return `${diffMinutes} min ago`;
-  }
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);
+    return () => window.clearInterval(id);
+  }, []);
 
-  const diffHours = Math.round(diffMinutes / 60);
-  if (diffHours < 24) {
-    return `${diffHours} hr${diffHours === 1 ? "" : "s"} ago`;
-  }
-
-  const diffDays = Math.round(diffHours / 24);
-  return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+  return now;
 };
 
-const TokenTicker = (): JSX.Element => {
+/**
+ * The live regional WoW Token price: whole gold via GoldAmount, Blizzard's
+ * own "last updated" time as a live relative label, and the refresh cadence
+ * read from the query config so the copy can never drift.
+ */
+const TokenTicker = ({
+  compact = false,
+  titleAs = "h2",
+}: TokenTickerProps): JSX.Element => {
   const { data, isLoading, isError, error, refetch, isFetching } =
     useWowTokenPrice();
+  const now = useNow();
 
-  const formattedPrice = useMemo(() => {
-    if (!data) {
-      return "--";
+  const isStale =
+    data !== undefined && now - data.lastUpdated.getTime() > STALE_AFTER_MS;
+
+  const renderBody = (): JSX.Element => {
+    if (isLoading) {
+      return (
+        <LoadingSkeleton
+          variant="block"
+          height={compact ? 96 : 140}
+          label="Loading WoW Token price"
+        />
+      );
     }
 
-    const totalCopper = data.price;
-    const gold = Math.floor(totalCopper / 10000);
-    const silver = Math.floor((totalCopper % 10000) / 100);
-    const copper = totalCopper % 100;
-
-    const paddedSilver = silver.toString().padStart(2, "0");
-    const paddedCopper = copper.toString().padStart(2, "0");
-
-    return `${formatter.format(gold)}g ${paddedSilver}s ${paddedCopper}c`;
-  }, [data]);
-
-  const lastUpdated = useMemo(() => {
-    if (!data) {
-      return "";
+    if (isError || !data) {
+      return (
+        <ErrorState
+          compact
+          error={error}
+          context="WoW Token"
+          onRetry={() => {
+            void refetch();
+          }}
+        />
+      );
     }
 
-    return relativeTime(new Date(), data.lastUpdated);
-  }, [data]);
+    const iso = data.lastUpdated.toISOString();
 
-  const friendlyError = useMemo(() => {
-    if (!error) {
-      return undefined;
-    }
+    return (
+      <Stack spacing={1.5} sx={{ minWidth: 0 }}>
+        <LiveStatus
+          component="p"
+          busy={isFetching}
+          sx={{ color: "text.primary" }}
+        >
+          <GoldAmount
+            copper={data.price}
+            size="large"
+            sx={{
+              fontSize: { xs: "1.75rem", md: "2rem" },
+              fontWeight: 700,
+              lineHeight: 1.15,
+              whiteSpace: "normal",
+              overflowWrap: "anywhere",
+            }}
+          />
+        </LiveStatus>
 
-    if (error.name === "BlizzardRequestError") {
-      return "Unable to reach Blizzard’s token service. Confirm your Blizzard API credentials in the .env file and try again.";
-    }
-
-    return error.message;
-  }, [error]);
+        <Stack
+          direction="row"
+          spacing={1}
+          useFlexGap
+          flexWrap="wrap"
+          alignItems="center"
+        >
+          <Tooltip title={data.lastUpdated.toLocaleString()}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              component="time"
+              dateTime={iso}
+              sx={{ fontVariantNumeric: "tabular-nums" }}
+            >
+              Updated {formatRelativeTime(data.lastUpdated, now)}
+            </Typography>
+          </Tooltip>
+          {isStale ? (
+            <Chip size="small" color="warning" variant="outlined" label="Stale" />
+          ) : null}
+          {compact ? null : (
+            <>
+              <Chip size="small" label={`Region ${env.region.toUpperCase()}`} />
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`Auto-refreshes every ${TOKEN_REFRESH_MINUTES} min`}
+              />
+            </>
+          )}
+        </Stack>
+      </Stack>
+    );
+  };
 
   return (
     <Paper
       variant="outlined"
-      sx={{
-        borderRadius: 4,
-        px: { xs: 3, md: 5 },
-        py: { xs: 3, md: 4 },
-        background:
-          "linear-gradient(135deg, rgba(42, 182, 246, 0.12), rgba(245, 192, 69, 0.08))",
-        borderColor: "rgba(30, 155, 233, 0.28)",
-      }}
+      sx={(theme) => ({
+        borderRadius: `${theme.wc.radius.lg}px`,
+        p: compact ? 2 : 2.5,
+      })}
     >
-      <Stack
-        direction={{ xs: "column", md: "row" }}
-        spacing={3}
-        alignItems="center"
-      >
+      <Stack spacing={2}>
         <Stack
-          direction="row"
+          direction={{ xs: "column", md: "row" }}
           spacing={2}
-          alignItems="center"
-          sx={{ minWidth: 0 }}
+          alignItems={{ xs: "stretch", md: "center" }}
+          justifyContent="space-between"
         >
-          <Box
-            sx={{
-              width: 64,
-              height: 64,
-              borderRadius: 3,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background:
-                "linear-gradient(135deg, rgba(245, 192, 69, 0.2), rgba(52, 211, 153, 0.1))",
-              border: "1px solid rgba(245, 192, 69, 0.45)",
-            }}
-          >
-            <MonetizationOnRoundedIcon
-              sx={{ fontSize: 32, color: "warning.light" }}
-            />
-          </Box>
-          <Stack spacing={0.5} sx={{ minWidth: 0 }}>
-            <Typography
-              variant="overline"
-              sx={{ letterSpacing: "0.18em", color: "secondary.light" }}
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ minWidth: 0 }}>
+            <Box
+              aria-hidden="true"
+              sx={(theme) => ({
+                width: theme.wc.layout.iconTile,
+                height: theme.wc.layout.iconTile,
+                flexShrink: 0,
+                display: "grid",
+                placeItems: "center",
+                borderRadius: `${theme.wc.radius.md}px`,
+                bgcolor: alpha(theme.palette.secondary.main, 0.12),
+                border: `1px solid ${theme.palette.border.gold}`,
+                "& svg": { fontSize: 28 },
+              })}
             >
-              WoW Token Market Watch
-            </Typography>
-            <Typography
-              variant="h4"
-              sx={{
-                fontWeight: 700,
-                color: "warning.light",
-                textShadow: "0 6px 18px rgba(245, 192, 69, 0.35)",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {formattedPrice}
-            </Typography>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ whiteSpace: "nowrap" }}
-            >
-              {data ? `Updated ${lastUpdated}` : "Awaiting latest trade"}
-            </Typography>
-          </Stack>
-        </Stack>
-        <Stack spacing={1} sx={{ flex: 1, minWidth: 0 }}>
-          {isError ? (
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <WarningAmberRoundedIcon color="warning" fontSize="small" />
+              <MonetizationOnRounded color="secondary" />
+            </Box>
+            <Stack spacing={0.25} sx={{ minWidth: 0 }}>
               <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ flex: 1 }}
+                variant="overline"
+                component={titleAs}
+                sx={{ color: "secondary.main", margin: 0, lineHeight: 1.4 }}
               >
-                {friendlyError ??
-                  "Unable to fetch the WoW Token just now. Try refreshing."}
+                WoW Token
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Live regional price from Blizzard&apos;s game-data API.
               </Typography>
             </Stack>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              Keep an eye on Azeroth&apos;s economy. Prices reflect region{" "}
-              {env.region.toUpperCase()} with{" "}
-              <Typography
-                component="span"
-                variant="body2"
-                color="text.primary"
-                fontWeight={600}
-              >
-                {data ? formatter.format(Math.floor(data.price / 10000)) : "--"}
-              </Typography>{" "}
-              gold per token. Perfect for comparing profession profits against
-              subscription costs.
-            </Typography>
-          )}
-          <Button
-            variant="outlined"
-            size="small"
-            onClick={() => refetch()}
-            disabled={isLoading || isFetching}
-            startIcon={
-              isFetching ? (
-                <CircularProgress size={16} thickness={5} />
-              ) : (
-                <AutorenewRoundedIcon />
-              )
-            }
-            sx={{ alignSelf: { xs: "flex-start", md: "flex-end" } }}
+          </Stack>
+
+          <Stack
+            direction="row"
+            spacing={1}
+            useFlexGap
+            flexWrap="wrap"
+            alignItems="center"
+            sx={{ flexShrink: 0 }}
           >
-            {isFetching ? "Refreshing" : "Refresh price"}
-          </Button>
+            {compact ? (
+              <Button
+                component={RouterLink}
+                to={WOW_TOKEN_PATH}
+                variant="text"
+                size="small"
+                endIcon={<ArrowForwardRounded />}
+              >
+                Price history
+              </Button>
+            ) : null}
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => {
+                void refetch();
+              }}
+              loading={isFetching}
+              loadingPosition="start"
+              startIcon={<AutorenewRounded />}
+              disabled={isLoading}
+            >
+              Refresh
+            </Button>
+          </Stack>
         </Stack>
+
+        {renderBody()}
       </Stack>
     </Paper>
   );
