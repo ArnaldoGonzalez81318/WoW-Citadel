@@ -1,47 +1,46 @@
-import { BlizzardRequestError, blizzardClient } from "@/lib/blizzardClient";
-import { env } from "@/lib/env";
-import { SearchResult } from "@/features/search/types";
+import type { EntityKind, SearchResult } from "@/features/search/types";
+import { blizzardClient } from "@/lib/blizzardClient";
+import {
+  cleanMarkup,
+  localized,
+  nameParam,
+  namespace,
+  optional404,
+} from "@/lib/blizzardHelpers";
+import type { LocalizedString } from "@/lib/blizzardHelpers";
+import { getExternalLink } from "@/lib/externalLinks";
+import { isQualityKey } from "@/theme";
 
-const DEFAULT_PAGE_SIZE = 12;
+/** Results per page; the Pagination and the "Showing 1–24" summary derive from it. */
+export const SEARCH_PAGE_SIZE = 24;
 
-const namespace = (type: "static" | "dynamic" | "profile"): string =>
-  `${type}-${env.region}`;
+export type SearchPage = {
+  results: SearchResult[];
+  page: number;
+  pageCount: number;
+  /** Total matches when Blizzard reports one; never fabricated. */
+  total?: number;
+};
 
-type LocalizedString = Record<string, string | undefined> | undefined;
+export type SearchFetchOptions = {
+  page?: number;
+  signal?: AbortSignal;
+};
+
+export type SearchFetcher = (
+  query: string,
+  options?: SearchFetchOptions,
+) => Promise<SearchPage>;
 
 type SearchResponse<T> = {
+  page?: number;
+  pageSize?: number;
+  pageCount?: number;
+  resultCountTotal?: number;
   results?: Array<{
     key: { href: string };
     data: T;
   }>;
-};
-
-const localized = (value: LocalizedString): string => {
-  if (!value) {
-    return "";
-  }
-
-  return (
-    value[env.locale] ??
-    value.en_US ??
-    Object.values(value).find(
-      (entry) => typeof entry === "string" && entry.length > 0,
-    ) ??
-    ""
-  );
-};
-
-const cleanMarkup = (value: string | undefined): string => {
-  if (!value) {
-    return "";
-  }
-
-  return value
-    .replace(/\|c[0-9A-Fa-f]{8}/g, "")
-    .replace(/\|r/g, "")
-    .replace(/\|n/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 };
 
 type ItemSearchResult = {
@@ -51,6 +50,7 @@ type ItemSearchResult = {
   item_class?: { name?: LocalizedString };
   item_subclass?: { name?: LocalizedString };
   inventory_type?: { name?: LocalizedString };
+  quality?: { type?: string; name?: LocalizedString };
   media?: { id: number };
 };
 
@@ -80,180 +80,213 @@ type CreatureSearchResult = {
   creature_family?: { name?: LocalizedString };
 };
 
-const nameParamKey = (): string => `name.${env.locale}`;
+const EMPTY_PAGE: SearchPage = { results: [], page: 1, pageCount: 1, total: 0 };
 
-const mapResults = <T>(
-  response: SearchResponse<T>,
-  mapper: (
-    entry: NonNullable<SearchResponse<T>["results"]>[number],
-  ) => SearchResult,
-): SearchResult[] =>
-  (response.results ?? []).map(mapper).filter((item) => Boolean(item.name));
+const emptyPage = (): SearchPage => ({ ...EMPTY_PAGE, results: [] });
 
-const safeSearch = async <T>(
-  search: () => Promise<SearchResult[]>,
-): Promise<SearchResult[]> => {
-  try {
-    return await search();
-  } catch (error) {
-    if (
-      error instanceof BlizzardRequestError &&
-      (error.status === 404 || error.status === 204)
-    ) {
-      return [];
-    }
+type SearchEntry<T> = NonNullable<SearchResponse<T>["results"]>[number];
 
-    throw error;
-  }
+/** Joins the non-empty parts with the meta separator used across the app. */
+const joinParts = (parts: Array<string | undefined>): string =>
+  parts.filter((part): part is string => Boolean(part)).join(" · ");
+
+const externalFields = (
+  kind: EntityKind,
+  id: number,
+  name: string,
+): Pick<SearchResult, "kind" | "externalUrl" | "externalLabel"> => {
+  const link = getExternalLink(kind, id, name);
+  return {
+    kind,
+    externalUrl: link?.url,
+    externalLabel: link?.label,
+  };
 };
 
-export const searchItems = async (query: string): Promise<SearchResult[]> => {
-  if (!query.trim()) {
-    return [];
+const runSearch = async <T>(
+  path: string,
+  orderby: string,
+  query: string,
+  { page = 1, signal }: SearchFetchOptions,
+  mapper: (entry: SearchEntry<T>) => SearchResult,
+): Promise<SearchPage> => {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return emptyPage();
   }
 
-  return safeSearch(async () => {
-    const response = await blizzardClient.get<SearchResponse<ItemSearchResult>>(
-      "/data/wow/search/item",
+  const response = await optional404(() =>
+    blizzardClient.get<SearchResponse<T>>(
+      path,
       {
         namespace: namespace("static"),
-        orderby: "level:desc",
-        _pageSize: DEFAULT_PAGE_SIZE,
-        [nameParamKey()]: query,
+        orderby,
+        _page: page,
+        _pageSize: SEARCH_PAGE_SIZE,
+        ...nameParam(trimmed),
       },
-    );
+      { signal },
+    ),
+  );
 
-    return mapResults(response, ({ key, data }) => {
+  if (!response) {
+    return emptyPage();
+  }
+
+  return {
+    results: (response.results ?? [])
+      .map(mapper)
+      .filter((item) => Boolean(item.name)),
+    page: response.page ?? page,
+    pageCount: response.pageCount ?? 1,
+    total: response.resultCountTotal,
+  };
+};
+
+export const searchItems: SearchFetcher = (query, options = {}) =>
+  runSearch<ItemSearchResult>(
+    "/data/wow/search/item",
+    "level:desc",
+    query,
+    options,
+    ({ key, data }) => {
+      const name = localized(data.name);
       const itemClass = localized(data.item_class?.name);
       const itemSubclass = localized(data.item_subclass?.name);
       const inventoryType = localized(data.inventory_type?.name);
+      const qualityType = data.quality?.type?.toLowerCase();
+      const quality = isQualityKey(qualityType) ? qualityType : undefined;
+      const qualityName = localized(data.quality?.name);
+      const itemLevel =
+        typeof data.level === "number" && data.level > 0
+          ? `Item level ${data.level}`
+          : undefined;
+      const classLabel = joinParts([
+        itemClass,
+        itemSubclass && itemSubclass !== itemClass ? itemSubclass : undefined,
+      ]);
 
-      const summaryParts = [] as string[];
-      if (data.level) {
-        summaryParts.push(`Item level ${data.level}`);
+      const meta: SearchResult["meta"] = [];
+      if (typeof data.level === "number" && data.level > 0) {
+        meta.push({ label: "Item level", value: String(data.level) });
       }
-
-      if (itemClass) {
-        summaryParts.push(itemClass);
+      if (inventoryType) {
+        meta.push({ label: "Slot", value: inventoryType });
       }
-
-      if (itemSubclass && itemSubclass !== itemClass) {
-        summaryParts.push(itemSubclass);
+      if (qualityName) {
+        meta.push({ label: "Quality", value: qualityName });
       }
-
-      const details = [inventoryType].filter(Boolean).join(" • ");
 
       return {
         id: data.id,
-        name: localized(data.name),
+        name,
         href: key.href,
-        summary: summaryParts.join(" • "),
-        details,
+        summary: joinParts([itemLevel, classLabel]),
+        details: inventoryType,
         typeLabel: itemClass || "Item",
-        mediaRequestPath: `/data/wow/media/item/${data.id}`,
-        mediaRequestNamespace: namespace("static"),
+        subtitle: joinParts([itemLevel, classLabel || undefined]) || undefined,
+        quality,
+        meta,
+        ...externalFields("item", data.id, name),
       };
-    });
-  });
-};
+    },
+  );
 
-export const searchSpells = async (query: string): Promise<SearchResult[]> => {
-  if (!query.trim()) {
-    return [];
-  }
+export const searchSpells: SearchFetcher = (query, options = {}) =>
+  runSearch<SpellSearchResult>(
+    "/data/wow/search/spell",
+    "id:desc",
+    query,
+    options,
+    ({ key, data }) => {
+      const name = localized(data.name);
+      const description = cleanMarkup(localized(data.description));
 
-  return safeSearch(async () => {
-    const response = await blizzardClient.get<
-      SearchResponse<SpellSearchResult>
-    >("/data/wow/search/spell", {
-      namespace: namespace("static"),
-      orderby: "id:desc",
-      _pageSize: DEFAULT_PAGE_SIZE,
-      [nameParamKey()]: query,
-    });
+      return {
+        id: data.id,
+        name,
+        href: key.href,
+        summary: "Spell",
+        details: description,
+        typeLabel: "Spell",
+        subtitle: description || undefined,
+        meta: [],
+        ...externalFields("spell", data.id, name),
+      };
+    },
+  );
 
-    return mapResults(response, ({ key, data }) => ({
-      id: data.id,
-      name: localized(data.name),
-      href: key.href,
-      summary: "Spell",
-      details: cleanMarkup(localized(data.description)),
-      typeLabel: "Spell",
-      mediaRequestPath: `/data/wow/media/spell/${data.id}`,
-      mediaRequestNamespace: namespace("static"),
-    }));
-  });
-};
-
-export const searchMounts = async (query: string): Promise<SearchResult[]> => {
-  if (!query.trim()) {
-    return [];
-  }
-
-  return safeSearch(async () => {
-    const response = await blizzardClient.get<
-      SearchResponse<MountSearchResult>
-    >("/data/wow/search/mount", {
-      namespace: namespace("static"),
-      orderby: "id:desc",
-      _pageSize: DEFAULT_PAGE_SIZE,
-      [nameParamKey()]: query,
-    });
-
-    return mapResults(response, ({ key, data }) => {
+export const searchMounts: SearchFetcher = (query, options = {}) =>
+  runSearch<MountSearchResult>(
+    "/data/wow/search/mount",
+    "id:desc",
+    query,
+    options,
+    ({ key, data }) => {
+      const name = localized(data.name);
+      const source = localized(data.source?.name);
       const affiliation = localized(data.faction?.name);
       const tag = data.is_flying_mount ? "Flying" : undefined;
 
+      const meta: SearchResult["meta"] = [];
+      if (source) {
+        meta.push({ label: "Source", value: source });
+      }
+      if (affiliation) {
+        meta.push({ label: "Faction", value: affiliation });
+      }
+
       return {
         id: data.id,
-        name: localized(data.name),
+        name,
         href: key.href,
-        summary: localized(data.source?.name),
+        summary: source,
         details: cleanMarkup(localized(data.description)),
         typeLabel: "Mount",
-        tag: tag || affiliation || undefined,
+        tag: tag ?? (affiliation || undefined),
+        subtitle: joinParts([source, tag]) || undefined,
+        meta,
+        ...externalFields("mount", data.id, name),
       };
-    });
-  });
-};
+    },
+  );
 
-export const searchCreatures = async (
-  query: string,
-): Promise<SearchResult[]> => {
-  if (!query.trim()) {
-    return [];
-  }
-
-  return safeSearch(async () => {
-    const response = await blizzardClient.get<
-      SearchResponse<CreatureSearchResult>
-    >("/data/wow/search/creature", {
-      namespace: namespace("static"),
-      orderby: "level:desc",
-      _pageSize: DEFAULT_PAGE_SIZE,
-      [nameParamKey()]: query,
-    });
-
-    return mapResults(response, ({ key, data }) => {
+export const searchCreatures: SearchFetcher = (query, options = {}) =>
+  runSearch<CreatureSearchResult>(
+    "/data/wow/search/creature",
+    "level:desc",
+    query,
+    options,
+    ({ key, data }) => {
+      const name = localized(data.name);
       const type = localized(data.type?.name ?? data.creature_type?.name);
       const family = localized(data.creature_family?.name);
-
-      const summaryParts = [
+      const level =
         typeof data.level === "number" && data.level > 0
           ? `Level ${data.level}`
-          : undefined,
-        type,
-        family,
-      ].filter(Boolean) as string[];
+          : undefined;
+
+      const meta: SearchResult["meta"] = [];
+      if (level) {
+        meta.push({ label: "Level", value: String(data.level) });
+      }
+      if (type) {
+        meta.push({ label: "Type", value: type });
+      }
+      if (family) {
+        meta.push({ label: "Family", value: family });
+      }
 
       return {
         id: data.id,
-        name: localized(data.name),
+        name,
         href: key.href,
-        summary: summaryParts.join(" • ") || undefined,
+        summary: joinParts([level, type, family]) || undefined,
         details: cleanMarkup(localized(data.description)),
         typeLabel: "Creature",
+        subtitle: joinParts([level, type]) || undefined,
+        meta,
+        ...externalFields("npc", data.id, name),
       };
-    });
-  });
-};
+    },
+  );
