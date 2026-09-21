@@ -70,6 +70,8 @@ export const summarizeEntry = (entry: unknown): string => {
   );
 };
 
+const PREVIEW_ITEM_LIMIT = 8;
+
 export const extractPreviewItems = (data: unknown): string[] => {
   if (!data || typeof data !== "object") {
     return [];
@@ -78,7 +80,7 @@ export const extractPreviewItems = (data: unknown): string[] => {
   const record = data as Record<string, unknown>;
 
   const results = Array.isArray(record.results)
-    ? record.results.map((entry) => {
+    ? record.results.slice(0, PREVIEW_ITEM_LIMIT).map((entry) => {
         if (entry && typeof entry === "object" && "data" in entry) {
           return summarizeEntry((entry as { data: unknown }).data);
         }
@@ -88,14 +90,16 @@ export const extractPreviewItems = (data: unknown): string[] => {
     : [];
 
   if (results.length > 0) {
-    return results.slice(0, 8);
+    return results;
   }
 
   const arrayEntry = Object.values(record).find((value) =>
     Array.isArray(value),
   );
   if (Array.isArray(arrayEntry)) {
-    return arrayEntry.map((entry) => summarizeEntry(entry)).slice(0, 8);
+    return arrayEntry
+      .slice(0, PREVIEW_ITEM_LIMIT)
+      .map((entry) => summarizeEntry(entry));
   }
 
   return [];
@@ -126,6 +130,14 @@ export const extractMediaAssets = (
         : undefined;
     })
     .filter((entry): entry is { key: string; value: string } => Boolean(entry));
+};
+
+/** The `icon` asset of a media response, or its first asset. */
+export const pickIconAssetUrl = (data: unknown): string | undefined => {
+  const assets = extractMediaAssets(data);
+  return (
+    assets.find((asset) => asset.key === "icon")?.value ?? assets[0]?.value
+  );
 };
 
 export const buildPath = (
@@ -187,37 +199,60 @@ export const matchPathTemplate = (
   return values;
 };
 
-export const collectUrlStrings = (
+const isUrlLikeString = (value: string): boolean =>
+  value.startsWith("http://") ||
+  value.startsWith("https://") ||
+  value.startsWith("/data/wow/");
+
+/** Depth-first walk that adds URL-like strings to `bag` until it holds `limit`. */
+const walkUrlStrings = (
   value: unknown,
-  bag = new Set<string>(),
-): string[] => {
+  bag: Set<string>,
+  limit: number,
+): void => {
+  if (bag.size >= limit) {
+    return;
+  }
+
   if (typeof value === "string") {
-    if (
-      value.startsWith("http://") ||
-      value.startsWith("https://") ||
-      value.startsWith("/data/wow/")
-    ) {
+    if (isUrlLikeString(value)) {
       bag.add(value);
     }
-
-    return Array.from(bag);
+    return;
   }
 
   if (Array.isArray(value)) {
-    value.forEach((entry) => {
-      collectUrlStrings(entry, bag);
-    });
-
-    return Array.from(bag);
+    for (const entry of value) {
+      if (bag.size >= limit) {
+        return;
+      }
+      walkUrlStrings(entry, bag, limit);
+    }
+    return;
   }
 
   if (!value || typeof value !== "object") {
-    return Array.from(bag);
+    return;
   }
 
-  Object.values(value as Record<string, unknown>).forEach((entry) => {
-    collectUrlStrings(entry, bag);
-  });
+  for (const entry of Object.values(value as Record<string, unknown>)) {
+    if (bag.size >= limit) {
+      return;
+    }
+    walkUrlStrings(entry, bag, limit);
+  }
+};
 
+/**
+ * Collects every `http(s)://` or `/data/wow/` string in a response tree
+ * (at most `limit`, discovery only needs the first few hundred). The set is
+ * materialised once, after the walk.
+ */
+export const collectUrlStrings = (
+  value: unknown,
+  bag = new Set<string>(),
+  limit = 200,
+): string[] => {
+  walkUrlStrings(value, bag, limit);
   return Array.from(bag);
 };
