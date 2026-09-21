@@ -1,8 +1,8 @@
+export type { LocalizedString } from "@/lib/blizzardHelpers";
+
 export type LinkReference = {
   href: string;
 };
-
-export type LocalizedString = string | { [locale: string]: string | undefined };
 
 export type ItemClassSummary = {
   id: number;
