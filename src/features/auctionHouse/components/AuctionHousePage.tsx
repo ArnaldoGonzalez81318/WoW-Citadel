@@ -1,290 +1,170 @@
 import GavelRoundedIcon from "@mui/icons-material/GavelRounded";
-import PaidRoundedIcon from "@mui/icons-material/PaidRounded";
-import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
-import ReportProblemRoundedIcon from "@mui/icons-material/ReportProblemRounded";
+import { Chip, Stack, Typography } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
+import { useCallback } from "react";
+
+import PageHeader from "@/components/common/PageHeader";
+import { EmptyState, ErrorState } from "@/components/common/StateBlocks";
+import AuctionFilters from "@/features/auctionHouse/components/AuctionFilters";
+import AuctionTable from "@/features/auctionHouse/components/AuctionTable";
 import {
-  Alert,
-  FormControl,
-  Grid,
-  InputLabel,
-  MenuItem,
-  Paper,
-  Select,
-  SelectChangeEvent,
-  Skeleton,
-  Stack,
-  ToggleButton,
-  ToggleButtonGroup,
-  Typography,
-} from "@mui/material";
-import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import ResultCard from "@/components/common/ResultCard";
-import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid";
-import { usePerformanceOverlayEntry } from "@/devtools/PerformanceOverlayContext";
-import { fetchConnectedRealmSnapshots } from "@/features/connectedRealms/services/connectedRealmService";
-import {
-  fetchCommoditySnapshots,
-  fetchConnectedRealmAuctionSnapshots,
-} from "@/features/auctionHouse/services/auctionHouseService";
+  COMMODITY_STALE_MS,
+  REALM_STALE_MS,
+  useAuctionSnapshot,
+} from "@/features/auctionHouse/hooks/useAuctionSnapshot";
+import type {
+  AuctionMarketView,
+  AuctionSortKey,
+} from "@/features/auctionHouse/types";
+import { isAuctionSortKey } from "@/features/auctionHouse/types";
+import { useConnectedRealmCatalog } from "@/features/connectedRealms/hooks/useConnectedRealmSnapshots";
+import { useSearchParamsRecord } from "@/hooks/useSearchParamState";
 import { env } from "@/lib/env";
-import { BlizzardRequestError } from "@/lib/blizzardClient";
 
-const REALM_SAMPLE_SIZE = 10;
-const VIEW_OPTIONS = {
-  commodities: "commodities",
-  realm: "realm",
-} as const;
+export type AuctionHousePageProps = {
+  /** Gold overline above the title (the nav section label). */
+  eyebrow?: string;
+};
 
-type ViewMode = (typeof VIEW_OPTIONS)[keyof typeof VIEW_OPTIONS];
+const DEFAULT_EYEBROW = "Competitive & Economy";
+const DEFAULT_SORT: AuctionSortKey = "price-desc";
 
-const AuctionHousePage = (): JSX.Element => {
-  const [viewMode, setViewMode] = useState<ViewMode>(VIEW_OPTIONS.commodities);
-  const [selectedRealmId, setSelectedRealmId] = useState<number | "">("");
+/**
+ * `view` defaults to "" (absent) so a bare `?realm=ID` deep link can be read
+ * as the realm view; an explicit `view=commodities` is honoured.
+ */
+const URL_DEFAULTS = { view: "", realm: "", sort: DEFAULT_SORT };
 
-  const realmsQuery = useQuery({
-    queryKey: ["auction-connected-realms", env.region],
-    queryFn: () => fetchConnectedRealmSnapshots(REALM_SAMPLE_SIZE),
-    staleTime: 1000 * 60 * 5,
-  });
+const minutes = (ms: number): number => Math.round(ms / 60_000);
 
-  const realms = useMemo(() => realmsQuery.data ?? [], [realmsQuery.data]);
+const parseRealmId = (value: string): number | null => {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
 
-  useEffect(() => {
-    if (selectedRealmId === "" && realms.length > 0) {
-      setSelectedRealmId(realms[0].id);
-    }
-  }, [realms, selectedRealmId]);
+const AuctionHousePage = ({
+  eyebrow = DEFAULT_EYEBROW,
+}: AuctionHousePageProps): JSX.Element => {
+  const theme = useTheme();
+  const [params, setParams] = useSearchParamsRecord(URL_DEFAULTS);
 
-  const commoditiesQuery = useQuery({
-    queryKey: ["auction-commodities", env.region],
-    queryFn: () => fetchCommoditySnapshots(),
-    enabled: viewMode === VIEW_OPTIONS.commodities,
-    staleTime: 1000 * 60 * 15,
-  });
+  const realmId = parseRealmId(params.realm);
+  const view: AuctionMarketView =
+    params.view === "realm" || (params.view === "" && realmId !== null)
+      ? "realm"
+      : "commodities";
+  const sort: AuctionSortKey = isAuctionSortKey(params.sort)
+    ? params.sort
+    : DEFAULT_SORT;
 
-  const realmAuctionsQuery = useQuery({
-    queryKey: ["auction-realm-listings", selectedRealmId, env.region],
-    queryFn: () => fetchConnectedRealmAuctionSnapshots(Number(selectedRealmId)),
-    enabled: viewMode === VIEW_OPTIONS.realm && selectedRealmId !== "",
-    staleTime: 1000 * 60 * 5,
-  });
+  const catalogQuery = useConnectedRealmCatalog({ enabled: view === "realm" });
+  const snapshot = useAuctionSnapshot(view, realmId, sort);
+  const { query, rows } = snapshot;
 
-  const activeQuery =
-    viewMode === VIEW_OPTIONS.commodities
-      ? commoditiesQuery
-      : realmAuctionsQuery;
-  const activeItems = activeQuery.data ?? [];
-  const selectedRealm = realms.find((realm) => realm.id === selectedRealmId);
+  const selectedRealm =
+    view === "realm" && realmId !== null
+      ? catalogQuery.data?.snapshots.find((entry) => entry.id === realmId)
+      : undefined;
 
-  usePerformanceOverlayEntry(
-    import.meta.env.DEV
-      ? {
-          id: "auction-house",
-          label: "Auction House",
-          renderedCount: activeItems.length,
-          totalCount: activeItems.length,
-          notes:
-            viewMode === VIEW_OPTIONS.commodities
-              ? "Commodity market"
-              : selectedRealm?.displayName || "Connected realm market",
-        }
-      : null,
+  const handleViewChange = useCallback(
+    (next: AuctionMarketView): void => {
+      // Keep `realm` so switching back restores the pick; spell out
+      // `view=commodities` when a realm is present so the deep-link rule
+      // above does not flip the view back.
+      setParams(
+        {
+          view:
+            next === "realm" ? "realm" : params.realm ? "commodities" : null,
+        },
+        { replace: true },
+      );
+    },
+    [params.realm, setParams],
   );
 
-  const friendlyError = useMemo(() => {
-    const error =
-      realmsQuery.error ?? commoditiesQuery.error ?? realmAuctionsQuery.error;
-    if (!error) {
-      return undefined;
-    }
+  const handleRealmChange = useCallback(
+    (next: number | null): void => {
+      setParams({ realm: next === null ? null : String(next), view: "realm" });
+    },
+    [setParams],
+  );
 
-    if (error instanceof BlizzardRequestError) {
-      if (error.status === 401 || error.status === 403) {
-        return "We couldn’t authenticate with Blizzard’s Auction House API. Update your Blizzard credentials in the .env file and refresh.";
-      }
+  const handleSortChange = useCallback(
+    (next: AuctionSortKey): void => {
+      setParams({ sort: next }, { replace: true });
+    },
+    [setParams],
+  );
 
-      if (error.status === 429) {
-        return "The Blizzard API rate limit has been reached. Please wait a few minutes and try again.";
-      }
-    }
-
-    return error instanceof Error
-      ? error.message
-      : "Unable to load auction house data right now.";
-  }, [commoditiesQuery.error, realmAuctionsQuery.error, realmsQuery.error]);
-
-  const handleViewMode = (
-    _event: React.MouseEvent<HTMLElement>,
-    value: ViewMode | null,
-  ) => {
-    if (value) {
-      setViewMode(value);
-    }
-  };
-
-  const handleRealmChange = (event: SelectChangeEvent<number | "">) => {
-    const value = event.target.value;
-    setSelectedRealmId(typeof value === "string" ? Number(value) : value);
-  };
-
-  const isLoading =
-    activeQuery.isLoading ||
-    (viewMode === VIEW_OPTIONS.realm && realmsQuery.isLoading);
+  const awaitingRealm = view === "realm" && realmId === null;
 
   return (
-    <Stack spacing={{ xs: 4, md: 6 }}>
-      <Stack spacing={1.5}>
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <GavelRoundedIcon color="primary" fontSize="large" />
-          <Typography variant="h3" sx={{ fontWeight: 700 }}>
-            Auction House Ledger
-          </Typography>
-        </Stack>
-        <Typography variant="body1" color="text.secondary">
-          Track live commodities or inspect high-value connected realm listings
-          pulled directly from Blizzard&apos;s Auction House API.
-        </Typography>
-      </Stack>
+    <Stack
+      spacing={{
+        xs: theme.wc.layout.sectionGap.xs,
+        md: theme.wc.layout.sectionGap.md,
+      }}
+    >
+      <PageHeader
+        eyebrow={eyebrow}
+        title="Auction House"
+        icon={<GavelRoundedIcon />}
+        description="Regional commodity prices and connected-realm buyouts from Blizzard's hourly auction snapshot."
+        meta={
+          <>
+            <Chip size="small" label={`Region ${env.region.toUpperCase()}`} />
+            {selectedRealm ? (
+              <Chip size="small" label={`Realm ${selectedRealm.shortLabel}`} />
+            ) : null}
+          </>
+        }
+      />
 
-      <Paper
-        variant="outlined"
-        sx={{
-          p: { xs: 3, md: 4 },
-          borderRadius: 4,
-          borderColor: "rgba(30, 155, 233, 0.22)",
-          backgroundColor: "rgba(12, 18, 34, 0.72)",
-        }}
-      >
-        <Stack spacing={3}>
-          <Stack
-            direction={{ xs: "column", md: "row" }}
-            spacing={2}
-            alignItems={{ xs: "stretch", md: "center" }}
-          >
-            <Stack direction="row" spacing={1} alignItems="center">
-              <PaidRoundedIcon color="primary" />
-              <Typography variant="subtitle1" color="text.secondary">
-                Market view
-              </Typography>
-            </Stack>
-            <ToggleButtonGroup
-              value={viewMode}
-              exclusive
-              size="small"
-              onChange={handleViewMode}
-              color="primary"
-            >
-              <ToggleButton
-                value={VIEW_OPTIONS.commodities}
-                sx={{ borderRadius: 999 }}
-              >
-                Commodities
-              </ToggleButton>
-              <ToggleButton
-                value={VIEW_OPTIONS.realm}
-                sx={{ borderRadius: 999 }}
-              >
-                Connected realm
-              </ToggleButton>
-            </ToggleButtonGroup>
-          </Stack>
+      <AuctionFilters
+        view={view}
+        onViewChange={handleViewChange}
+        realmId={realmId}
+        onRealmChange={handleRealmChange}
+        sort={sort}
+        onSortChange={handleSortChange}
+        catalogQuery={catalogQuery}
+        snapshot={snapshot}
+      />
 
-          {viewMode === VIEW_OPTIONS.realm ? (
-            <Stack
-              direction={{ xs: "column", md: "row" }}
-              spacing={2}
-              alignItems={{ xs: "stretch", md: "center" }}
-            >
-              <Stack direction="row" spacing={1} alignItems="center">
-                <PublicRoundedIcon color="primary" />
-                <Typography variant="subtitle1" color="text.secondary">
-                  Connected realm
-                </Typography>
-              </Stack>
-              <FormControl
-                size="small"
-                sx={{ minWidth: { xs: "100%", md: 360 } }}
-              >
-                <InputLabel id="auction-realm-select-label">
-                  Connected realm
-                </InputLabel>
-                <Select
-                  labelId="auction-realm-select-label"
-                  value={selectedRealmId}
-                  label="Connected realm"
-                  onChange={handleRealmChange}
-                >
-                  {realms.map((realm) => (
-                    <MenuItem key={realm.id} value={realm.id}>
-                      {realm.displayName || `Connected Realm ${realm.id}`}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Stack>
-          ) : null}
-        </Stack>
-      </Paper>
-
-      {friendlyError ? (
-        <Alert
-          severity="error"
-          icon={<ReportProblemRoundedIcon fontSize="small" />}
-          sx={{ borderRadius: 3 }}
-        >
-          {friendlyError}
-        </Alert>
-      ) : null}
-
-      {isLoading ? (
-        <Grid container spacing={2} columns={{ xs: 1, sm: 2, md: 3 }}>
-          {Array.from({ length: 9 }).map((_, index) => (
-            <Grid item xs={1} key={index}>
-              <Skeleton
-                variant="rounded"
-                sx={{
-                  height: 220,
-                  borderRadius: 3,
-                  backgroundColor: "rgba(12, 18, 34, 0.45)",
-                }}
+      {query.isError ? (
+        <ErrorState
+          error={query.error}
+          context="auction house"
+          onRetry={() => void query.refetch()}
+        />
+      ) : (
+        <AuctionTable
+          rows={rows}
+          view={view}
+          sort={sort}
+          onSortChange={handleSortChange}
+          loading={query.isPending && !awaitingRealm}
+          emptyState={
+            awaitingRealm ? (
+              <EmptyState
+                title="Choose a connected realm"
+                description="Pick a connected realm above to load its buyout listings"
               />
-            </Grid>
-          ))}
-        </Grid>
-      ) : null}
+            ) : undefined
+          }
+        />
+      )}
 
-      {!isLoading && !friendlyError ? (
-        <Stack spacing={3}>
-          <Stack spacing={0.75}>
-            <Typography variant="h5" sx={{ fontWeight: 600 }}>
-              {viewMode === VIEW_OPTIONS.commodities
-                ? "Commodity market snapshot"
-                : selectedRealm?.displayName || "Connected realm listings"}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {viewMode === VIEW_OPTIONS.commodities
-                ? `Showing ${activeItems.length} high-value commodity samples aggregated from the region-wide market.`
-                : `Showing ${activeItems.length} premium buyout listings from the selected connected realm.`}
-            </Typography>
-          </Stack>
-
-          {activeItems.length > 0 ? (
-            <VirtualizedCardGrid
-              items={activeItems}
-              getItemKey={(listing) => listing.id}
-              renderItem={(listing) => (
-                <ResultCard result={listing} accentColor="#f5c045" />
-              )}
-            />
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              Nothing is available for this market view right now. Try the other
-              mode or another connected realm.
-            </Typography>
-          )}
-        </Stack>
-      ) : null}
+      <Typography
+        variant="caption"
+        component="p"
+        color="text.secondary"
+        sx={{ margin: 0, maxWidth: "72ch" }}
+      >
+        {`Blizzard refreshes auction data hourly; this page re-downloads after ${minutes(
+          COMMODITY_STALE_MS,
+        )} minutes (commodities) or ${minutes(REALM_STALE_MS)} minutes (realm).`}
+      </Typography>
     </Stack>
   );
 };
