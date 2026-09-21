@@ -1,278 +1,328 @@
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import BoltRoundedIcon from "@mui/icons-material/BoltRounded";
-import ReportProblemRoundedIcon from "@mui/icons-material/ReportProblemRounded";
+import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
+import SearchOffRoundedIcon from "@mui/icons-material/SearchOffRounded";
+import { Box, Button, Chip, Stack } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
+import { memo, useCallback, useEffect, useState } from "react";
+
+import { ExplorerFilterBar, SearchField } from "@/components/common/ExplorerFilterBar";
+import { GRID_PRESETS } from "@/components/common/gridColumns";
+import PageHeader from "@/components/common/PageHeader";
+import ResultCard, { getResultCardHeight } from "@/components/common/ResultCard";
 import {
-  Alert,
-  Box,
-  Button,
-  CircularProgress,
-  Grid,
-  Paper,
-  Skeleton,
-  Stack,
-  Typography,
-} from "@mui/material";
-import { useInfiniteQuery, useQueries } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
-import ResultCard from "@/components/common/ResultCard";
+  EmptyState,
+  ErrorState,
+  LiveStatus,
+  LoadingSkeleton,
+} from "@/components/common/StateBlocks";
 import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid";
-import useIdlePrefetchWindow from "@/hooks/useIdlePrefetchWindow";
-import useInfiniteScrollTrigger from "@/hooks/useInfiniteScrollTrigger";
-import SearchInput from "@/features/search/components/SearchInput";
-import {
-  fetchSpellDetail,
-  fetchSpellIcon,
-  searchSpellsDetailed,
-} from "@/features/spells/services/spellService";
-import { usePerformanceOverlayEntry } from "@/devtools/PerformanceOverlayContext";
+import type { SearchResult } from "@/features/search/types";
+import SpellDetailDialog from "@/features/spells/components/SpellDetailDialog";
+import useSpellSearch, {
+  SPELL_MIN_QUERY_LENGTH,
+  SPELL_PAGE_SIZE,
+} from "@/features/spells/hooks/useSpellSearch";
+import type { SpellSummary } from "@/features/spells/types";
 import { env } from "@/lib/env";
-import { BlizzardRequestError } from "@/lib/blizzardClient";
+import { formatNumber } from "@/lib/format";
+import {
+  formatLoadedStatus,
+  formatResultSummary,
+  formatResultTotal,
+} from "@/lib/resultCount";
+import type { CategoryExplorerProps } from "@/pages/categoryRegistry";
 
+const DEFAULT_EYEBROW = "Character Progression";
 const QUICK_SPELLS = ["Chaos Bolt", "Bloodlust", "Starfall", "Avenging Wrath"];
+const CARD_LAYOUT = "row";
+const CARD_HEIGHT = getResultCardHeight(CARD_LAYOUT);
+const GRID_GAP = 16;
 
-const SpellsPage = (): JSX.Element => {
-  const [query, setQuery] = useState<string>(QUICK_SPELLS[0]);
-  const [renderedCount, setRenderedCount] = useState(0);
+/** One description only: the row meta line reads `details`. */
+const toSpellResult = (
+  spell: SpellSummary,
+  iconUrl: string | undefined,
+): SearchResult => ({
+  id: spell.id,
+  name: spell.name,
+  href: spell.href,
+  kind: "spell",
+  summary: undefined,
+  details: spell.description || undefined,
+  mediaUrl: iconUrl,
+  externalUrl: spell.externalUrl,
+  externalLabel: spell.externalLabel,
+});
 
-  const searchQuery = useInfiniteQuery({
-    queryKey: ["spell-search-explorer", query, env.region, env.locale],
-    initialPageParam: 1,
-    queryFn: ({ pageParam }) => searchSpellsDetailed(query, pageParam),
-    enabled: query.trim().length >= 2,
-    staleTime: 1000 * 60 * 10,
-    getNextPageParam: (lastPage) =>
-      lastPage.page < lastPage.pageCount ? lastPage.page + 1 : undefined,
-  });
+type SpellGalleryCardProps = {
+  spell: SpellSummary;
+  iconUrl: string | undefined;
+  index: number;
+  onSelect: (result: SearchResult) => void;
+};
 
-  const spells = useMemo(
-    () => searchQuery.data?.pages.flatMap((p) => p.spells) ?? [],
-    [searchQuery.data],
-  );
-  const activeEnrichmentCount = useIdlePrefetchWindow({
-    totalCount: spells.length,
-    initialCount: 8,
-    batchSize: 4,
-    resetKey: query,
-  });
+/**
+ * Memoised so an icon resolving for one card never re-renders the others:
+ * `spell` is structurally shared by react-query, `iconUrl` is a primitive
+ * and `onSelect` is stable.
+ */
+const SpellGalleryCard = memo(
+  ({ spell, iconUrl, index, onSelect }: SpellGalleryCardProps): JSX.Element => (
+    <ResultCard
+      result={toSpellResult(spell, iconUrl)}
+      layout={CARD_LAYOUT}
+      onSelect={onSelect}
+      index={index}
+    />
+  ),
+);
+SpellGalleryCard.displayName = "SpellGalleryCard";
 
-  const detailQueries = useQueries({
-    queries: spells.map((spell, index) => ({
-      queryKey: ["spell-detail-card", spell.id, env.region],
-      queryFn: () => fetchSpellDetail(spell.id),
-      enabled: index < activeEnrichmentCount,
-      staleTime: 300000,
-      retry: false,
-    })),
-  });
+const SpellsPage = ({
+  eyebrow = DEFAULT_EYEBROW,
+  breadcrumbs,
+}: CategoryExplorerProps): JSX.Element => {
+  const theme = useTheme();
+  const {
+    q,
+    setQuery,
+    isSearchActive,
+    spells,
+    iconUrls,
+    total,
+    capped,
+    isInitialLoading,
+    isRefreshing,
+    isFetchingNextPage,
+    hasNextPage,
+    error,
+    retry,
+    sentinelRef,
+    onVisibleRangeChange,
+    failedIcons,
+    retryFailedIcons,
+  } = useSpellSearch();
 
-  const mediaQueries = useQueries({
-    queries: spells.map((spell, index) => ({
-      queryKey: ["spell-media-card", spell.id, env.region],
-      queryFn: () => fetchSpellIcon(spell.id),
-      enabled: index < activeEnrichmentCount,
-      staleTime: 300000,
-      retry: false,
-    })),
-  });
+  // `q` (URL) is the committed query; `draft` is what the user is typing.
+  const [draft, setDraft] = useState(q);
+  useEffect(() => {
+    setDraft((current) => (current.trim() === q ? current : q));
+  }, [q]);
 
-  const friendlyError = useMemo(() => {
-    const error =
-      searchQuery.error ??
-      detailQueries.find((entry) => entry.error)?.error ??
-      mediaQueries.find((entry) => entry.error)?.error;
-    if (!error) {
-      return undefined;
+  const [selectedSpell, setSelectedSpell] = useState<SearchResult | null>(null);
+
+  const handleSelect = useCallback((result: SearchResult): void => {
+    setSelectedSpell(result);
+  }, []);
+
+  const handleCloseDialog = useCallback((): void => {
+    setSelectedSpell(null);
+  }, []);
+
+  const clearSearch = (): void => {
+    setDraft("");
+    setQuery("");
+  };
+
+  const trimmedQuery = q.trim();
+  const hasPageError = error !== null && error !== undefined;
+  const isEmpty =
+    isSearchActive && !isInitialLoading && !hasPageError && spells.length === 0;
+
+  const count = {
+    loaded: spells.length,
+    total,
+    capped,
+    hasMore: hasNextPage,
+    noun: "spells",
+  };
+  const totalLabel = formatResultTotal(count);
+
+  const footerText = isFetchingNextPage
+    ? "Loading more spells"
+    : formatLoadedStatus(count);
+
+  const renderBody = (): JSX.Element => {
+    if (hasPageError) {
+      return <ErrorState error={error} context="spells" onRetry={retry} />;
     }
 
-    if (error instanceof BlizzardRequestError) {
-      if (error.status === 401 || error.status === 403) {
-        return "We couldn’t authenticate with Blizzard’s Spell API. Update your Blizzard credentials in the .env file and refresh.";
-      }
-
-      if (error.status === 429) {
-        return "The Blizzard API rate limit has been reached. Please wait a few minutes and try again.";
-      }
+    if (!isSearchActive) {
+      return (
+        <EmptyState
+          icon={<AutoAwesomeRoundedIcon />}
+          title="Search the spell catalogue"
+          description="Type at least two characters or pick a featured spell."
+        />
+      );
     }
 
-    return error instanceof Error
-      ? error.message
-      : "Unable to load spell data right now.";
-  }, [detailQueries, mediaQueries, searchQuery.error]);
+    if (isInitialLoading) {
+      return (
+        <LoadingSkeleton
+          variant="grid"
+          columns={GRID_PRESETS.rows}
+          itemHeight={CARD_HEIGHT}
+          count={SPELL_PAGE_SIZE}
+          gap={GRID_GAP}
+          label="Loading spells"
+        />
+      );
+    }
 
-  const isLoading = searchQuery.isLoading;
+    if (isEmpty) {
+      return (
+        <EmptyState
+          icon={<SearchOffRoundedIcon />}
+          title={`No spells match "${trimmedQuery}"`}
+          description="Try a broader term or a different spelling."
+          action={
+            <Button variant="outlined" onClick={clearSearch}>
+              Clear search
+            </Button>
+          }
+        />
+      );
+    }
 
-  const gallerySpells = useMemo(
-    () =>
-      spells.map((spell, index) => {
-        const detail = detailQueries[index]?.data;
+    return (
+      <Stack spacing={2}>
+        {failedIcons > 0 ? (
+          <Stack
+            direction="row"
+            spacing={1.5}
+            alignItems="center"
+            flexWrap="wrap"
+            useFlexGap
+          >
+            <LiveStatus>
+              {`Icons for ${formatNumber(failedIcons)} ${
+                failedIcons === 1 ? "spell" : "spells"
+              } could not be loaded`}
+            </LiveStatus>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<RefreshRoundedIcon />}
+              onClick={retryFailedIcons}
+            >
+              Retry
+            </Button>
+          </Stack>
+        ) : null}
 
-        return {
-          id: spell.id,
-          name: spell.name,
-          href: detail?.href ?? spell.href,
-          summary: detail?.description ? undefined : spell.description,
-          details: detail?.description || spell.description,
-          typeLabel: "Spell",
-          mediaUrl: mediaQueries[index]?.data,
-        };
-      }),
-    [detailQueries, mediaQueries, spells],
-  );
+        <VirtualizedCardGrid
+          items={spells}
+          getItemKey={(spell) => spell.id}
+          itemHeight={CARD_HEIGHT}
+          columns={GRID_PRESETS.rows}
+          gap={GRID_GAP}
+          aria-label="Spell results"
+          onVisibleRangeChange={onVisibleRangeChange}
+          renderItem={(spell, index) => (
+            <SpellGalleryCard
+              spell={spell}
+              iconUrl={iconUrls[index]}
+              index={index}
+              onSelect={handleSelect}
+            />
+          )}
+        />
 
-  const handleVisibleRangeChange = useCallback(
-    (range: { start: number; end: number }) =>
-      setRenderedCount(range.end - range.start),
-    [],
-  );
-
-  const loadMore = useCallback(() => {
-    if (!searchQuery.hasNextPage || searchQuery.isFetchingNextPage) return;
-    void searchQuery.fetchNextPage();
-  }, [searchQuery]);
-
-  const infiniteScrollRef = useInfiniteScrollTrigger({
-    enabled: query.trim().length >= 2 && !friendlyError,
-    hasMore: searchQuery.hasNextPage ?? false,
-    isLoading: searchQuery.isFetchingNextPage,
-    onLoadMore: loadMore,
-  });
-
-  usePerformanceOverlayEntry(
-    import.meta.env.DEV
-      ? {
-          id: "spells",
-          label: "Spells",
-          renderedCount,
-          totalCount: spells.length,
-          enrichmentCount: activeEnrichmentCount,
-          notes: searchQuery.isFetching
-            ? "Searching live spell index"
-            : "Search-driven gallery",
-        }
-      : null,
-  );
+        <Stack spacing={1} alignItems="center">
+          <LiveStatus busy={isFetchingNextPage}>{footerText}</LiveStatus>
+          {hasNextPage ? (
+            <Box ref={sentinelRef} sx={{ width: "100%", height: 1 }} />
+          ) : null}
+        </Stack>
+      </Stack>
+    );
+  };
 
   return (
-    <Stack spacing={{ xs: 4, md: 6 }}>
-      <Stack spacing={1.5}>
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <BoltRoundedIcon color="primary" fontSize="large" />
-          <Typography variant="h3" sx={{ fontWeight: 700 }}>
-            Spell Codex
-          </Typography>
-        </Stack>
-        <Typography variant="body1" color="text.secondary">
-          Search the live spell catalogue and browse the results as icon cards
-          instead of switching between a selector and a detail panel.
-        </Typography>
-      </Stack>
+    <Stack
+      spacing={{
+        xs: theme.wc.layout.sectionGap.xs,
+        md: theme.wc.layout.sectionGap.md,
+      }}
+    >
+      <PageHeader
+        title="Spells"
+        eyebrow={eyebrow}
+        breadcrumbs={breadcrumbs}
+        icon={<BoltRoundedIcon />}
+        description="Search Blizzard's live spell catalogue by name."
+        documentTitle="Spells"
+        meta={
+          <>
+            <Chip size="small" label={`Region ${env.region.toUpperCase()}`} />
+            {isSearchActive && totalLabel ? (
+              <Chip size="small" label={`${totalLabel} matches`} />
+            ) : null}
+          </>
+        }
+      />
 
-      <Paper
-        variant="outlined"
-        sx={{
-          p: { xs: 3, md: 4 },
-          borderRadius: 4,
-          borderColor: "rgba(30, 155, 233, 0.22)",
-          backgroundColor: "rgba(12, 18, 34, 0.72)",
-        }}
+      <ExplorerFilterBar
+        label="Spell search"
+        summary={
+          isSearchActive && !hasPageError
+            ? formatResultSummary(count)
+            : undefined
+        }
+        progress={isRefreshing}
       >
-        <Stack spacing={2.5}>
-          <SearchInput
-            value={query}
-            onChange={setQuery}
-            onClear={() => setQuery("")}
-            autoFocus={false}
-            placeholder="Search spells by name..."
-          />
-          <Stack direction="row" spacing={1.25} useFlexGap flexWrap="wrap">
-            {QUICK_SPELLS.map((spell) => (
-              <Button
-                key={spell}
-                variant={query === spell ? "contained" : "outlined"}
-                color="primary"
-                size="small"
-                onClick={() => setQuery(spell)}
-                sx={{ borderRadius: 999 }}
-              >
-                {spell}
-              </Button>
-            ))}
-          </Stack>
-        </Stack>
-      </Paper>
+        <SearchField
+          id="spells-search"
+          label="Search spells by name"
+          placeholder="Search spells by name…"
+          value={draft}
+          onChange={setDraft}
+          onDebouncedChange={setQuery}
+          onSubmit={setQuery}
+          onClear={clearSearch}
+          debounceMs={350}
+          minLength={SPELL_MIN_QUERY_LENGTH}
+        />
 
-      {friendlyError ? (
-        <Alert
-          severity="error"
-          icon={<ReportProblemRoundedIcon fontSize="small" />}
-          sx={{ borderRadius: 3 }}
+        <Stack
+          role="group"
+          aria-label="Featured spells"
+          direction="row"
+          flexWrap="wrap"
+          useFlexGap
+          gap={1}
+          alignItems="center"
+          sx={{ minWidth: 0 }}
         >
-          {friendlyError}
-        </Alert>
-      ) : null}
-
-      {isLoading ? (
-        <Grid container spacing={3}>
-          {Array.from({ length: 6 }).map((_, index) => (
-            <Grid item xs={12} md={6} lg={4} key={index}>
-              <Skeleton
-                variant="rounded"
-                height={320}
-                sx={{
-                  borderRadius: 3,
-                  backgroundColor: "rgba(12, 18, 34, 0.45)",
+          {QUICK_SPELLS.map((spellName) => {
+            const pressed = trimmedQuery === spellName;
+            return (
+              <Chip
+                key={spellName}
+                label={spellName}
+                clickable
+                variant="outlined"
+                color={pressed ? "primary" : "default"}
+                aria-pressed={pressed}
+                onClick={() => {
+                  setDraft(spellName);
+                  setQuery(spellName);
                 }}
               />
-            </Grid>
-          ))}
-        </Grid>
-      ) : null}
-
-      {!isLoading && !friendlyError ? (
-        <Stack spacing={3}>
-          <Stack spacing={0.5}>
-            <Typography variant="h5" sx={{ fontWeight: 600 }}>
-              Search matches
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Showing {gallerySpells.length} spell
-              {gallerySpells.length === 1 ? "" : "s"}
-              {searchQuery.hasNextPage ? " · more available" : ""}.
-            </Typography>
-            {activeEnrichmentCount < spells.length ? (
-              <Typography variant="caption" color="text.secondary">
-                Prefetching additional spell details and media during idle time.
-              </Typography>
-            ) : null}
-          </Stack>
-          <VirtualizedCardGrid
-            items={gallerySpells}
-            itemHeight={260}
-            getItemKey={(spell) => spell.id}
-            onVisibleRangeChange={handleVisibleRangeChange}
-            renderItem={(spell) => (
-              <ResultCard result={spell} accentColor="#a78bfa" />
-            )}
-          />
-          <Stack spacing={1.5} alignItems="center">
-            {searchQuery.hasNextPage ? (
-              <Typography variant="body2" color="text.secondary">
-                Keep scrolling to load more spells.
-              </Typography>
-            ) : gallerySpells.length > 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                Reached the end of the spell results.
-              </Typography>
-            ) : null}
-            {searchQuery.isFetchingNextPage ? (
-              <CircularProgress color="primary" size={28} />
-            ) : null}
-            {searchQuery.hasNextPage ? (
-              <Box ref={infiniteScrollRef} sx={{ height: 1 }} />
-            ) : null}
-          </Stack>
+            );
+          })}
         </Stack>
-      ) : null}
+      </ExplorerFilterBar>
+
+      {renderBody()}
+
+      <SpellDetailDialog
+        spell={selectedSpell}
+        open={selectedSpell !== null}
+        onClose={handleCloseDialog}
+      />
     </Stack>
   );
 };
