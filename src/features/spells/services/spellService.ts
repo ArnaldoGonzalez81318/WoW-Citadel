@@ -1,28 +1,47 @@
-import { env } from "@/lib/env";
-import { blizzardClient, BlizzardRequestError } from "@/lib/blizzardClient";
-import {
+import type {
   LocalizedString,
   SpellDetail,
   SpellMedia,
   SpellSummary,
 } from "@/features/spells/types";
+import { blizzardClient } from "@/lib/blizzardClient";
+import {
+  cleanMarkup,
+  localized,
+  nameParam,
+  namespace,
+  optional404,
+} from "@/lib/blizzardHelpers";
+import { env } from "@/lib/env";
+import { getExternalLink } from "@/lib/externalLinks";
+import { describeResultCount } from "@/lib/resultCount";
+import type { ResultCount, SearchPageMeta } from "@/lib/resultCount";
 
-type SearchResponse<T> = {
+/* ------------------------------------------------------------------ */
+/* Query keys                                                          */
+/* ------------------------------------------------------------------ */
+
+const SPELL_KEY_ROOT = ["spells", env.region, env.locale] as const;
+
+/** react-query key factory; every key is prefixed once with region + locale. */
+export const spellKeys = {
+  all: SPELL_KEY_ROOT,
+  search: (query: string) => [...SPELL_KEY_ROOT, "search", query] as const,
+  icon: (spellId: number) => [...SPELL_KEY_ROOT, "icon", spellId] as const,
+  detail: (spellId: number) => [...SPELL_KEY_ROOT, "detail", spellId] as const,
+};
+
+/* ------------------------------------------------------------------ */
+/* Wire types                                                          */
+/* ------------------------------------------------------------------ */
+
+type SearchResponse<T> = SearchPageMeta & {
   results?: Array<{
     key: { href: string };
     data: T;
   }>;
   page?: number;
-  pageCount?: number;
   pageSize?: number;
-  resultCountCurrent?: number;
-  resultCountTotal?: number;
-};
-
-export type SpellGalleryPage = {
-  spells: SpellSummary[];
-  page: number;
-  pageCount: number;
 };
 
 type SpellSearchEntry = {
@@ -31,102 +50,85 @@ type SpellSearchEntry = {
   description?: LocalizedString;
 };
 
-const STATIC_NAMESPACE = `static-${env.region}`;
-
-const localized = (value: LocalizedString | undefined): string => {
-  if (!value) {
-    return "";
-  }
-
-  if (typeof value === "string") {
-    return value;
-  }
-
-  return (
-    value[env.locale] ??
-    value.en_US ??
-    Object.values(value).find(
-      (entry) => typeof entry === "string" && entry.length > 0,
-    ) ??
-    ""
-  );
+export type SpellGalleryPage = ResultCount & {
+  spells: SpellSummary[];
+  page: number;
+  pageCount: number;
 };
 
-const cleanMarkup = (value: string | undefined): string => {
-  if (!value) {
-    return "";
-  }
+export const DEFAULT_SPELL_PAGE_SIZE = 24;
 
-  return value
-    .replace(/\|c[0-9A-Fa-f]{8}/g, "")
-    .replace(/\|r/g, "")
-    .replace(/\|n/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-};
+const emptyPage = (page: number): SpellGalleryPage => ({
+  spells: [],
+  page,
+  pageCount: 1,
+  total: 0,
+  capped: false,
+});
 
-const safeSearch = async <T>(fetcher: () => Promise<T>): Promise<T> => {
-  try {
-    return await fetcher();
-  } catch (error) {
-    if (
-      error instanceof BlizzardRequestError &&
-      (error.status === 404 || error.status === 204)
-    ) {
-      return [] as T;
-    }
+/* ------------------------------------------------------------------ */
+/* Fetchers                                                            */
+/* ------------------------------------------------------------------ */
 
-    throw error;
-  }
-};
-
+/**
+ * One page of the spell name search. A blank query or a 404 (no matches)
+ * yields an empty page rather than an error.
+ */
 export const searchSpellsDetailed = async (
   query: string,
   page = 1,
-  pageSize = 50,
+  pageSize = DEFAULT_SPELL_PAGE_SIZE,
+  signal?: AbortSignal,
 ): Promise<SpellGalleryPage> => {
-  if (!query.trim()) {
-    return { spells: [], page: 1, pageCount: 1 };
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) {
+    return emptyPage(1);
   }
 
-  try {
+  const result = await optional404(async (): Promise<SpellGalleryPage> => {
     const response = await blizzardClient.get<SearchResponse<SpellSearchEntry>>(
       "/data/wow/search/spell",
       {
-        namespace: STATIC_NAMESPACE,
+        namespace: namespace("static"),
         orderby: "id:desc",
         _pageSize: pageSize,
         _page: page,
-        [`name.${env.locale}`]: query.trim(),
+        ...nameParam(trimmedQuery),
       },
+      { signal },
     );
 
-    const spells = (response.results ?? []).map(({ key, data }) => ({
-      id: data.id,
-      name: localized(data.name),
-      description: cleanMarkup(localized(data.description)),
-      href: key.href,
-    }));
+    const spells: SpellSummary[] = (response.results ?? []).map(
+      ({ key, data }) => {
+        const name = localized(data.name);
+        const external = getExternalLink("spell", data.id, name);
+
+        return {
+          id: data.id,
+          name,
+          description: cleanMarkup(localized(data.description)),
+          href: key.href,
+          kind: "spell",
+          externalUrl: external?.url,
+          externalLabel: external?.label,
+        };
+      },
+    );
 
     return {
       spells,
       page: response.page ?? page,
       pageCount: response.pageCount ?? 1,
+      ...describeResultCount(response, spells.length),
     };
-  } catch (error) {
-    if (
-      error instanceof BlizzardRequestError &&
-      (error.status === 404 || error.status === 204)
-    ) {
-      return { spells: [], page: 1, pageCount: 1 };
-    }
+  });
 
-    throw error;
-  }
+  return result ?? emptyPage(page);
 };
 
 export const fetchSpellDetail = async (
   spellId: number,
+  signal?: AbortSignal,
 ): Promise<SpellDetail> => {
   const response = await blizzardClient.get<{
     _links: { self: { href: string } };
@@ -134,8 +136,8 @@ export const fetchSpellDetail = async (
     name: string;
     description?: string;
     media?: { key?: { href?: string } };
-  }>(`/data/wow/spell/${spellId}`, {
-    namespace: STATIC_NAMESPACE,
+  }>(`/data/wow/spell/${spellId}`, { namespace: namespace("static") }, {
+    signal,
   });
 
   return {
@@ -149,24 +151,17 @@ export const fetchSpellDetail = async (
 
 export const fetchSpellIcon = async (
   spellId: number,
-): Promise<string | undefined> => {
-  try {
+  signal?: AbortSignal,
+): Promise<string | undefined> =>
+  optional404(async () => {
     const response = await blizzardClient.get<SpellMedia>(
       `/data/wow/media/spell/${spellId}`,
-      {
-        namespace: STATIC_NAMESPACE,
-      },
+      { namespace: namespace("static") },
+      { signal },
     );
 
-    return response.assets?.find((asset) => asset.key === "icon")?.value;
-  } catch (error) {
-    if (
-      error instanceof BlizzardRequestError &&
-      (error.status === 404 || error.status === 204)
-    ) {
-      return undefined;
-    }
-
-    throw error;
-  }
-};
+    return (
+      response.assets?.find((asset) => asset.key === "icon")?.value ??
+      response.assets?.[0]?.value
+    );
+  });
