@@ -1,596 +1,300 @@
-import AccessTimeRoundedIcon from "@mui/icons-material/AccessTimeRounded";
-import DnsRoundedIcon from "@mui/icons-material/DnsRounded";
-import HubRoundedIcon from "@mui/icons-material/HubRounded";
-import LanguageRoundedIcon from "@mui/icons-material/LanguageRounded";
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
-import ReportProblemRoundedIcon from "@mui/icons-material/ReportProblemRounded";
-import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import { Box, Button, Chip, Stack, useMediaQuery } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
+
+import DetailDialog from "@/components/common/DetailDialog";
+import type { DetailDialogRow } from "@/components/common/DetailDialog";
+import PageHeader from "@/components/common/PageHeader";
+import { getResultCardHeight } from "@/components/common/ResultCard";
 import {
-  Alert,
-  Box,
-  Button,
-  Chip,
-  Grid,
-  Link,
-  Paper,
-  Skeleton,
-  Stack,
-  Typography,
-} from "@mui/material";
-import { useQueries, useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import SearchInput from "@/features/search/components/SearchInput";
-import useInfiniteScrollTrigger from "@/hooks/useInfiniteScrollTrigger";
-import useIdlePrefetchWindow from "@/hooks/useIdlePrefetchWindow";
-import {
-  fetchRealmDetail,
-  fetchRealmIndex,
-  searchRealmsDetailed,
-} from "@/features/realms/services/realmService";
-import { usePerformanceOverlayEntry } from "@/devtools/PerformanceOverlayContext";
+  EmptyState,
+  ErrorState,
+  LoadingSkeleton,
+} from "@/components/common/StateBlocks";
+import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid";
+import RealmCard from "@/features/realms/components/RealmCard";
+import RealmFilters from "@/features/realms/components/RealmFilters";
+import RealmTable, {
+  REALM_ROW_HEIGHT,
+  realmTypeLabel,
+} from "@/features/realms/components/RealmTable";
+import { useRealmDirectory } from "@/features/realms/hooks/useRealmDirectory";
+import type { RealmDirectoryRow } from "@/features/realms/types";
 import { env } from "@/lib/env";
-import { BlizzardRequestError } from "@/lib/blizzardClient";
+import {
+  formatLocale,
+  formatNumber,
+  formatTimezone,
+  humanizeEnum,
+  toBcp47,
+} from "@/lib/format";
 
-const QUICK_REALMS = ["Stormrage", "Illidan", "Area 52", "Tichondrius"];
-const PAGE_SIZE = 24;
-const REALM_ACCENT = "#38bdf8";
-
-type RealmGalleryCard = {
-  id: number;
-  name: string;
-  slug: string;
-  href: string;
-  regionName?: string;
-  typeName?: string;
-  category?: string;
-  timezone?: string;
-  locale?: string;
-  isTournament?: boolean;
-  connectedRealmHref?: string;
+export type RealmsPageProps = {
+  /** Gold overline above the title (the nav section label). */
+  eyebrow?: string;
 };
 
-const formatCount = (value: number): string =>
-  new Intl.NumberFormat("en-US").format(value);
+const DEFAULT_EYEBROW = "World & Factions";
+const SKELETON_ROWS = 12;
+const SKELETON_CARDS = 8;
+const COMPACT_CARD_HEIGHT = getResultCardHeight("compact");
+const EMPTY = "—";
 
-const RealmInfoRow = ({
-  icon,
-  label,
-  value,
-}: {
-  icon: JSX.Element;
-  label: string;
-  value?: string;
-}): JSX.Element => (
-  <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-    <Box
-      sx={{
-        width: 26,
-        height: 26,
-        display: "grid",
-        placeItems: "center",
-        flexShrink: 0,
-        borderRadius: 1.25,
-        color: REALM_ACCENT,
-        backgroundColor: "rgba(56, 189, 248, 0.1)",
-      }}
-    >
-      {icon}
-    </Box>
-    <Box sx={{ minWidth: 0 }}>
-      <Typography variant="caption" color="text.secondary" component="div">
-        {label}
-      </Typography>
-      <Typography
-        variant="body2"
-        sx={{
-          fontWeight: 650,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {value || "Pending detail"}
-      </Typography>
-    </Box>
-  </Stack>
-);
+const realmStatusUrl = (): string =>
+  `https://worldofwarcraft.blizzard.com/${toBcp47(
+    env.locale,
+  ).toLowerCase()}/game/status/${env.region}`;
 
-const RealmCard = ({ realm }: { realm: RealmGalleryCard }): JSX.Element => {
-  const initials = realm.name
-    .split(/\s+/u)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
+const detailRows = (realm: RealmDirectoryRow): DetailDialogRow[] => {
+  const typeLabel = realmTypeLabel(realm);
+  const timezone = realm.timezone
+    ? `${formatTimezone(realm.timezone)} · ${realm.timezone}`
+    : EMPTY;
+  const queue =
+    realm.hasQueue === undefined ? EMPTY : realm.hasQueue ? "Active" : "None";
 
-  return (
-    <Paper
-      variant="outlined"
-      sx={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        borderRadius: 2,
-        borderColor: "rgba(56, 189, 248, 0.22)",
-        background:
-          "linear-gradient(180deg, rgba(12, 18, 34, 0.96), rgba(8, 13, 25, 0.9))",
-        transition:
-          "transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease",
-        "@media (hover: hover)": {
-          "&:hover": {
-            transform: "translateY(-3px)",
-            borderColor: "rgba(56, 189, 248, 0.62)",
-            boxShadow: "0 18px 38px rgba(8, 145, 178, 0.18)",
-          },
-        },
-      }}
-    >
-      <Box
-        sx={{
-          px: 2,
-          py: 1.75,
-          borderBottom: "1px solid rgba(56, 189, 248, 0.18)",
-          background:
-            "linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(34, 197, 94, 0.08) 48%, rgba(15, 23, 42, 0.08))",
-        }}
-      >
-        <Stack direction="row" spacing={1.5} alignItems="center">
-          <Box
-            sx={{
-              width: 52,
-              height: 52,
-              display: "grid",
-              placeItems: "center",
-              flexShrink: 0,
-              borderRadius: 1.75,
-              border: "1px solid rgba(125, 211, 252, 0.38)",
-              background:
-                "radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.24), transparent 34%), linear-gradient(145deg, rgba(14, 165, 233, 0.52), rgba(22, 101, 52, 0.42))",
-              color: "#e0f2fe",
-              fontSize: "1.05rem",
-              fontWeight: 900,
-            }}
-          >
-            {initials || realm.name.slice(0, 1)}
-          </Box>
-          <Box sx={{ minWidth: 0, flex: 1 }}>
-            <Typography
-              variant="subtitle1"
-              sx={{
-                fontWeight: 800,
-                lineHeight: 1.2,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {realm.name}
-            </Typography>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ display: "block", mt: 0.25 }}
-            >
-              {realm.slug}
-            </Typography>
-          </Box>
-        </Stack>
-      </Box>
-
-      <Stack spacing={1.5} sx={{ p: 2, flex: 1, minHeight: 0 }}>
-        <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-          <Chip
-            label={realm.regionName || "Region pending"}
-            size="small"
-            sx={{
-              borderRadius: 1.5,
-              backgroundColor: "rgba(56, 189, 248, 0.14)",
-              color: "#7dd3fc",
-              fontWeight: 700,
-            }}
-          />
-          <Chip
-            label={realm.typeName || "Type pending"}
-            size="small"
-            variant="outlined"
-            sx={{ borderRadius: 1.5 }}
-          />
-          {realm.isTournament ? (
-            <Chip label="Tournament" size="small" color="warning" />
-          ) : null}
-        </Stack>
-
-        <Stack spacing={1.1} sx={{ flex: 1 }}>
-          <RealmInfoRow
-            icon={<DnsRoundedIcon sx={{ fontSize: 16 }} />}
-            label="Category"
-            value={realm.category}
-          />
-          <RealmInfoRow
-            icon={<AccessTimeRoundedIcon sx={{ fontSize: 16 }} />}
-            label="Timezone"
-            value={realm.timezone}
-          />
-          <RealmInfoRow
-            icon={<LanguageRoundedIcon sx={{ fontSize: 16 }} />}
-            label="Locale"
-            value={realm.locale?.toUpperCase()}
-          />
-        </Stack>
-
-        <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
-          spacing={1.5}
-          sx={{ pt: 0.75, borderTop: "1px solid rgba(148, 163, 184, 0.14)" }}
-        >
-          <Stack direction="row" spacing={0.75} alignItems="center">
-            <HubRoundedIcon sx={{ fontSize: 16, color: "text.secondary" }} />
-            <Typography variant="caption" color="text.secondary">
-              {realm.connectedRealmHref ? "Connected realm" : "Realm record"}
-            </Typography>
-          </Stack>
-          <Link
-            href={realm.href}
-            target="_blank"
-            rel="noreferrer"
-            underline="hover"
-            sx={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 0.5,
-              fontSize: "0.74rem",
-              fontWeight: 700,
-              whiteSpace: "nowrap",
-            }}
-          >
-            Blizzard
-            <LaunchRoundedIcon fontSize="inherit" />
-          </Link>
-        </Stack>
-      </Stack>
-    </Paper>
-  );
+  return [
+    { label: "Region", value: realm.regionName || env.region.toUpperCase() },
+    { label: "Category", value: realm.category || EMPTY },
+    { label: "Type", value: typeLabel || EMPTY },
+    { label: "Time zone", value: timezone },
+    { label: "Locale", value: realm.locale ? formatLocale(realm.locale) : EMPTY },
+    { label: "Status", value: realm.statusLabel || EMPTY },
+    {
+      label: "Population",
+      value: humanizeEnum(realm.populationType) || realm.populationLabel || EMPTY,
+    },
+    { label: "Queue", value: queue },
+    {
+      label: "Connected realm id",
+      value: realm.connectedRealmId ? String(realm.connectedRealmId) : EMPTY,
+    },
+  ];
 };
 
-const RealmsPage = (): JSX.Element => {
-  const [query, setQuery] = useState<string>("");
-  const [visiblePages, setVisiblePages] = useState(1);
+/**
+ * Measures the filter bar so the table header can stick directly beneath
+ * it (the bar itself sticks under the app header on md+).
+ */
+const useMeasuredHeight = (): [
+  (node: HTMLDivElement | null) => void,
+  number,
+] => {
+  const [height, setHeight] = useState(0);
+  const observerRef = useRef<ResizeObserver | null>(null);
 
-  const indexQuery = useQuery({
-    queryKey: ["realm-gallery-index", env.region],
-    queryFn: fetchRealmIndex,
-    staleTime: 1000 * 60 * 30,
-  });
+  const attach = useCallback((node: HTMLDivElement | null): void => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
 
-  const searchQuery = useQuery({
-    queryKey: ["realm-search-explorer", query, env.region, env.locale],
-    queryFn: () => searchRealmsDetailed(query),
-    enabled: query.trim().length >= 2,
-    staleTime: 1000 * 60 * 10,
-  });
-
-  const indexedRealms = useMemo(() => indexQuery.data ?? [], [indexQuery.data]);
-  const realms = useMemo(
-    () =>
-      query.trim().length >= 2
-        ? (searchQuery.data ?? [])
-        : indexedRealms.slice(0, visiblePages * PAGE_SIZE),
-    [indexedRealms, query, searchQuery.data, visiblePages],
-  );
-  const activeDetailCount = useIdlePrefetchWindow({
-    totalCount: realms.length,
-    initialCount: 12,
-    batchSize: 6,
-    resetKey: `${query}-${visiblePages}-${realms.length}`,
-  });
-
-  const detailQueries = useQueries({
-    queries: realms.map((realm, index) => ({
-      queryKey: ["realm-detail-card", realm.slug, env.region],
-      queryFn: () => fetchRealmDetail(realm.slug),
-      enabled: index < activeDetailCount,
-      staleTime: 300000,
-      retry: false,
-    })),
-  });
-
-  const friendlyError = useMemo(() => {
-    const error =
-      indexQuery.error ??
-      searchQuery.error ??
-      detailQueries.find((entry) => entry.error)?.error;
-    if (!error) {
-      return undefined;
-    }
-
-    if (error instanceof BlizzardRequestError) {
-      if (error.status === 401 || error.status === 403) {
-        return "We couldn’t authenticate with Blizzard’s Realm API. Update your Blizzard credentials in the .env file and refresh.";
-      }
-
-      if (error.status === 429) {
-        return "The Blizzard API rate limit has been reached. Please wait a few minutes and try again.";
-      }
-    }
-
-    return error instanceof Error
-      ? error.message
-      : "Unable to load realm data right now.";
-  }, [detailQueries, indexQuery.error, searchQuery.error]);
-
-  const isLoading = indexQuery.isLoading || searchQuery.isLoading;
-
-  const galleryRealms = useMemo<RealmGalleryCard[]>(
-    () =>
-      realms.map((realm, index) => {
-        const detail = detailQueries[index]?.data;
-
-        return {
-          id: realm.id,
-          name: realm.name,
-          slug: realm.slug,
-          href: detail?.href ?? realm.href,
-          regionName: detail?.regionName ?? realm.regionName,
-          typeName: detail?.typeName ?? realm.typeName,
-          category: detail?.category ?? realm.category,
-          timezone: detail?.timezone ?? realm.timezone,
-          locale: detail?.locale,
-          isTournament: detail?.isTournament,
-          connectedRealmHref: detail?.connectedRealmHref,
-        };
-      }),
-    [detailQueries, realms],
-  );
-
-  const hasMoreRealms =
-    query.trim().length < 2 && realms.length < indexedRealms.length;
-
-  const loadMoreRealms = useCallback(() => {
-    if (!hasMoreRealms) {
+    if (!node) {
       return;
     }
 
-    setVisiblePages((current) => current + 1);
-  }, [hasMoreRealms]);
+    setHeight(node.offsetHeight);
+    if (typeof ResizeObserver !== "undefined") {
+      observerRef.current = new ResizeObserver(() => {
+        setHeight(node.offsetHeight);
+      });
+      observerRef.current.observe(node);
+    }
+  }, []);
 
-  const infiniteScrollRef = useInfiniteScrollTrigger({
-    enabled: !friendlyError,
-    hasMore: hasMoreRealms,
+  useEffect(() => () => observerRef.current?.disconnect(), []);
+
+  return [attach, height];
+};
+
+const RealmsPage = ({ eyebrow = DEFAULT_EYEBROW }: RealmsPageProps): JSX.Element => {
+  const theme = useTheme();
+  // noSsr: match on the first render so the table never flashes as cards.
+  const isDesktop = useMediaQuery(theme.breakpoints.up("md"), { noSsr: true });
+  const directory = useRealmDirectory();
+  const {
+    rows,
+    total,
+    sort,
+    setSort,
+    clearFilters,
+    hasActiveFilters,
     isLoading,
-    onLoadMore: loadMoreRealms,
-  });
+    error,
+    refetch,
+    statusPending,
+  } = directory;
 
-  useEffect(() => {
-    setVisiblePages(1);
-  }, [query]);
+  const [selected, setSelected] = useState<RealmDirectoryRow | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [filterBarRef, filterBarHeight] = useMeasuredHeight();
 
-  usePerformanceOverlayEntry(
-    import.meta.env.DEV
-      ? {
-          id: "realms",
-          label: "Realms",
-          renderedCount: galleryRealms.length,
-          totalCount: galleryRealms.length,
-          enrichmentCount: activeDetailCount,
-          notes: query ? "Search results" : "Realm index",
-        }
-      : null,
+  const openRealm = useCallback((realm: RealmDirectoryRow): void => {
+    setSelected(realm);
+    setDialogOpen(true);
+  }, []);
+
+  const closeDialog = useCallback((): void => {
+    setDialogOpen(false);
+  }, []);
+
+  const stickyOffset = theme.wc.layout.headerHeight.md + filterBarHeight;
+
+  const emptyState = (
+    <EmptyState
+      title="No realms match"
+      description="Try another name or clear the filters"
+      action={
+        hasActiveFilters ? (
+          <Button variant="outlined" size="small" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        ) : undefined
+      }
+    />
   );
 
+  const renderBody = (): JSX.Element => {
+    if (isLoading) {
+      return isDesktop ? (
+        <LoadingSkeleton
+          variant="rows"
+          itemHeight={REALM_ROW_HEIGHT}
+          count={SKELETON_ROWS}
+          gap={0}
+          label="Loading realms"
+        />
+      ) : (
+        <LoadingSkeleton
+          variant="grid"
+          columns={{ xs: 1 }}
+          itemHeight={COMPACT_CARD_HEIGHT}
+          count={SKELETON_CARDS}
+          label="Loading realms"
+        />
+      );
+    }
+
+    if (error) {
+      return <ErrorState error={error} context="realms" onRetry={refetch} />;
+    }
+
+    if (isDesktop) {
+      return (
+        <RealmTable
+          rows={rows}
+          sort={sort}
+          onSortChange={setSort}
+          onSelect={openRealm}
+          statusPending={statusPending}
+          stickyOffset={stickyOffset}
+          emptyState={emptyState}
+        />
+      );
+    }
+
+    return (
+      <VirtualizedCardGrid
+        items={rows}
+        columns={{ xs: 1 }}
+        itemHeight={COMPACT_CARD_HEIGHT}
+        gap={16}
+        aria-label="Realms"
+        getItemKey={(row) => row.id}
+        renderItem={(row, index) => (
+          <RealmCard row={row} onSelect={openRealm} index={index} />
+        )}
+        emptyState={emptyState}
+      />
+    );
+  };
+
+  const selectedType = selected ? realmTypeLabel(selected) : "";
+  const selectedSubtitle = selected
+    ? [selectedType, selected.category].filter(Boolean).join(" · ")
+    : undefined;
+
   return (
-    <Stack spacing={{ xs: 3, md: 4 }}>
-      <Paper
-        variant="outlined"
+    <Stack
+      spacing={{
+        xs: theme.wc.layout.sectionGap.xs,
+        md: theme.wc.layout.sectionGap.md,
+      }}
+    >
+      <PageHeader
+        eyebrow={eyebrow}
+        title="Realms"
+        icon={<PublicRoundedIcon />}
+        description={`Every ${env.region.toUpperCase()} realm with ruleset, category, time zone, locale and live status.`}
+        meta={
+          <>
+            <Chip size="small" label={`Region ${env.region.toUpperCase()}`} />
+            <Chip size="small" label={`${formatNumber(total)} realms`} />
+          </>
+        }
+        actions={
+          <Button
+            variant="outlined"
+            size="small"
+            href={realmStatusUrl()}
+            target="_blank"
+            rel="noreferrer"
+            endIcon={<LaunchRoundedIcon />}
+          >
+            Realm status on Blizzard
+          </Button>
+        }
+      />
+
+      {/*
+        The wrapper is the sticky element (and the measured one): a sticky
+        child inside a same-height wrapper could never leave the wrapper's
+        box, so stickiness is applied here and the bar itself stays static.
+      */}
+      <Box
+        ref={filterBarRef}
         sx={{
-          p: { xs: 2.25, md: 2.75 },
-          borderRadius: 2.5,
-          borderColor: "rgba(56, 189, 248, 0.2)",
-          background:
-            "linear-gradient(135deg, rgba(12, 18, 34, 0.92), rgba(8, 47, 73, 0.46) 58%, rgba(6, 78, 59, 0.28))",
-          overflow: "hidden",
+          minWidth: 0,
+          position: { xs: "relative", md: "sticky" },
+          top: { md: theme.wc.layout.headerHeight.md },
+          zIndex: { md: theme.zIndex.appBar - 1 },
         }}
       >
-        <Stack spacing={2}>
-          <Stack
-            direction={{ xs: "column", md: "row" }}
-            spacing={2}
-            alignItems={{ xs: "flex-start", md: "center" }}
-            justifyContent="space-between"
-          >
-            <Stack spacing={1.25} sx={{ maxWidth: 720 }}>
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                <Box
-                  sx={{
-                    width: 40,
-                    height: 40,
-                    display: "grid",
-                    placeItems: "center",
-                    borderRadius: 2,
-                    color: "#e0f2fe",
-                    background:
-                      "linear-gradient(145deg, rgba(14, 165, 233, 0.55), rgba(16, 185, 129, 0.28))",
-                    border: "1px solid rgba(125, 211, 252, 0.32)",
-                  }}
-                >
-                  <PublicRoundedIcon />
-                </Box>
-                <Box>
-                  <Typography variant="h4" sx={{ fontWeight: 800 }}>
-                    Realm Atlas
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Live {env.region.toUpperCase()} realm index
-                  </Typography>
-                </Box>
-              </Stack>
-              <Typography variant="body2" color="text.secondary">
-                Scan realms as operational cards with region, ruleset, timezone,
-                locale, and connected-realm context surfaced up front.
-              </Typography>
-            </Stack>
-            <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-              <Chip
-                icon={<DnsRoundedIcon />}
-                label={query ? "Search mode" : "Index mode"}
-                color="primary"
-                variant="outlined"
-                sx={{ borderRadius: 2, fontWeight: 700 }}
-              />
-              <Chip
-                label={`${formatCount(indexedRealms.length)} indexed`}
-                size="small"
-                variant="outlined"
-                sx={{ borderRadius: 2 }}
-              />
-              <Chip
-                label={`${formatCount(galleryRealms.length)} displayed`}
-                size="small"
-                variant="outlined"
-                sx={{ borderRadius: 2 }}
-              />
-              <Chip
-                label={`${formatCount(activeDetailCount)} enriched`}
-                size="small"
-                variant="outlined"
-                sx={{ borderRadius: 2 }}
-              />
-            </Stack>
-          </Stack>
+        <RealmFilters directory={directory} sticky={false} />
+      </Box>
 
-          <Stack
-            direction={{ xs: "column", lg: "row" }}
-            spacing={1.25}
-            alignItems={{ xs: "stretch", lg: "center" }}
-          >
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <SearchInput
-                value={query}
-                onChange={setQuery}
-                onClear={() => setQuery("")}
-                autoFocus={false}
-                placeholder="Search realms by name..."
-              />
-            </Box>
-            <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap">
-              <Chip
-                icon={<SearchRoundedIcon />}
-                label="Quick realms"
-                size="small"
-                variant="outlined"
-                sx={{ borderRadius: 2 }}
-              />
-              {QUICK_REALMS.map((realm) => (
+      {renderBody()}
+
+      <DetailDialog
+        open={dialogOpen && selected !== null}
+        onClose={closeDialog}
+        title={selected?.name ?? ""}
+        subtitle={selectedSubtitle || undefined}
+        rows={selected ? detailRows(selected) : undefined}
+        actions={
+          selected ? (
+            <>
+              <Button
+                variant="text"
+                component={RouterLink}
+                to={`/connected-realms?q=${encodeURIComponent(selected.name)}`}
+              >
+                Connected realm
+              </Button>
+              {selected.connectedRealmId ? (
                 <Button
-                  key={realm}
-                  variant={query === realm ? "contained" : "outlined"}
-                  color="primary"
-                  size="small"
-                  onClick={() => setQuery(realm)}
-                  sx={{ borderRadius: 2 }}
+                  variant="contained"
+                  component={RouterLink}
+                  to={`/category/auction-house?view=realm&realm=${selected.connectedRealmId}`}
                 >
-                  {realm}
-                </Button>
-              ))}
-              {query ? (
-                <Button
-                  variant="outlined"
-                  color="primary"
-                  size="small"
-                  onClick={() => setQuery("")}
-                  sx={{ borderRadius: 2, px: 2.25 }}
-                >
-                  Back to index
+                  Auction house
                 </Button>
               ) : null}
-            </Stack>
-          </Stack>
-        </Stack>
-      </Paper>
-
-      {query ? (
-        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-          <Chip
-            label={`Showing ${galleryRealms.length} matching realms`}
-            color="primary"
-            variant="outlined"
-            sx={{ borderRadius: 2 }}
-          />
-        </Stack>
-      ) : null}
-
-      {friendlyError ? (
-        <Alert
-          severity="error"
-          icon={<ReportProblemRoundedIcon fontSize="small" />}
-          sx={{ borderRadius: 3 }}
-        >
-          {friendlyError}
-        </Alert>
-      ) : null}
-
-      {isLoading ? (
-        <Grid container spacing={3}>
-          {Array.from({ length: 12 }).map((_, index) => (
-            <Grid item xs={12} md={6} lg={4} key={index}>
-              <Skeleton
-                variant="rounded"
-                height={320}
-                sx={{
-                  borderRadius: 3,
-                  backgroundColor: "rgba(12, 18, 34, 0.45)",
-                }}
-              />
-            </Grid>
-          ))}
-        </Grid>
-      ) : null}
-
-      {!isLoading && !friendlyError ? (
-        <Stack spacing={2.5}>
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: {
-                xs: "1fr",
-                sm: "repeat(2, minmax(0, 1fr))",
-                md: "repeat(3, minmax(0, 1fr))",
-                lg: "repeat(4, minmax(0, 1fr))",
-              },
-              gap: 2,
-              alignItems: "stretch",
-            }}
-          >
-            {galleryRealms.map((realm) => (
-              <RealmCard key={realm.id} realm={realm} />
-            ))}
-          </Box>
-
-          <Stack spacing={1.5} alignItems="center">
-            {hasMoreRealms ? (
-              <Typography variant="body2" color="text.secondary">
-                Keep scrolling to load more realms.
-              </Typography>
-            ) : !query && galleryRealms.length > 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                Reached the end of the realm index.
-              </Typography>
-            ) : null}
-            {activeDetailCount < realms.length ? (
-              <Typography variant="caption" color="text.secondary">
-                Prefetching additional realm details during idle time.
-              </Typography>
-            ) : null}
-            {hasMoreRealms ? (
-              <Box ref={infiniteScrollRef} sx={{ width: "100%", height: 1 }} />
-            ) : null}
-          </Stack>
-        </Stack>
-      ) : null}
+            </>
+          ) : undefined
+        }
+      />
     </Stack>
   );
 };
