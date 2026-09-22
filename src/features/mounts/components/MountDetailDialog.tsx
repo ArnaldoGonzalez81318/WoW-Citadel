@@ -15,7 +15,6 @@ import {
 } from "@/features/mounts/services/mountService";
 import type { MountGalleryResult } from "@/features/mounts/types";
 import { getExternalLink } from "@/lib/externalLinks";
-import { humanizeEnum } from "@/lib/format";
 
 export type MountDetailDialogProps = {
   mount: MountGalleryResult | null;
@@ -53,7 +52,7 @@ const MountDetailDialog = ({
   const needsMedia = isActive && !shown?.mediaUrl;
 
   const mediaQuery = useQuery({
-    queryKey: mountKeys.displayMedia(displayId),
+    queryKey: mountKeys.artwork(mountId, displayId),
     queryFn: ({ signal }) =>
       fetchCreatureDisplayImage(displayId as number, signal),
     enabled: needsMedia && typeof displayId === "number",
@@ -66,9 +65,11 @@ const MountDetailDialog = ({
   const source = detail?.source ?? shown.summary;
   const description = (detail?.description ?? shown.details)?.trim() ?? "";
 
+  // `source` is Blizzard's localized display name ("Trading Card Game"),
+  // not an enum code, so it is shown as-is to match the card's meta line.
   const rows: DetailDialogRow[] = [];
   if (source) {
-    rows.push({ label: "Source", value: humanizeEnum(source) });
+    rows.push({ label: "Source", value: source });
   }
   rows.push({
     label: "Mount ID",

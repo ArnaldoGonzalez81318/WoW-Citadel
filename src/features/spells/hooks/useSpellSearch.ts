@@ -26,15 +26,18 @@ const SEARCH_STALE_TIME_MS = 1000 * 60 * 10;
 const INITIAL_ENRICH_LIMIT = 12;
 const ENRICH_LOOKAHEAD = 12;
 
+/** `null` = Blizzard has no icon; `undefined` = not loaded (yet). */
+export type SpellIconUrl = string | null | undefined;
+
 type IconEnrichment = {
-  data: Array<string | undefined>;
+  data: SpellIconUrl[];
   failed: number;
   refetchFailed: () => void;
 };
 
 /** Module scope so useQueries only re-runs it when a result changes. */
 const combineIcons = (
-  results: UseQueryResult<string | undefined>[],
+  results: UseQueryResult<string | null>[],
 ): IconEnrichment => ({
   data: results.map((result) => result.data),
   failed: results.filter((result) => result.isError).length,
@@ -60,11 +63,18 @@ export type UseSpellSearchResult = {
   setQuery: (text: string) => void;
   isSearchActive: boolean;
   spells: SpellSummary[];
-  iconUrls: Array<string | undefined>;
+  iconUrls: SpellIconUrl[];
   /** Exact result count when Blizzard's paging lets us know it. */
   total: number | undefined;
   /** Blizzard capped the result set (see SEARCH_RESULT_CAP). */
   capped: boolean;
+  /**
+   * Blizzard's page count for the current search, when a page has landed:
+   * the only size a multi-page search response states.
+   */
+  pageCount: number | undefined;
+  /** Pages rendered so far for the current search. */
+  loadedPages: number;
   isInitialLoading: boolean;
   isRefreshing: boolean;
   isFetchingNextPage: boolean;
@@ -103,6 +113,8 @@ const useSpellSearch = (): UseSpellSearchResult => {
   );
   const total = pages?.[0]?.total;
   const capped = pages?.[0]?.capped ?? false;
+  const pageCount = pages?.[pages.length - 1]?.pageCount;
+  const loadedPages = pages?.length ?? 0;
 
   /* ---------------- enrichment window (visible cards only) ---------- */
 
@@ -153,18 +165,26 @@ const useSpellSearch = (): UseSpellSearchResult => {
 
   const {
     fetchNextPage,
-    hasNextPage,
+    hasNextPage: hasNextFetchedPage,
     isFetchingNextPage,
     isPlaceholderData,
     refetch,
   } = searchQuery;
 
+  // While a refined search shows the previous pages as placeholder, react-query
+  // reports `hasNextPage: false`; read it off the pages on display instead so
+  // the status never claims the previous set was complete.
+  const lastPage = pages?.[pages.length - 1];
+  const hasNextPage = isPlaceholderData
+    ? lastPage !== undefined && getNextPageParam(lastPage) !== undefined
+    : hasNextFetchedPage;
+
   const loadMore = useCallback((): void => {
-    if (!hasNextPage || isFetchingNextPage || isPlaceholderData) {
+    if (!hasNextFetchedPage || isFetchingNextPage || isPlaceholderData) {
       return;
     }
     void fetchNextPage();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isPlaceholderData]);
+  }, [fetchNextPage, hasNextFetchedPage, isFetchingNextPage, isPlaceholderData]);
 
   const sentinelRef = useInfiniteScrollTrigger({
     enabled: isSearchActive && !searchQuery.isError && !isPlaceholderData,
@@ -185,6 +205,8 @@ const useSpellSearch = (): UseSpellSearchResult => {
     iconUrls: icons.data,
     total,
     capped,
+    pageCount,
+    loadedPages,
     isInitialLoading: isSearchActive && searchQuery.isPending,
     isRefreshing: searchQuery.isFetching && !isFetchingNextPage,
     isFetchingNextPage,

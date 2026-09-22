@@ -10,6 +10,7 @@ import { blizzardClient } from "@/lib/blizzardClient";
 import {
   cleanMarkup,
   localized,
+  mapWithConcurrency,
   nameParam,
   namespace,
   optional404,
@@ -196,19 +197,76 @@ export const fetchItemClassDetail = async (
     { signal },
   );
 
-  const subclasses: ItemSubclassSummary[] = sortByName(
-    (response.item_subclasses ?? []).map((entry) => ({
+  const subclasses: ItemSubclassSummary[] = (response.item_subclasses ?? []).map(
+    (entry) => ({
       id: entry.id,
       name: localized(entry.name),
       key: entry.key,
-    })),
+    }),
   );
 
   return {
     class_id: response.class_id,
     name: localized(response.name),
-    item_subclasses: subclasses,
+    item_subclasses: sortByName(
+      await disambiguateSubclassNames(itemClassId, subclasses, signal),
+    ),
   };
+};
+
+type ItemSubclassDetailResponse = {
+  display_name?: LocalizedString;
+  verbose_name?: LocalizedString;
+};
+
+/**
+ * Blizzard's class record names one-handed and two-handed weapons alike
+ * ("Axe" for ids 0 and 1). For names that collide within a class, the
+ * subclass record's verbose name ("One-Handed Axes") stands in. Only the
+ * colliding entries are fetched; a failed lookup keeps the short name.
+ */
+const disambiguateSubclassNames = async (
+  itemClassId: number,
+  subclasses: ItemSubclassSummary[],
+  signal?: AbortSignal,
+): Promise<ItemSubclassSummary[]> => {
+  const occurrences = new Map<string, number>();
+  subclasses.forEach((subclass) => {
+    occurrences.set(subclass.name, (occurrences.get(subclass.name) ?? 0) + 1);
+  });
+
+  const ambiguous = subclasses.filter(
+    (subclass) => (occurrences.get(subclass.name) ?? 0) > 1,
+  );
+  if (ambiguous.length === 0) {
+    return subclasses;
+  }
+
+  const verboseNames = await mapWithConcurrency(
+    ambiguous,
+    6,
+    async (subclass) => {
+      const detail = await blizzardClient.get<ItemSubclassDetailResponse>(
+        `/data/wow/item-class/${itemClassId}/item-subclass/${subclass.id}`,
+        { namespace: namespace("static") },
+        { signal },
+      );
+      return localized(detail.verbose_name) || localized(detail.display_name);
+    },
+    signal,
+  );
+
+  const renamed = new Map<number, string>();
+  verboseNames.forEach((result, index) => {
+    if (result.status === "fulfilled" && result.value) {
+      renamed.set(ambiguous[index].id, result.value);
+    }
+  });
+
+  return subclasses.map((subclass) => {
+    const verbose = renamed.get(subclass.id);
+    return verbose ? { ...subclass, name: verbose } : subclass;
+  });
 };
 
 /**
@@ -259,11 +317,16 @@ export const fetchItemGalleryPage = async (
   return result ?? { items: [], page, pageCount: 1, total: 0, capped: false };
 };
 
+/**
+ * Icon URL for an item, or `null` when Blizzard has no media for it (404 or
+ * an empty asset list). Never `undefined`: react-query rejects a queryFn
+ * that resolves to it.
+ */
 export const fetchItemMediaUrl = async (
   itemId: number,
   signal?: AbortSignal,
-): Promise<string | undefined> =>
-  optional404(async () => {
+): Promise<string | null> => {
+  const url = await optional404(async () => {
     const response = await blizzardClient.get<MediaResponse>(
       `/data/wow/media/item/${itemId}`,
       { namespace: namespace("static") },
@@ -272,6 +335,9 @@ export const fetchItemMediaUrl = async (
 
     return pickIconAsset(response.assets);
   });
+
+  return url ?? null;
+};
 
 export const fetchItemDetail = async (
   itemId: number,

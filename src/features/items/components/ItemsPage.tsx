@@ -3,7 +3,7 @@ import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import SearchOffRoundedIcon from "@mui/icons-material/SearchOffRounded";
 import { Box, Button, Chip, Stack } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 
 import { ExplorerFilterBar } from "@/components/common/ExplorerFilterBar";
 import { GRID_PRESETS } from "@/components/common/gridColumns";
@@ -21,6 +21,7 @@ import ItemFilters from "@/features/items/components/ItemFilters";
 import useItemGallery, {
   ITEM_PAGE_SIZE,
 } from "@/features/items/hooks/useItemGallery";
+import type { ItemMediaUrl } from "@/features/items/hooks/useItemGallery";
 import type { SearchResult } from "@/features/search/types";
 import { env } from "@/lib/env";
 import { formatNumber } from "@/lib/format";
@@ -29,6 +30,7 @@ import {
   formatResultSummary,
   formatResultTotal,
 } from "@/lib/resultCount";
+import { formatPageProgress } from "@/features/items/pageProgress";
 import type { CategoryExplorerProps } from "@/pages/categoryRegistry";
 
 const DEFAULT_EYEBROW = "Collectibles & Gear";
@@ -36,9 +38,12 @@ const CARD_LAYOUT = "compact";
 const CARD_HEIGHT = getResultCardHeight(CARD_LAYOUT);
 const GRID_GAP = 16;
 
+const pluralize = (count: number, singular: string, plural: string): string =>
+  count === 1 ? singular : plural;
+
 type ItemGalleryCardProps = {
   item: SearchResult;
-  mediaUrl: string | undefined;
+  mediaUrl: ItemMediaUrl;
   index: number;
   onSelect: (item: SearchResult) => void;
 };
@@ -75,10 +80,13 @@ const ItemsPage = ({
     setClass,
     setSubclass,
     setQuery,
+    clearFilters,
     items,
     mediaUrls,
     total,
     capped,
+    pageCount,
+    loadedPages,
     isInitialLoading,
     isRefreshing,
     isFetchingNextPage,
@@ -93,10 +101,18 @@ const ItemsPage = ({
   } = gallery;
 
   const [selectedItem, setSelectedItem] = useState<SearchResult | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const handleSelect = useCallback((item: SearchResult): void => {
     setSelectedItem(item);
   }, []);
+
+  // The empty state's "Clear filters" button is replaced by the grid, so
+  // focus moves to the search field first instead of dropping to <body>.
+  const handleClearFilters = useCallback((): void => {
+    searchInputRef.current?.focus();
+    clearFilters();
+  }, [clearFilters]);
 
   const handleCloseDialog = useCallback((): void => {
     setSelectedItem(null);
@@ -110,22 +126,41 @@ const ItemsPage = ({
   const hasPageError = error !== null && error !== undefined;
   const isEmpty = !isInitialLoading && !hasPageError && items.length === 0;
 
+  // The noun agrees with the number printed beside it: the footer counts
+  // `loaded`, the header chip the total (or `loaded` once everything is in).
+  const loaded = items.length;
+  const knownTotal = typeof total === "number" ? total : loaded;
+
   const count = {
-    loaded: items.length,
+    loaded,
     total,
     capped,
     hasMore: hasNextPage,
-    noun: "items",
+    noun: pluralize(loaded, "item", "items"),
   };
   const totalLabel = formatResultTotal(count);
+  const showTotalChip = totalLabel !== undefined && knownTotal > 0;
 
-  const summary = `${formatResultSummary(count)}${
-    activeSubclassName ? ` · ${activeSubclassName}` : ""
-  }`;
+  // A multi-page search response carries no total, only a page count, so
+  // "Showing 24" becomes "Showing 24 · page 1 of 2" rather than a bare count.
+  const pageProgress =
+    totalLabel === undefined
+      ? formatPageProgress(loadedPages, pageCount)
+      : undefined;
+
+  const summary = [
+    formatResultSummary(count),
+    pageProgress,
+    activeSubclassName,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
 
   const footerText = isFetchingNextPage
     ? "Loading more items"
-    : formatLoadedStatus(count);
+    : pageProgress
+      ? `${formatNumber(loaded)} ${count.noun} loaded · ${pageProgress}`
+      : formatLoadedStatus(count);
 
   const renderBody = (): JSX.Element => {
     if (hasPageError) {
@@ -152,13 +187,7 @@ const ItemsPage = ({
           title={q ? `No items match "${q}"` : "No items in this subclass"}
           description="Try another subclass or a broader search."
           action={
-            <Button
-              variant="outlined"
-              onClick={() => {
-                setQuery("");
-                setSubclass(null);
-              }}
-            >
+            <Button variant="outlined" onClick={handleClearFilters}>
               Clear filters
             </Button>
           }
@@ -177,9 +206,11 @@ const ItemsPage = ({
             useFlexGap
           >
             <LiveStatus>
-              {`Icons for ${formatNumber(failedMedia)} ${
-                failedMedia === 1 ? "item" : "items"
-              } could not be loaded`}
+              {`Icons for ${formatNumber(failedMedia)} ${pluralize(
+                failedMedia,
+                "item",
+                "items",
+              )} could not be loaded`}
             </LiveStatus>
             <Button
               size="small"
@@ -198,6 +229,7 @@ const ItemsPage = ({
           itemHeight={CARD_HEIGHT}
           columns={GRID_PRESETS.compact}
           gap={GRID_GAP}
+          minItemsBeforeVirtualize={ITEM_PAGE_SIZE}
           aria-label="Item results"
           onVisibleRangeChange={onVisibleRangeChange}
           renderItem={(item, index) => (
@@ -237,8 +269,11 @@ const ItemsPage = ({
         meta={
           <>
             <Chip size="small" label={`Region ${env.region.toUpperCase()}`} />
-            {totalLabel ? (
-              <Chip size="small" label={`${totalLabel} items`} />
+            {showTotalChip ? (
+              <Chip
+                size="small"
+                label={`${totalLabel} ${pluralize(knownTotal, "item", "items")}`}
+              />
             ) : null}
           </>
         }
@@ -260,6 +295,7 @@ const ItemsPage = ({
           onClassChange={setClass}
           onSubclassChange={setSubclass}
           onQueryChange={setQuery}
+          searchInputRef={searchInputRef}
         />
       </ExplorerFilterBar>
 

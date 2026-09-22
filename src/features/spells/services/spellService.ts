@@ -149,11 +149,16 @@ export const fetchSpellDetail = async (
   };
 };
 
+/**
+ * Icon URL for a spell, or `null` when Blizzard has no media for it (404 or
+ * an empty asset list). Never `undefined`: react-query rejects a queryFn
+ * that resolves to it.
+ */
 export const fetchSpellIcon = async (
   spellId: number,
   signal?: AbortSignal,
-): Promise<string | undefined> =>
-  optional404(async () => {
+): Promise<string | null> => {
+  const url = await optional404(async () => {
     const response = await blizzardClient.get<SpellMedia>(
       `/data/wow/media/spell/${spellId}`,
       { namespace: namespace("static") },
@@ -165,3 +170,6 @@ export const fetchSpellIcon = async (
       response.assets?.[0]?.value
     );
   });
+
+  return url ?? null;
+};

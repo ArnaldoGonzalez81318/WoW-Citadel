@@ -28,8 +28,13 @@ export const mountKeys = {
   index: () => [...MOUNT_KEY_ROOT, "index"] as const,
   search: (query: string) => [...MOUNT_KEY_ROOT, "search", query] as const,
   detail: (mountId: number) => [...MOUNT_KEY_ROOT, "detail", mountId] as const,
-  displayMedia: (displayId: number | undefined) =>
-    [...MOUNT_KEY_ROOT, "display-media", displayId] as const,
+  /**
+   * Artwork is keyed per mount (not per creature display) so a grid of
+   * mounts whose display id is still unknown, or shared, never registers
+   * duplicate queries.
+   */
+  artwork: (mountId: number, displayId: number | undefined) =>
+    [...MOUNT_KEY_ROOT, "artwork", mountId, displayId ?? null] as const,
 };
 
 /* ------------------------------------------------------------------ */
@@ -169,11 +174,16 @@ export const fetchMountDetail = async (
   };
 };
 
+/**
+ * Artwork URL for a creature display, or `null` when Blizzard has no media
+ * for it (404 or an empty asset list). Never `undefined`: react-query
+ * rejects a queryFn that resolves to it.
+ */
 export const fetchCreatureDisplayImage = async (
   displayId: number,
   signal?: AbortSignal,
-): Promise<string | undefined> =>
-  optional404(async () => {
+): Promise<string | null> => {
+  const url = await optional404(async () => {
     const response = await blizzardClient.get<{ assets?: MediaAsset[] }>(
       `/data/wow/media/creature-display/${displayId}`,
       { namespace: namespace("static") },
@@ -185,3 +195,6 @@ export const fetchCreatureDisplayImage = async (
       response.assets?.[0]?.value
     );
   });
+
+  return url ?? null;
+};

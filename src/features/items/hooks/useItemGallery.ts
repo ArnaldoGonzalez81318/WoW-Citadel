@@ -45,15 +45,18 @@ const parseId = (value: string): number | null => {
   return Number.isInteger(parsed) ? parsed : null;
 };
 
+/** `null` = Blizzard has no icon; `undefined` = not loaded (yet). */
+export type ItemMediaUrl = string | null | undefined;
+
 type MediaEnrichment = {
-  data: Array<string | undefined>;
+  data: ItemMediaUrl[];
   failed: number;
   refetchFailed: () => void;
 };
 
 /** Module scope so useQueries only re-runs it when a result changes. */
 const combineMedia = (
-  results: UseQueryResult<string | undefined>[],
+  results: UseQueryResult<string | null>[],
 ): MediaEnrichment => ({
   data: results.map((result) => result.data),
   failed: results.filter((result) => result.isError).length,
@@ -83,12 +86,22 @@ export type UseItemGalleryResult = {
   setClass: (id: number) => void;
   setSubclass: (id: number | null) => void;
   setQuery: (text: string) => void;
+  /** Drops the subclass and the search term in one navigation. */
+  clearFilters: () => void;
   items: SearchResult[];
-  mediaUrls: Array<string | undefined>;
+  mediaUrls: ItemMediaUrl[];
   /** Exact result count when Blizzard's paging lets us know it. */
   total: number | undefined;
   /** Blizzard capped the result set (see SEARCH_RESULT_CAP). */
   capped: boolean;
+  /**
+   * Blizzard's page count for the current filter, when a page has landed.
+   * The only size information a multi-page search response carries, so the
+   * UI can say "page 1 of 2" where it cannot say "of 37".
+   */
+  pageCount: number | undefined;
+  /** Pages rendered so far for the current filter. */
+  loadedPages: number;
   className: string | undefined;
   isInitialLoading: boolean;
   isRefreshing: boolean;
@@ -125,8 +138,16 @@ const useItemGallery = (): UseItemGalleryResult => {
     [classIndexQuery.data],
   );
 
-  // Derived, not set in an effect: the gallery starts as soon as the index lands.
-  const activeClassId = parsedClass ?? itemClasses[0]?.id ?? null;
+  // Derived, not set in an effect: the gallery starts as soon as the index
+  // lands. A deep-linked class survives while the index loads; once it is
+  // known, an id that is not in it falls back to the first class.
+  const isKnownClass =
+    parsedClass !== null &&
+    (!classIndexQuery.isSuccess ||
+      itemClasses.some((entry) => entry.id === parsedClass));
+  const activeClassId = isKnownClass
+    ? parsedClass
+    : itemClasses[0]?.id ?? null;
 
   const classDetailQuery = useQuery({
     queryKey: itemKeys.classDetail(activeClassId),
@@ -174,6 +195,8 @@ const useItemGallery = (): UseItemGalleryResult => {
   );
   const total = pages?.[0]?.total;
   const capped = pages?.[0]?.capped ?? false;
+  const pageCount = pages?.[pages.length - 1]?.pageCount;
+  const loadedPages = pages?.length ?? 0;
 
   /* ---------------- enrichment window (visible cards only) ---------- */
 
@@ -239,15 +262,33 @@ const useItemGallery = (): UseItemGalleryResult => {
     [setParams],
   );
 
-  const { fetchNextPage, hasNextPage, isFetchingNextPage, isPlaceholderData } =
-    galleryQuery;
+  // One patch, one navigation: two sequential setters would each start from
+  // the same stale params and the second would restore what the first removed.
+  const clearFilters = useCallback((): void => {
+    setParams({ subclass: null, q: null }, { replace: true });
+  }, [setParams]);
+
+  const {
+    fetchNextPage,
+    hasNextPage: hasNextFetchedPage,
+    isFetchingNextPage,
+    isPlaceholderData,
+  } = galleryQuery;
+
+  // While a refined filter shows the previous pages as placeholder, react-query
+  // reports `hasNextPage: false`; read it off the pages on display instead so
+  // the summary never claims the previous set was the whole result.
+  const lastPage = pages?.[pages.length - 1];
+  const hasNextPage = isPlaceholderData
+    ? lastPage !== undefined && getNextPageParam(lastPage) !== undefined
+    : hasNextFetchedPage;
 
   const loadMore = useCallback((): void => {
-    if (!hasNextPage || isFetchingNextPage || isPlaceholderData) {
+    if (!hasNextFetchedPage || isFetchingNextPage || isPlaceholderData) {
       return;
     }
     void fetchNextPage();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isPlaceholderData]);
+  }, [fetchNextPage, hasNextFetchedPage, isFetchingNextPage, isPlaceholderData]);
 
   const error =
     classIndexQuery.error ?? classDetailQuery.error ?? galleryQuery.error;
@@ -299,10 +340,13 @@ const useItemGallery = (): UseItemGalleryResult => {
     setClass,
     setSubclass,
     setQuery,
+    clearFilters,
     items,
     mediaUrls: media.data,
     total,
     capped,
+    pageCount,
+    loadedPages,
     className,
     isInitialLoading:
       classIndexQuery.isPending ||

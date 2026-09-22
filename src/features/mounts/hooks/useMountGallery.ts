@@ -18,7 +18,11 @@ import {
   searchMountsDetailed,
 } from "@/features/mounts/services/mountService";
 import type { MountSearchPage } from "@/features/mounts/services/mountService";
-import type { MountDetail, MountGalleryResult } from "@/features/mounts/types";
+import type {
+  MountDetail,
+  MountGalleryResult,
+  MountSummary,
+} from "@/features/mounts/types";
 import useInfiniteScrollTrigger from "@/hooks/useInfiniteScrollTrigger";
 import { useSearchParamState } from "@/hooks/useSearchParamState";
 import { getExternalLink } from "@/lib/externalLinks";
@@ -30,6 +34,9 @@ const INDEX_STALE_TIME_MS = 1000 * 60 * 30;
 const SEARCH_STALE_TIME_MS = 1000 * 60 * 10;
 const INITIAL_ENRICH_LIMIT = 12;
 const ENRICH_LOOKAHEAD = 12;
+
+/** `null` = Blizzard has no artwork; `undefined` = not loaded (yet). */
+export type MountMediaUrl = string | null | undefined;
 
 type Enrichment<T> = {
   data: Array<T | undefined>;
@@ -55,11 +62,37 @@ const combineDetails = (
 ): Enrichment<MountDetail> => combine(results);
 
 const combineMedia = (
-  results: UseQueryResult<string | undefined>[],
-): Enrichment<string | undefined> => combine(results);
+  results: UseQueryResult<string | null>[],
+): Enrichment<string | null> => combine(results);
 
 const getNextPageParam = (lastPage: MountSearchPage): number | undefined =>
   lastPage.page < lastPage.pageCount ? lastPage.page + 1 : undefined;
+
+/**
+ * Card-ready result from the structurally shared inputs. Called by the
+ * memoised card, so one mount's artwork resolving never rebuilds the others.
+ */
+export const toMountResult = (
+  mount: MountSummary,
+  detail: MountDetail | undefined,
+  mediaUrl: MountMediaUrl,
+): MountGalleryResult => {
+  const external = getExternalLink("mount", mount.id, mount.name);
+  const description = detail?.description ?? mount.description;
+
+  return {
+    id: mount.id,
+    name: mount.name,
+    href: detail?.href ?? mount.href,
+    kind: "mount",
+    summary: detail?.source ?? mount.source,
+    details: description || undefined,
+    mediaUrl: mediaUrl ?? undefined,
+    displayId: mount.displayId ?? detail?.displayId,
+    externalUrl: external?.url,
+    externalLabel: external?.label,
+  };
+};
 
 type KeyedCount = {
   key: string;
@@ -70,11 +103,24 @@ export type UseMountGalleryResult = {
   q: string;
   setQuery: (text: string) => void;
   isSearchActive: boolean;
-  mounts: MountGalleryResult[];
+  /** Index rows or search rows, structurally shared by react-query. */
+  mounts: MountSummary[];
+  /** Detail record per mount (index mode only), by position. */
+  details: Array<MountDetail | undefined>;
+  /** Artwork per mount, by position. */
+  mediaUrls: MountMediaUrl[];
   /** Exact result count: the index length, or a search total when known. */
   total: number | undefined;
   /** Blizzard capped the search result set (see SEARCH_RESULT_CAP). */
   capped: boolean;
+  /**
+   * Blizzard's page count for the current search, when a page has landed.
+   * Undefined in index mode (the total is exact there) and before the first
+   * page; the only size a multi-page search response states.
+   */
+  pageCount: number | undefined;
+  /** Search pages rendered so far. */
+  loadedPages: number;
   loaded: number;
   isInitialLoading: boolean;
   isRefreshing: boolean;
@@ -128,7 +174,7 @@ const useMountGallery = (): UseMountGalleryResult => {
   });
   const visiblePages = visibleWindow.key === modeKey ? visibleWindow.value : 1;
 
-  const sourceMounts = useMemo(
+  const mounts = useMemo(
     () =>
       isSearchActive
         ? searchPages?.flatMap((page) => page.mounts ?? []) ?? []
@@ -138,6 +184,10 @@ const useMountGallery = (): UseMountGalleryResult => {
 
   const total = isSearchActive ? searchPages?.[0]?.total : index.length;
   const capped = isSearchActive ? (searchPages?.[0]?.capped ?? false) : false;
+  const pageCount = isSearchActive
+    ? searchPages?.[searchPages.length - 1]?.pageCount
+    : undefined;
+  const loadedPages = isSearchActive ? (searchPages?.length ?? 0) : 0;
 
   /* ---------------- enrichment window (visible cards only) ---------- */
 
@@ -166,7 +216,7 @@ const useMountGallery = (): UseMountGalleryResult => {
 
   // Index rows know nothing but id/name; search rows already have everything.
   const details = useQueries({
-    queries: sourceMounts.map((mount, position) => ({
+    queries: mounts.map((mount, position) => ({
       queryKey: mountKeys.detail(mount.id),
       queryFn: ({ signal }: { signal: AbortSignal }) =>
         fetchMountDetail(mount.id, signal),
@@ -179,10 +229,10 @@ const useMountGallery = (): UseMountGalleryResult => {
   const detailData = details.data;
 
   const media = useQueries({
-    queries: sourceMounts.map((mount, position) => {
+    queries: mounts.map((mount, position) => {
       const displayId = mount.displayId ?? detailData[position]?.displayId;
       return {
-        queryKey: mountKeys.displayMedia(displayId),
+        queryKey: mountKeys.artwork(mount.id, displayId),
         queryFn: ({ signal }: { signal: AbortSignal }) =>
           fetchCreatureDisplayImage(displayId as number, signal),
         enabled: position < enrichLimit && typeof displayId === "number",
@@ -191,31 +241,6 @@ const useMountGallery = (): UseMountGalleryResult => {
     }),
     combine: combineMedia,
   });
-
-  const mediaData = media.data;
-
-  const mounts = useMemo<MountGalleryResult[]>(
-    () =>
-      sourceMounts.map((mount, position) => {
-        const detail = detailData[position];
-        const external = getExternalLink("mount", mount.id, mount.name);
-        const description = detail?.description ?? mount.description;
-
-        return {
-          id: mount.id,
-          name: mount.name,
-          href: detail?.href ?? mount.href,
-          kind: "mount",
-          summary: detail?.source ?? mount.source,
-          details: description || undefined,
-          mediaUrl: mediaData[position],
-          displayId: mount.displayId ?? detail?.displayId,
-          externalUrl: external?.url,
-          externalLabel: external?.label,
-        };
-      }),
-    [detailData, mediaData, sourceMounts],
-  );
 
   /* ---------------- handlers ---------------------------------------- */
 
@@ -228,20 +253,27 @@ const useMountGallery = (): UseMountGalleryResult => {
 
   const {
     fetchNextPage,
-    hasNextPage,
+    hasNextPage: hasNextSearchPage,
     isFetchingNextPage,
     isPlaceholderData,
     refetch: refetchSearch,
   } = searchQuery;
   const { isError: isIndexError, refetch: refetchIndex } = indexQuery;
 
-  const hasMore = isSearchActive
-    ? hasNextPage
-    : sourceMounts.length < index.length;
+  // While a refined search shows the previous pages as placeholder, react-query
+  // reports `hasNextPage: false`; read it off the pages on display instead so
+  // the status never claims the previous set was complete.
+  const lastSearchPage = searchPages?.[searchPages.length - 1];
+  const hasNextPage = isPlaceholderData
+    ? lastSearchPage !== undefined &&
+      getNextPageParam(lastSearchPage) !== undefined
+    : hasNextSearchPage;
+
+  const hasMore = isSearchActive ? hasNextPage : mounts.length < index.length;
 
   const loadMore = useCallback((): void => {
     if (isSearchActive) {
-      if (!hasNextPage || isFetchingNextPage || isPlaceholderData) {
+      if (!hasNextSearchPage || isFetchingNextPage || isPlaceholderData) {
         return;
       }
       void fetchNextPage();
@@ -256,16 +288,19 @@ const useMountGallery = (): UseMountGalleryResult => {
     });
   }, [
     fetchNextPage,
-    hasNextPage,
+    hasNextSearchPage,
     isFetchingNextPage,
     isPlaceholderData,
     isSearchActive,
   ]);
 
-  const error = indexQuery.error ?? searchQuery.error;
+  // The search query is disabled (and may hold a stale placeholder) in index
+  // mode, so its state only matters while a search is active.
+  const error =
+    indexQuery.error ?? (isSearchActive ? searchQuery.error : undefined);
 
   const sentinelRef = useInfiniteScrollTrigger({
-    enabled: !error && !isPlaceholderData,
+    enabled: !error && (!isSearchActive || !isPlaceholderData),
     hasMore,
     isLoading: isFetchingNextPage,
     onLoadMore: loadMore,
@@ -289,8 +324,12 @@ const useMountGallery = (): UseMountGalleryResult => {
     setQuery,
     isSearchActive,
     mounts,
+    details: detailData,
+    mediaUrls: media.data,
     total,
     capped,
+    pageCount,
+    loadedPages,
     loaded: mounts.length,
     isInitialLoading:
       indexQuery.isPending || (isSearchActive && searchQuery.isPending),
