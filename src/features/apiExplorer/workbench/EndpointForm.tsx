@@ -86,12 +86,50 @@ const EndpointForm = ({
     draftFor(parameters, values),
   );
   const [attempted, setAttempted] = useState(false);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
-  // Resync from the applied values (URL navigation, reload, another form).
+  // What the draft was last synced from; lets the resync tell a field the
+  // user edited apart from one still showing the previous applied value.
+  const syncedRef = useRef<{ endpoint: ApiEndpointDefinition; values: Record<string, string> }>({
+    endpoint,
+    values,
+  });
+
+  // Resync from the applied values (URL navigation, reload, a discovered
+  // default). Fields the user has edited keep their text: only keys whose
+  // draft still equals the previously applied value take the new one.
   // `valuesKey` is a stable serialisation, so an equal record is a no-op.
   useEffect(() => {
-    setDraft(draftFor(endpoint.parameters ?? [], valuesRef.current));
-    setAttempted(false);
+    const previous = syncedRef.current;
+    const next = valuesRef.current;
+    syncedRef.current = { endpoint, values: next };
+
+    const nextParameters = endpoint.parameters ?? [];
+    if (previous.endpoint !== endpoint) {
+      setDraft(draftFor(nextParameters, next));
+      setAttempted(false);
+      return;
+    }
+
+    const current = draftRef.current;
+    let changed = false;
+    const merged = Object.fromEntries(
+      nextParameters.map((parameter) => {
+        const draftValue = current[parameter.key] ?? "";
+        const untouched = draftValue === (previous.values[parameter.key] ?? "");
+        const nextValue = next[parameter.key] ?? "";
+        if (untouched && draftValue !== nextValue) {
+          changed = true;
+        }
+        return [parameter.key, untouched ? nextValue : draftValue];
+      }),
+    );
+
+    if (changed) {
+      setDraft(merged);
+      setAttempted(false);
+    }
   }, [valuesKey, endpoint]);
 
   const errors = useMemo(

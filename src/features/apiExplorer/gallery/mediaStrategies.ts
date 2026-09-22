@@ -15,6 +15,8 @@ import type { SearchResultMeta } from "@/features/search/types";
 import { BlizzardRequestError, blizzardClient } from "@/lib/blizzardClient";
 import { env } from "@/lib/env";
 import { isAbortError } from "@/lib/errors";
+import type { ExternalLinkKind } from "@/lib/externalLinks";
+import { humanizeEnum } from "@/lib/format";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -27,7 +29,9 @@ export type GalleryStrategyId =
   | "race-via-racial-spell"
   | "heirloom-via-item"
   | "tech-talent-via-detail"
-  | "class-via-detail";
+  | "class-via-detail"
+  | "affix-via-detail"
+  | "pet-via-detail";
 
 export type MediaRequest = {
   path: string;
@@ -79,6 +83,11 @@ export type DatasetProfile = {
   sortByName?: boolean;
   /** Card layout for the family's sections (compact by default). */
   layout?: "compact" | "row";
+  /**
+   * Public-page kind for `getExternalLink(kind, id, name)`, resolved from the
+   * index record so every card carries its Wowhead link before enrichment.
+   */
+  externalLinkKind?: ExternalLinkKind;
 };
 
 /* ------------------------------------------------------------------ */
@@ -106,11 +115,12 @@ const detailRequest = (
 /** Per-family enrichment rules, keyed by slug (exactly the dataset families). */
 export const DATASET_PROFILES: Record<string, DatasetProfile> = {
   pet: {
+    externalLinkKind: "battlepet",
     buildMediaRequest: (record) => {
       const id = idOf(record);
       return id === undefined
         ? undefined
-        : directMedia(`/data/wow/media/pet/${id}`);
+        : detailRequest(`/data/wow/pet/${id}`, "pet-via-detail");
     },
   },
   talent: {
@@ -212,6 +222,16 @@ export const DATASET_PROFILES: Record<string, DatasetProfile> = {
       const id = idOf(record);
       const iconName = id === undefined ? undefined : POWER_TYPE_ICON_NAMES[id];
       return iconName ? buildRenderIconUrl(iconName) : undefined;
+    },
+  },
+  "mythic-keystone-affix": {
+    sortByName: true,
+    layout: "row",
+    buildMediaRequest: (record) => {
+      const id = idOf(record);
+      return id === undefined
+        ? undefined
+        : detailRequest(`/data/wow/keystone-affix/${id}`, "affix-via-detail");
     },
   },
   "item-appearance": { buildMediaRequest: noMediaRequest },
@@ -500,6 +520,124 @@ const classViaDetail: MediaStrategy = async (target, ctx) => {
   };
 };
 
+type KeystoneAffixDetail = {
+  id?: number;
+  description?: unknown;
+  media?: { id?: number };
+};
+
+/** Affix detail carries the effect text; its media record carries the icon. */
+const affixViaDetail: MediaStrategy = async (target, ctx) => {
+  const detail = await fetchDetail<KeystoneAffixDetail>(target, ctx);
+  const pathId = extractNumericPathSegment(
+    target.path,
+    /\/keystone-affix\/(\d+)/u,
+  );
+  const mediaId = detail?.media?.id ?? detail?.id ?? pathId;
+  const url =
+    typeof mediaId === "number"
+      ? await fetchSharedIconUrl(
+          ctx,
+          ["keystone-affix-media", mediaId, env.region],
+          `/data/wow/media/keystone-affix/${mediaId}`,
+          target.namespace,
+        )
+      : undefined;
+
+  const description = resolveLocalizedString(detail?.description) || undefined;
+
+  return {
+    url,
+    summary: description,
+    meta: metaRows([["Effect", description]]),
+  };
+};
+
+type BattlePetDetail = {
+  id?: number;
+  battle_pet_type?: { type?: string; name?: unknown };
+  description?: unknown;
+  source?: { type?: string; name?: unknown };
+  abilities?: Array<{
+    ability?: { name?: unknown; id?: number };
+    slot?: number;
+    required_level?: number;
+  }>;
+  is_capturable?: boolean;
+  is_tradable?: boolean;
+  is_alliance_only?: boolean;
+  is_horde_only?: boolean;
+  icon?: unknown;
+  media?: { id?: number };
+};
+
+/**
+ * Battle pet detail carries the icon URL directly; the media record is only
+ * fetched when it does not. Type, source, description and abilities become
+ * the card facts and dialog rows.
+ */
+const petViaDetail: MediaStrategy = async (target, ctx) => {
+  const detail = await fetchDetail<BattlePetDetail>(target, ctx);
+  const pathId = extractNumericPathSegment(target.path, /\/pet\/(\d+)/u);
+  const mediaId = detail?.media?.id ?? detail?.id ?? pathId;
+  const url =
+    typeof detail?.icon === "string" && detail.icon.length > 0
+      ? detail.icon
+      : typeof mediaId === "number"
+        ? await fetchSharedIconUrl(
+            ctx,
+            ["pet-media", mediaId, env.region],
+            `/data/wow/media/pet/${mediaId}`,
+            target.namespace,
+          )
+        : undefined;
+
+  const petType =
+    resolveLocalizedString(detail?.battle_pet_type?.name) ||
+    (typeof detail?.battle_pet_type?.type === "string"
+      ? humanizeEnum(detail.battle_pet_type.type)
+      : undefined);
+  const source =
+    resolveLocalizedString(detail?.source?.name) ||
+    (typeof detail?.source?.type === "string"
+      ? humanizeEnum(detail.source.type)
+      : undefined);
+  const description = resolveLocalizedString(detail?.description) || undefined;
+  const abilities = [...(detail?.abilities ?? [])]
+    .sort((a, b) => (a.slot ?? 0) - (b.slot ?? 0))
+    .map((entry) => {
+      const name = resolveLocalizedString(entry.ability?.name);
+      if (name.length === 0) {
+        return "";
+      }
+      return typeof entry.required_level === "number" &&
+        entry.required_level > 1
+        ? `${name} (level ${entry.required_level})`
+        : name;
+    })
+    .filter((name) => name.length > 0);
+  const faction = detail?.is_alliance_only
+    ? "Alliance"
+    : detail?.is_horde_only
+      ? "Horde"
+      : undefined;
+
+  return {
+    url,
+    summary: description,
+    details: joinDetails([petType, source]),
+    tag: petType,
+    meta: metaRows([
+      ["Type", petType],
+      ["Source", source],
+      ["Abilities", abilities.join(", ") || undefined],
+      ["Faction", faction],
+      ["Capturable", detail?.is_capturable ? "Yes" : undefined],
+      ["Tradable", detail?.is_tradable ? "Yes" : undefined],
+    ]),
+  };
+};
+
 const directMediaStrategy: MediaStrategy = async (target, ctx) => ({
   url: pickIconAssetUrl(await fetchDetail<unknown>(target, ctx)),
 });
@@ -512,6 +650,8 @@ export const MEDIA_STRATEGIES: Record<GalleryStrategyId, MediaStrategy> = {
   "heirloom-via-item": heirloomViaItem,
   "tech-talent-via-detail": techTalentViaDetail,
   "class-via-detail": classViaDetail,
+  "affix-via-detail": affixViaDetail,
+  "pet-via-detail": petViaDetail,
 };
 
 /* ------------------------------------------------------------------ */

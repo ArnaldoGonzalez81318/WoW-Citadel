@@ -1,6 +1,6 @@
 import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 
 import type {
   ApiEndpointDefinition,
@@ -100,43 +100,77 @@ export const resolveEndpointRequest = (
 
 type SettledResult = { isSuccess: boolean; data?: unknown };
 
-/**
- * Finds path values for parameters that are blank after curated defaults and
- * samples are applied, by matching the hrefs in sibling responses against the
- * family's path templates. Only genuinely unresolved keys are ever written, so
- * curated ids never churn once a search or index response arrives.
- */
-export const deriveDiscoveredPathValues = (
-  family: ApiFamilyConfig,
+/** Path parameter keys still blank after curated defaults and samples. */
+export const collectUnresolvedKeys = (
   requests: EndpointRequestDetails[],
-  results: SettledResult[],
-): Record<string, string> => {
-  const baselineUnresolvedKeys = new Set(
+): Set<string> =>
+  new Set(
     requests.flatMap((request) =>
       request.unresolvedPathParams.map((parameter) => parameter.key),
     ),
   );
 
+const shallowEqualRecords = (
+  left: Record<string, string>,
+  right: Record<string, string>,
+): boolean => {
+  const leftKeys = Object.keys(left);
+  return (
+    leftKeys.length === Object.keys(right).length &&
+    leftKeys.every((key) => left[key] === right[key])
+  );
+};
+
+/**
+ * Finds path values for parameters that are blank after curated defaults and
+ * samples are applied, by matching the hrefs in sibling responses against the
+ * family's path templates. Only genuinely unresolved keys are ever written, so
+ * curated ids never churn once a search or index response arrives.
+ *
+ * Only templates that contain an unresolved key are matched, and the scan
+ * stops as soon as every unresolved key has a value.
+ */
+export const deriveDiscoveredPathValues = (
+  family: ApiFamilyConfig,
+  requests: EndpointRequestDetails[],
+  results: SettledResult[],
+  unresolvedKeys: Set<string> = collectUnresolvedKeys(requests),
+): Record<string, string> => {
   const next: Record<string, string> = {};
 
-  if (baselineUnresolvedKeys.size === 0) {
+  if (unresolvedKeys.size === 0) {
     return next;
   }
 
-  results.forEach((result) => {
+  const templates = family.endpoints.filter((candidate) =>
+    Array.from(unresolvedKeys).some((key) => candidate.path.includes(`{${key}}`)),
+  );
+  if (templates.length === 0) {
+    return next;
+  }
+
+  const remaining = new Set(unresolvedKeys);
+
+  for (const result of results) {
+    if (remaining.size === 0) {
+      break;
+    }
     if (!result.isSuccess) {
-      return;
+      continue;
     }
 
-    collectUrlStrings(result.data).forEach((href) => {
-      family.endpoints.forEach((candidate) => {
+    for (const href of collectUrlStrings(result.data)) {
+      if (remaining.size === 0) {
+        break;
+      }
+      for (const candidate of templates) {
         const match = matchPathTemplate(candidate.path, href);
         if (!match) {
-          return;
+          continue;
         }
 
         Object.entries(match).forEach(([key, value]) => {
-          if (!baselineUnresolvedKeys.has(key) || next[key]) {
+          if (!remaining.has(key)) {
             return;
           }
           // "/quest/index" must not become questId, nor "/quest/category".
@@ -144,10 +178,11 @@ export const deriveDiscoveredPathValues = (
             return;
           }
           next[key] = value;
+          remaining.delete(key);
         });
-      });
-    });
-  });
+      }
+    }
+  }
 
   return next;
 };
@@ -240,14 +275,29 @@ export type FamilyEndpointDiscovery = {
   indexQueries: Array<IndexEndpointQuery | undefined>;
 };
 
+export type FamilyEndpointDiscoveryOptions = {
+  /**
+   * `"all"` (default) fetches every resolvable endpoint, for callers that
+   * render the responses (the family overview). `"discovery"` fetches only
+   * when the family has a blank path parameter to discover, so a caller
+   * that just wants `discoveredPathValues` never downloads payloads it will
+   * not show.
+   */
+  mode?: "all" | "discovery";
+};
+
+type LatchedValues = { slug: string; values: Record<string, string> };
+
 /**
  * Fetches every endpoint whose path resolves without discovery (indexes,
  * curated ids, samples) and derives path values for the rest from those
  * responses. The fetched set never depends on the discovered values, so
- * query keys are stable across renders.
+ * query keys are stable across renders, and a discovered value is latched
+ * for the family's lifetime so it never flips with response arrival order.
  */
 export const useFamilyEndpointDiscovery = (
   family: ApiFamilyConfig,
+  options?: FamilyEndpointDiscoveryOptions,
 ): FamilyEndpointDiscovery => {
   const baselineRequests = useMemo(
     () =>
@@ -255,6 +305,11 @@ export const useFamilyEndpointDiscovery = (
         resolveEndpointRequest(endpoint, {}, {}),
       ),
     [family],
+  );
+
+  const unresolvedKeys = useMemo(
+    () => collectUnresolvedKeys(baselineRequests),
+    [baselineRequests],
   );
 
   const fetchable = useMemo(
@@ -269,11 +324,17 @@ export const useFamilyEndpointDiscovery = (
     [baselineRequests, family],
   );
 
+  // In discovery mode, families with nothing to discover never fan out
+  // (auction-house would otherwise download the commodities dump for a
+  // panel nobody opened).
+  const enabled = options?.mode !== "discovery" || unresolvedKeys.size > 0;
+
   const { queries, settled } = useQueries({
     queries: fetchable.map(({ endpoint, request }) => ({
       queryKey: endpointQueryKey(family, endpoint, request),
       queryFn: ({ signal }: { signal: AbortSignal }) =>
         fetchEndpoint(endpoint, request, signal),
+      enabled,
       retry: false,
       staleTime: ENDPOINT_STALE_TIME,
     })),
@@ -281,11 +342,25 @@ export const useFamilyEndpointDiscovery = (
   });
 
   // `settled` is structurally shared by react-query, so this only re-runs
-  // when a response actually arrives or changes.
-  const discoveredPathValues = useMemo(
-    () => deriveDiscoveredPathValues(family, baselineRequests, settled),
-    [family, baselineRequests, settled],
-  );
+  // when a response actually arrives or changes. Values already found are
+  // kept (keys are only ever added), so consumers' query keys stay stable.
+  const latchedRef = useRef<LatchedValues>({ slug: family.slug, values: {} });
+  const discoveredPathValues = useMemo(() => {
+    if (latchedRef.current.slug !== family.slug) {
+      latchedRef.current = { slug: family.slug, values: {} };
+    }
+    const derived = deriveDiscoveredPathValues(
+      family,
+      baselineRequests,
+      settled,
+      unresolvedKeys,
+    );
+    const merged = { ...derived, ...latchedRef.current.values };
+    if (!shallowEqualRecords(merged, latchedRef.current.values)) {
+      latchedRef.current = { slug: family.slug, values: merged };
+    }
+    return latchedRef.current.values;
+  }, [family, baselineRequests, settled, unresolvedKeys]);
 
   const indexQueries = useMemo(() => {
     const aligned: Array<IndexEndpointQuery | undefined> = family.endpoints.map(

@@ -14,6 +14,11 @@ export type EndpointErrorCopy = {
    * the shared message through `ErrorState` (which derives it itself).
    */
   hint?: string;
+  /**
+   * A list endpoint (index or search) whose records carry ids the failing
+   * endpoint accepts; callers render it as an "Open …" action.
+   */
+  suggestedEndpoint?: ApiEndpointDefinition;
   retryable: boolean;
 };
 
@@ -23,9 +28,58 @@ const joinSentences = (...parts: Array<string | undefined>): string =>
     .filter((part) => part.length > 0)
     .join(" ");
 
+const LIST_SUFFIX = /-(index|search)$/;
+
+const pathParamKeys = (endpoint: ApiEndpointDefinition): string[] =>
+  (endpoint.parameters ?? [])
+    .filter((parameter) => parameter.location === "path")
+    .map((parameter) => parameter.key)
+    .sort();
+
+const sameKeys = (left: string[], right: string[]): boolean =>
+  left.length > 0 &&
+  left.length === right.length &&
+  left.every((key, index) => key === right[index]);
+
 /**
- * The shared Blizzard error copy plus a hint specific to the workbench:
- * which index endpoint to take an id from, or which .env keys to check.
+ * The index or search endpoint whose records supply ids for `endpoint`:
+ * its namesake (`item-class` → `item-class-index`) first, else a list whose
+ * by-id sibling takes the same path parameters (`item-media` → `item-search`
+ * via `item`). Lists of unrelated records (item classes for an item id) are
+ * never suggested.
+ */
+export const findIdSourceEndpoint = (
+  endpoint: ApiEndpointDefinition,
+  family: ApiFamilyConfig,
+): ApiEndpointDefinition | undefined => {
+  const lists = family.endpoints.filter(
+    (candidate) =>
+      LIST_SUFFIX.test(candidate.id) && pathParamKeys(candidate).length === 0,
+  );
+  if (lists.length === 0) {
+    return undefined;
+  }
+
+  const namesake = lists.find(
+    (candidate) => candidate.id.replace(LIST_SUFFIX, "") === endpoint.id,
+  );
+  if (namesake) {
+    return namesake;
+  }
+
+  const keys = pathParamKeys(endpoint);
+  return lists.find((candidate) => {
+    const stem = family.endpoints.find(
+      (sibling) => sibling.id === candidate.id.replace(LIST_SUFFIX, ""),
+    );
+    return stem !== undefined && sameKeys(pathParamKeys(stem), keys);
+  });
+};
+
+/**
+ * The shared Blizzard error copy plus, for a 404, which list endpoint to
+ * take an id from. The shared message already explains the status, so
+ * nothing here repeats it.
  */
 export const describeEndpointError = (
   error: unknown,
@@ -35,27 +89,15 @@ export const describeEndpointError = (
   const base = describeBlizzardError(error, endpoint.label);
 
   if (base.status === 404) {
-    const indexEndpoint = family.endpoints.find((candidate) =>
-      candidate.id.endsWith("-index"),
-    );
-    const hint = joinSentences(
-      `No ${endpoint.label} exists at this path.`,
-      indexEndpoint ? `Try an id from ${indexEndpoint.label}.` : undefined,
-    );
+    const suggestedEndpoint = findIdSourceEndpoint(endpoint, family);
+    const hint = suggestedEndpoint
+      ? `Try an id from ${suggestedEndpoint.label}.`
+      : undefined;
     return {
       title: base.title,
       message: joinSentences(base.message, hint),
       hint,
-      retryable: base.retryable,
-    };
-  }
-
-  if (base.status === 401 || base.status === 403) {
-    const hint = "Check VITE_BNET_ACCESS_TOKEN or the proxy in .env.";
-    return {
-      title: base.title,
-      message: joinSentences(base.message, hint),
-      hint,
+      suggestedEndpoint,
       retryable: base.retryable,
     };
   }

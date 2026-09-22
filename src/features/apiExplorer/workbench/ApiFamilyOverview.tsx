@@ -1,3 +1,4 @@
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import {
   Button,
@@ -11,6 +12,7 @@ import {
   ListItemText,
   MenuItem,
   Select,
+  Skeleton,
   Stack,
   Typography,
 } from "@mui/material";
@@ -32,12 +34,18 @@ import type {
   ApiEndpointParameter,
   ApiFamilyConfig,
 } from "@/features/apiExplorer/types";
-import { matchPathTemplate, summarizeEntry } from "@/features/apiExplorer/utils";
+import { matchPathTemplate } from "@/features/apiExplorer/utils";
 import EndpointForm from "@/features/apiExplorer/workbench/EndpointForm";
 import { describeEndpointError } from "@/features/apiExplorer/workbench/errorMessages";
-import { CopyApiUrlButton } from "@/features/apiExplorer/workbench/JsonViewer";
 import {
-  buildPublicApiUrl,
+  extractIndexRecords,
+  extractLinkRecords,
+  workbenchLink,
+  workbenchLinkForHref,
+  workbenchPath,
+} from "@/features/apiExplorer/workbench/overviewRecords";
+import type { IndexRecord } from "@/features/apiExplorer/workbench/overviewRecords";
+import {
   isIdParameter,
   resolveEndpointRequest,
   useFamilyEndpointDiscovery,
@@ -66,77 +74,9 @@ export type ApiFamilyOverviewProps = {
 
 const INITIAL_ROWS = 10;
 const MAX_ROWS = 60;
-
-export const workbenchPath = (family: ApiFamilyConfig): string =>
-  `/api-explorer/${family.slug}`;
-
-/** `/api-explorer/{slug}?endpoint={id}&{param}={value}` — the workbench pre-filled. */
-export const workbenchLink = (
-  family: ApiFamilyConfig,
-  endpoint: ApiEndpointDefinition,
-  values: Record<string, string>,
-): string => {
-  const params = new URLSearchParams({ endpoint: endpoint.id });
-  Object.entries(values).forEach(([key, value]) => {
-    if (value.trim().length > 0) {
-      params.set(key, value.trim());
-    }
-  });
-  return `${workbenchPath(family)}?${params.toString()}`;
-};
-
-type IndexRecord = {
-  /** Stable React key: the record id, its `key.href`, or its index. */
-  key: string;
-  id?: number;
-  label: string;
-  href?: string;
-};
-
-const asRecord = (value: unknown): Record<string, unknown> | undefined =>
-  value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-
-const recordHref = (record: Record<string, unknown>): string | undefined => {
-  const key = asRecord(record.key);
-  return typeof key?.href === "string" ? key.href : undefined;
-};
-
-/**
- * The list an index / search response carries: `results[].data` entries
- * first, otherwise the first array value in the response.
- */
-export const extractIndexRecords = (data: unknown): IndexRecord[] => {
-  const root = asRecord(data);
-  if (!root) {
-    return [];
-  }
-
-  let entries: unknown[] = [];
-  if (Array.isArray(root.results)) {
-    entries = root.results.map((entry) => {
-      const wrapper = asRecord(entry);
-      return wrapper && "data" in wrapper ? wrapper.data : entry;
-    });
-  } else {
-    const firstArray = Object.values(root).find((value) => Array.isArray(value));
-    entries = Array.isArray(firstArray) ? firstArray : [];
-  }
-
-  const seen = new Set<string>();
-
-  return entries.map((entry, index) => {
-    const record = asRecord(entry);
-    const id = typeof record?.id === "number" ? record.id : undefined;
-    const href = record ? recordHref(record) : undefined;
-    const base = id !== undefined ? String(id) : (href ?? String(index));
-    // Keys must be unique even when an index repeats an id or href.
-    const key = seen.has(base) ? `${base}-${index}` : base;
-    seen.add(key);
-    return { key, id, label: summarizeEntry(entry), href };
-  });
-};
+/** Dense two-line row (body2 + caption) height, matched by the skeleton. */
+const ROW_HEIGHT = 48;
+const BUTTON_HEIGHT = 32;
 
 /** The one path parameter of a by-id endpoint, when that is its whole path. */
 const singleIdParameter = (
@@ -160,7 +100,9 @@ const detailTargets = (family: ApiFamilyConfig): DetailTarget[] =>
 
 /**
  * The by-id endpoint a record opens: the one whose path template matches the
- * record's `key.href`, else the index's namesake (`quest-index` → `quest`).
+ * record's `key.href`, else the list's namesake (`quest-index` → `quest`,
+ * `mount-search` → `mount`). A record that identifies neither stays a plain
+ * row rather than opening an unrelated endpoint with its id.
  */
 const resolveDetailLink = (
   family: ApiFamilyConfig,
@@ -184,15 +126,66 @@ const resolveDetailLink = (
     return undefined;
   }
 
-  const namesakeId = indexEndpoint.id.replace(/-index$/, "");
-  const target =
-    targets.find((candidate) => candidate.endpoint.id === namesakeId) ??
-    targets[0];
+  const namesakeId = indexEndpoint.id.replace(/-(index|search)$/, "");
+  const target = targets.find((candidate) => candidate.endpoint.id === namesakeId);
   return target
     ? workbenchLink(family, target.endpoint, {
         [target.parameter.key]: String(record.id),
       })
     : undefined;
+};
+
+const rowTextSlotProps = {
+  primary: { variant: "body2" },
+  secondary: { component: "span" },
+} as const;
+
+type RowProps = {
+  primary: string;
+  secondary?: string;
+  to?: string;
+};
+
+/** One record row; always an `<li>` so the list keeps its semantics. */
+const RecordRow = ({ primary, secondary, to }: RowProps): JSX.Element => {
+  const secondaryNode = secondary ? (
+    <Typography
+      component="span"
+      variant="caption"
+      color="text.secondary"
+      sx={(theme) => ({ fontFamily: theme.wc.fontMono })}
+    >
+      {secondary}
+    </Typography>
+  ) : undefined;
+
+  if (to) {
+    return (
+      <ListItem disablePadding>
+        <ListItemButton
+          component={RouterLink}
+          to={to}
+          sx={(theme) => ({ borderRadius: `${theme.wc.radius.sm}px` })}
+        >
+          <ListItemText
+            primary={primary}
+            secondary={secondaryNode}
+            slotProps={rowTextSlotProps}
+          />
+        </ListItemButton>
+      </ListItem>
+    );
+  }
+
+  return (
+    <ListItem>
+      <ListItemText
+        primary={primary}
+        secondary={secondaryNode}
+        slotProps={rowTextSlotProps}
+      />
+    </ListItem>
+  );
 };
 
 /* ------------------------------------------------------------------ */
@@ -205,15 +198,38 @@ type IndexSectionProps = {
   targets: DetailTarget[];
 };
 
-const IndexSection = ({ family, entry, targets }: IndexSectionProps): JSX.Element => {
-  const { endpoint, request, query } = entry;
-  const [showMore, setShowMore] = useState(false);
+/** Same shape as the loaded first page: rows, the "Show more" button, the count. */
+const SectionSkeleton = ({ label }: { label: string }): JSX.Element => (
+  <Stack spacing={1}>
+    <LoadingSkeleton
+      variant="rows"
+      count={INITIAL_ROWS}
+      itemHeight={ROW_HEIGHT}
+      gap={0}
+      label={`Loading ${label}`}
+    />
+    <Skeleton
+      variant="rectangular"
+      width={120}
+      height={BUTTON_HEIGHT}
+      sx={(theme) => ({ borderRadius: `${theme.wc.radius.md}px` })}
+    />
+    <Skeleton variant="text" width={96} sx={{ fontSize: "0.75rem" }} />
+  </Stack>
+);
 
-  const apiUrl = useMemo(() => buildPublicApiUrl(endpoint, request), [endpoint, request]);
+const IndexSection = ({ family, entry, targets }: IndexSectionProps): JSX.Element => {
+  const { endpoint, query } = entry;
+  const [showMore, setShowMore] = useState(false);
 
   const records = useMemo(
     () => (query.isSuccess ? extractIndexRecords(query.data) : []),
     [query.isSuccess, query.data],
+  );
+  // Link-only indexes (`/quest/index`) list the indexes they point to.
+  const links = useMemo(
+    () => (query.isSuccess && records.length === 0 ? extractLinkRecords(query.data) : []),
+    [query.isSuccess, query.data, records.length],
   );
   const shown = records.slice(0, MAX_ROWS);
   const initial = shown.slice(0, INITIAL_ROWS);
@@ -223,54 +239,21 @@ const IndexSection = ({ family, entry, targets }: IndexSectionProps): JSX.Elemen
     () => (query.isError ? describeEndpointError(query.error, endpoint, family) : null),
     [query.isError, query.error, endpoint, family],
   );
+  const suggested = errorCopy?.suggestedEndpoint;
 
-  const renderRow = (record: IndexRecord): JSX.Element => {
-    const to = resolveDetailLink(family, endpoint, targets, record);
-    const secondary =
-      record.id !== undefined ? (
-        <Typography
-          component="span"
-          variant="caption"
-          color="text.secondary"
-          sx={(theme) => ({ fontFamily: theme.wc.fontMono })}
-        >
-          ID {record.id}
-        </Typography>
-      ) : undefined;
-
-    if (to) {
-      return (
-        <ListItemButton
-          key={record.key}
-          component={RouterLink}
-          to={to}
-          sx={(theme) => ({ borderRadius: `${theme.wc.radius.sm}px` })}
-        >
-          <ListItemText
-            primary={record.label}
-            secondary={secondary}
-            slotProps={{
-              primary: { variant: "body2" },
-              secondary: { component: "span" },
-            }}
-          />
-        </ListItemButton>
-      );
-    }
-
-    return (
-      <ListItem key={record.key}>
-        <ListItemText
-          primary={record.label}
-          secondary={secondary}
-          slotProps={{
-            primary: { variant: "body2" },
-            secondary: { component: "span" },
-          }}
-        />
-      </ListItem>
-    );
-  };
+  const renderRow = (record: IndexRecord): JSX.Element => (
+    <RecordRow
+      key={record.key}
+      primary={record.label}
+      // The label already reads "ID n" when the record has no name.
+      secondary={
+        record.id !== undefined && record.label !== `ID ${record.id}`
+          ? `ID ${record.id}`
+          : undefined
+      }
+      to={resolveDetailLink(family, endpoint, targets, record)}
+    />
+  );
 
   return (
     <SectionCard
@@ -279,31 +262,19 @@ const IndexSection = ({ family, entry, targets }: IndexSectionProps): JSX.Elemen
       description={endpoint.description}
       padding="compact"
       actions={
-        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0 }}>
-          <Typography
-            component="code"
-            variant="caption"
-            color="text.secondary"
-            sx={(theme) => ({
-              fontFamily: theme.wc.fontMono,
-              overflowWrap: "anywhere",
-              display: { xs: "none", sm: "inline" },
-            })}
-          >
-            {request.requestPath}
-          </Typography>
-          <CopyApiUrlButton apiUrl={apiUrl} label={endpoint.label} />
-        </Stack>
+        <Button
+          size="small"
+          variant="text"
+          component={RouterLink}
+          to={workbenchLink(family, endpoint, {})}
+          endIcon={<ArrowForwardRoundedIcon />}
+        >
+          Open in workbench
+        </Button>
       }
     >
       {query.isLoading ? (
-        <LoadingSkeleton
-          variant="rows"
-          count={6}
-          itemHeight={44}
-          gap={4}
-          label={`Loading ${endpoint.label}`}
-        />
+        <SectionSkeleton label={endpoint.label} />
       ) : query.isError && errorCopy ? (
         <ErrorState
           compact
@@ -314,15 +285,40 @@ const IndexSection = ({ family, entry, targets }: IndexSectionProps): JSX.Elemen
             void query.refetch();
           }}
           secondaryAction={
-            errorCopy.hint ? (
-              <Typography variant="body2" component="p" sx={{ margin: 0 }}>
-                {errorCopy.hint}
-              </Typography>
+            suggested ? (
+              <Button
+                size="small"
+                variant="text"
+                color="inherit"
+                component={RouterLink}
+                to={workbenchLink(family, suggested, {})}
+              >
+                Open {suggested.label}
+              </Button>
             ) : undefined
           }
         />
+      ) : records.length === 0 && links.length > 0 ? (
+        <Stack spacing={1}>
+          <List dense disablePadding aria-label={`${endpoint.label} links`}>
+            {links.map((link) => (
+              <RecordRow
+                key={link.key}
+                primary={link.label}
+                to={workbenchLinkForHref(family, link.href)}
+              />
+            ))}
+          </List>
+          <LiveStatus component="p" sx={{ fontSize: "0.75rem" }}>
+            {formatNumber(links.length)} linked {links.length === 1 ? "index" : "indexes"}
+          </LiveStatus>
+        </Stack>
       ) : records.length === 0 ? (
-        <EmptyState compact title="No records returned" />
+        <EmptyState
+          compact
+          title="Nothing to list"
+          description={`${endpoint.label} answered without a list of records. Open it in the workbench to read the raw response.`}
+        />
       ) : (
         <Stack spacing={1}>
           <List dense disablePadding>
@@ -335,16 +331,15 @@ const IndexSection = ({ family, entry, targets }: IndexSectionProps): JSX.Elemen
                   {rest.map(renderRow)}
                 </List>
               </Collapse>
-              {!showMore ? (
-                <Button
-                  size="small"
-                  variant="text"
-                  onClick={() => setShowMore(true)}
-                  sx={{ alignSelf: "flex-start" }}
-                >
-                  Show {formatNumber(rest.length)} more
-                </Button>
-              ) : null}
+              <Button
+                size="small"
+                variant="text"
+                aria-expanded={showMore}
+                onClick={() => setShowMore((current) => !current)}
+                sx={{ alignSelf: "flex-start" }}
+              >
+                {showMore ? "Show less" : `Show ${formatNumber(rest.length)} more`}
+              </Button>
             </>
           ) : null}
           <LiveStatus component="p" sx={{ fontSize: "0.75rem" }}>
@@ -396,15 +391,15 @@ const LookupSection = ({ family, discovered }: LookupSectionProps): JSX.Element 
       titleAs="h2"
       title="Look up by id"
       icon={<SearchRoundedIcon />}
-      description="Pick an endpoint, enter its id and open the raw response in the workbench."
+      description="Pick a record type, enter an id and open it in the API workbench."
     >
       <Stack spacing={2}>
         <FormControl size="small" sx={{ maxWidth: 360 }}>
-          <InputLabel id={`${selectId}-label`}>Endpoint</InputLabel>
+          <InputLabel id={`${selectId}-label`}>Record type</InputLabel>
           <Select
             labelId={`${selectId}-label`}
             id={selectId}
-            label="Endpoint"
+            label="Record type"
             value={selected.id}
             onChange={(event) => setSelectedId(String(event.target.value))}
           >

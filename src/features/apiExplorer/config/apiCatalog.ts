@@ -1023,7 +1023,10 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
     label: "Mythic Keystone Affix API",
     description: "Affix index, detail, and media.",
     accentColor: "primary",
-    presentation: "family",
+    presentation: "dataset",
+    datasetSources: [
+      "keystone-affix-index",
+    ],
     endpoints: [
       endpoint(
         "keystone-affix-index",

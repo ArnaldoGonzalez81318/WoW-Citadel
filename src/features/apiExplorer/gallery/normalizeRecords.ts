@@ -8,6 +8,7 @@ import {
 } from "@/features/apiExplorer/utils";
 import type { SearchResult, SearchResultMeta } from "@/features/search/types";
 import { env, getApiBaseUrl, shouldUseBlizzardProxy } from "@/lib/env";
+import { getExternalLink } from "@/lib/externalLinks";
 import { humanizeEnum } from "@/lib/format";
 
 import type {
@@ -36,7 +37,10 @@ export type GallerySection = {
   id: string;
   label: string;
   cards: GalleryCard[];
+  /** Deduped card count: the population every visible count describes. */
   totalEntries: number;
+  /** The index request has not settled yet (no data, no error). */
+  pending: boolean;
 };
 
 export type EndpointRequestDetails = {
@@ -53,6 +57,22 @@ export type RecordDetails = {
 };
 
 const UNKNOWN_ENTRY = "Unknown entry";
+
+/**
+ * Shared name comparator: one ICU collator instead of a `localeCompare` per
+ * comparison, with numeric ordering ("Rank 2" before "Rank 10").
+ */
+export const NAME_COLLATOR = new Intl.Collator(undefined, {
+  sensitivity: "base",
+  numeric: true,
+});
+
+export const compareCardNames = (a: GalleryCard, b: GalleryCard): number =>
+  NAME_COLLATOR.compare(a.name, b.name);
+
+/** DOM id of a section's SectionCard (jump chips, fragment links). */
+export const gallerySectionDomId = (sectionId: string): string =>
+  `gallery-section-${sectionId}`;
 
 /* ------------------------------------------------------------------ */
 /* Basic guards                                                        */
@@ -506,6 +526,13 @@ export const normalizeSectionCards = (
         const name = resolveName(entry, record);
         const mediaRequest = profile?.buildMediaRequest(record, endpoint.id);
         const { details, meta } = buildDetails(record);
+        const link = profile?.externalLinkKind
+          ? getExternalLink(
+              profile.externalLinkKind,
+              typeof record.id === "number" ? record.id : undefined,
+              name,
+            )
+          : undefined;
 
         return {
           key: `${endpoint.id}-${String(record.id ?? name ?? index)}-${index}`,
@@ -522,6 +549,8 @@ export const normalizeSectionCards = (
           mediaRequestStrategy: mediaRequest?.strategy,
           typeLabel,
           tag: resolveLocalizedString(asRecord(record.type)?.name) || undefined,
+          externalUrl: link?.url,
+          externalLabel: link?.label,
         };
       })
       .filter((card) => card.name !== UNKNOWN_ENTRY),
@@ -532,7 +561,7 @@ export const normalizeSectionCards = (
     : cards;
 
   if (profile?.sortByName) {
-    displayCards.sort((a, b) => a.name.localeCompare(b.name));
+    displayCards.sort(compareCardNames);
   }
 
   return displayCards;

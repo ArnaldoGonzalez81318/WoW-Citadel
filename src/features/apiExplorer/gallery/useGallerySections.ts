@@ -4,7 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { VisibleRange } from "@/components/common/VirtualizedCardGrid";
 import { getDatasetSourceEndpoints } from "@/features/apiExplorer/config/apiCatalog";
@@ -20,6 +20,7 @@ import type {
 } from "@/features/apiExplorer/gallery/mediaStrategies";
 import {
   buildMediaQueryToken,
+  compareCardNames,
   extractEntries,
   normalizeSectionCards,
   resolveEndpointRequest,
@@ -47,6 +48,12 @@ export type GallerySort = "api" | "name" | "id";
 export type VisibleGallerySection = GallerySection & {
   /** Cards matching the active filter (all cards when no filter). */
   matchCount: number;
+  /**
+   * More matching cards exist beyond `cards`: large sections are paged
+   * (`GALLERY_PAGE_SIZE` at a time) so the document never grows to tens of
+   * thousands of pixels; `loadMore(section.id)` reveals the next page.
+   */
+  hasMore: boolean;
 };
 
 export type SectionError = {
@@ -78,10 +85,20 @@ export type UseGallerySectionsOptions = {
 export type UseGallerySectionsResult = {
   /** Every section with enriched cards, in catalog order. */
   sections: GallerySection[];
-  /** Sections after filter + sort (sections with no match are dropped while filtering). */
+  /**
+   * Sections with something to show, after filter + sort: pending sections
+   * (rendered as skeletons) and sections with at least one card (one match
+   * while filtering). Settled-empty and failed endpoints are excluded.
+   */
   visibleSections: VisibleGallerySection[];
+  /** Sections that are pending or hold cards, ignoring the filter. */
+  sectionCount: number;
   totalRecords: number;
   matchCount: number;
+  /** Matching cards currently handed to the grids (after paging). */
+  shownCount: number;
+  /** Reveals the next `GALLERY_PAGE_SIZE` cards of a paged section. */
+  loadMore: (sectionId: string) => void;
   isLoading: boolean;
   isFetching: boolean;
   allFailed: boolean;
@@ -101,15 +118,25 @@ const STALE_TIME_MS = 300_000;
 const MAX_MEDIA_TARGETS_PER_SECTION = 40;
 const EMPTY_RANGE: VisibleRange = { start: 0, end: 0 };
 
+/** Sections with more matching cards than this are revealed a page at a time. */
+export const GALLERY_PAGINATE_ABOVE = 200;
+export const GALLERY_PAGE_SIZE = 96;
+
+const EMPTY_PAGES: Record<string, number> = {};
+
 /*
- * The combined values are plain data only (no closures): QueriesObserver runs
- * them through `replaceEqualDeep`, so `data` keeps its identity until a query
- * actually changes and the memos below do not rerun on every render.
+ * The combined value is plain data only (no closures): QueriesObserver runs
+ * it through `replaceEqualDeep`, so `data` keeps its identity until a query
+ * actually changes and the memos below do not rerun on every render. The
+ * endpoint list is fixed per family, so the memoised combine is always
+ * aligned with the queries.
  */
 
 type CombinedEndpointQueries = {
   data: unknown[];
   errors: Array<unknown | null>;
+  /** Per endpoint: no data yet and not failed. */
+  pending: boolean[];
   isLoading: boolean;
   isFetching: boolean;
 };
@@ -119,26 +146,30 @@ const combineEndpointQueries = (
 ): CombinedEndpointQueries => ({
   data: results.map((result) => result.data),
   errors: results.map((result) => result.error ?? null),
+  pending: results.map((result) => result.isPending),
   isLoading: results.some((result) => result.isPending),
   isFetching: results.some((result) => result.isFetching),
 });
 
-type CombinedMediaQuery = {
+/**
+ * One media query's state, keyed by token. Media queries do NOT use
+ * `combine`: its memoised result lags one render behind whenever the target
+ * list changes, which would join card N's result to whichever card now sits
+ * at index N. The raw result array is always aligned with the `queries`
+ * passed in the same render, so the map is built from it directly and keeps
+ * its identity (and each entry's) while nothing changed.
+ */
+type MediaEntry = {
+  target: MediaQueryTarget;
   data: MediaQueryResult | undefined;
   isPending: boolean;
   isError: boolean;
   error: unknown;
 };
 
-const combineMediaQueries = (
-  results: UseQueryResult<MediaQueryResult>[],
-): CombinedMediaQuery[] =>
-  results.map((result) => ({
-    data: result.data,
-    isPending: result.isPending || result.isFetching,
-    isError: result.isError,
-    error: result.error ?? null,
-  }));
+type MediaByToken = ReadonlyMap<string, MediaEntry>;
+
+const EMPTY_MEDIA: MediaByToken = new Map();
 
 const endpointQueryKey = (
   slug: string,
@@ -192,7 +223,7 @@ const mediaTargetForCard = (
 
 const sortCards = (cards: GalleryCard[], sort: GallerySort): GalleryCard[] => {
   if (sort === "name") {
-    return [...cards].sort((a, b) => a.name.localeCompare(b.name));
+    return [...cards].sort(compareCardNames);
   }
   if (sort === "id") {
     return [...cards].sort((a, b) => a.id - b.id);
@@ -200,10 +231,26 @@ const sortCards = (cards: GalleryCard[], sort: GallerySort): GalleryCard[] => {
   return cards;
 };
 
+/*
+ * Enrichment is a pure function of (base card, enrichment data). Caching the
+ * output per base card keeps enriched cards' identities stable across renders
+ * (react-query keeps `data` identity via structural sharing), so
+ * memo(ResultCard) bails out and VirtualizedCardGrid sees unchanged items.
+ */
+const enrichedCardCache = new WeakMap<
+  GalleryCard,
+  { enrichment: MediaQueryResult; card: GalleryCard }
+>();
+
 const applyEnrichment = (
   card: GalleryCard,
   enrichment: MediaQueryResult,
 ): GalleryCard => {
+  const cached = enrichedCardCache.get(card);
+  if (cached && cached.enrichment === enrichment) {
+    return cached.card;
+  }
+
   const next: GalleryCard = {
     ...card,
     mediaUrl: card.mediaUrl ?? enrichment.url,
@@ -230,17 +277,22 @@ const applyEnrichment = (
     next.externalLabel = link.label;
   }
 
+  enrichedCardCache.set(card, { enrichment, card: next });
   return next;
 };
 
+/** Last enriched output per base section, so unchanged sections keep identity. */
+const enrichedSectionCache = new WeakMap<GallerySection, GallerySection>();
+
 /**
  * Merges landed enrichment into a section's cards. Returns the very same
- * section object when no card changed so VirtualizedCardGrid keeps its
- * `items` identity (F014).
+ * section object when no card has enrichment, and the previously returned
+ * object when every enriched card is identical to last time, so
+ * VirtualizedCardGrid keeps its `items` identity (F014).
  */
 const enrichSection = <S extends GallerySection>(
   section: S,
-  mediaResultByToken: ReadonlyMap<string, MediaQueryResult | undefined>,
+  mediaByToken: MediaByToken,
 ): S => {
   let changed = false;
 
@@ -248,9 +300,9 @@ const enrichSection = <S extends GallerySection>(
     if (!card.mediaRequestPath) {
       return card;
     }
-    const enrichment = mediaResultByToken.get(
+    const enrichment = mediaByToken.get(
       buildMediaQueryToken(card.mediaRequestPath, card.mediaRequestNamespace),
-    );
+    )?.data;
     if (!enrichment || enrichment.status === "not-found") {
       return card;
     }
@@ -258,7 +310,22 @@ const enrichSection = <S extends GallerySection>(
     return applyEnrichment(card, enrichment);
   });
 
-  return changed ? { ...section, cards } : section;
+  if (!changed) {
+    return section;
+  }
+
+  const previous = enrichedSectionCache.get(section) as S | undefined;
+  if (
+    previous &&
+    previous.cards.length === cards.length &&
+    previous.cards.every((card, index) => card === cards[index])
+  ) {
+    return previous;
+  }
+
+  const next: S = { ...section, cards };
+  enrichedSectionCache.set(section, next);
+  return next;
 };
 
 /* ------------------------------------------------------------------ */
@@ -287,29 +354,36 @@ export const useGallerySections = ({
 
   /* ---------------------------- index queries ------------------------ */
 
+  const endpointQueries = useMemo(
+    () =>
+      eligibleEndpoints.map((endpoint, index) => {
+        const request = resolvedRequests[index];
+
+        return {
+          queryKey: endpointQueryKey(slug, endpoint, request),
+          queryFn: ({ signal }: { signal: AbortSignal }) =>
+            blizzardClient.get<unknown>(
+              request.requestPath,
+              { ...request.queryParams, namespace: request.namespace },
+              { signal },
+            ),
+          retry: retryPolicy,
+          retryDelay: mediaRetryDelay,
+          staleTime: STALE_TIME_MS,
+          placeholderData: keepPreviousData,
+        };
+      }),
+    [eligibleEndpoints, resolvedRequests, slug],
+  );
+
   const {
     data: endpointData,
     errors,
+    pending: endpointPending,
     isLoading,
     isFetching,
   } = useQueries({
-    queries: eligibleEndpoints.map((endpoint, index) => {
-      const request = resolvedRequests[index];
-
-      return {
-        queryKey: endpointQueryKey(slug, endpoint, request),
-        queryFn: ({ signal }: { signal: AbortSignal }) =>
-          blizzardClient.get<unknown>(
-            request.requestPath,
-            { ...request.queryParams, namespace: request.namespace },
-            { signal },
-          ),
-        retry: retryPolicy,
-        retryDelay: mediaRetryDelay,
-        staleTime: STALE_TIME_MS,
-        placeholderData: keepPreviousData,
-      };
-    }),
+    queries: endpointQueries,
     combine: combineEndpointQueries,
   });
 
@@ -319,26 +393,36 @@ export const useGallerySections = ({
         const data = endpointData[index];
         const request = resolvedRequests[index];
         const entries = data ? extractEntries(data) : [];
+        const cards = normalizeSectionCards(
+          profile,
+          entries,
+          endpoint,
+          request,
+        );
 
         return {
           id: endpoint.id,
           label: sectionLabelForEndpoint(endpoint),
-          cards: normalizeSectionCards(profile, entries, endpoint, request),
-          totalEntries: entries.length,
+          cards,
+          totalEntries: cards.length,
+          pending: endpointPending[index] === true,
         };
       }),
-    [eligibleEndpoints, endpointData, resolvedRequests, profile],
+    [
+      eligibleEndpoints,
+      endpointData,
+      endpointPending,
+      resolvedRequests,
+      profile,
+    ],
   );
 
   /* ---------------------------- visible ranges ----------------------- */
 
+  // CategoryPage remounts the gallery per slug, so no slug reset is needed.
   const [visibleRangesBySectionId, setVisibleRangesBySectionId] = useState<
     Record<string, VisibleRange>
   >({});
-
-  useEffect(() => {
-    setVisibleRangesBySectionId({});
-  }, [slug]);
 
   const onVisibleRangeChange = useCallback(
     (sectionId: string, range: VisibleRange) => {
@@ -351,6 +435,33 @@ export const useGallerySections = ({
       });
     },
     [],
+  );
+
+  /* ---------------------------- paging ------------------------------- */
+
+  /*
+   * Pages revealed per section, valid for one (filter, sort) combination: a
+   * new filter or order starts every section at its first page again.
+   */
+  const pagingKey = `${filter.trim().toLowerCase()} ${sort}`;
+  const [paging, setPaging] = useState<{
+    key: string;
+    pages: Record<string, number>;
+  }>({ key: pagingKey, pages: EMPTY_PAGES });
+  const pagesBySectionId =
+    paging.key === pagingKey ? paging.pages : EMPTY_PAGES;
+
+  const loadMore = useCallback(
+    (sectionId: string) => {
+      setPaging((current) => {
+        const pages = current.key === pagingKey ? current.pages : EMPTY_PAGES;
+        return {
+          key: pagingKey,
+          pages: { ...pages, [sectionId]: (pages[sectionId] ?? 1) + 1 },
+        };
+      });
+    },
+    [pagingKey],
   );
 
   /* ---------------------------- filter + sort ------------------------ */
@@ -371,15 +482,34 @@ export const useGallerySections = ({
                 card.name.toLowerCase().includes(query),
               )
             : section.cards;
+        const sorted = sortCards(matching, sort);
+        const limit =
+          sorted.length > GALLERY_PAGINATE_ABOVE
+            ? (pagesBySectionId[section.id] ?? 1) * GALLERY_PAGE_SIZE
+            : sorted.length;
 
         return {
           ...section,
-          cards: sortCards(matching, sort),
+          cards: sorted.length > limit ? sorted.slice(0, limit) : sorted,
           matchCount: matching.length,
+          hasMore: sorted.length > limit,
         };
       })
-      .filter((section) => query.length === 0 || section.matchCount > 0);
-  }, [baseSections, filter, sort]);
+      .filter(
+        (section) =>
+          section.pending ||
+          (section.cards.length > 0 &&
+            (query.length === 0 || section.matchCount > 0)),
+      );
+  }, [baseSections, filter, sort, pagesBySectionId]);
+
+  const sectionCount = useMemo(
+    () =>
+      baseSections.filter(
+        (section) => section.pending || section.cards.length > 0,
+      ).length,
+    [baseSections],
+  );
 
   /* ---------------------------- media targets ------------------------ */
 
@@ -435,61 +565,96 @@ export const useGallerySections = ({
     selectedKey,
   ]);
 
-  const mediaData = useQueries({
-    queries: mediaTargets.map((target) => ({
-      queryKey: mediaQueryKey(slug, target),
-      queryFn: ({ signal }: { signal: AbortSignal }) =>
-        runMediaStrategy(target, { queryClient, signal }),
-      retry: retryPolicy,
-      retryDelay: mediaRetryDelay,
-      staleTime: STALE_TIME_MS,
-    })),
-    combine: combineMediaQueries,
-  });
+  const mediaQueries = useMemo(
+    () =>
+      mediaTargets.map((target) => ({
+        queryKey: mediaQueryKey(slug, target),
+        queryFn: ({ signal }: { signal: AbortSignal }) =>
+          runMediaStrategy(target, { queryClient, signal }),
+        retry: retryPolicy,
+        retryDelay: mediaRetryDelay,
+        staleTime: STALE_TIME_MS,
+      })),
+    [mediaTargets, slug, queryClient],
+  );
 
-  const mediaResultByToken = useMemo(() => {
-    const map = new Map<string, MediaQueryResult | undefined>();
+  // No `combine` here on purpose: see MediaEntry.
+  const mediaResults = useQueries({ queries: mediaQueries });
+
+  const previousMediaRef = useRef<MediaByToken>(EMPTY_MEDIA);
+
+  const mediaByToken = useMemo<MediaByToken>(() => {
+    const previous = previousMediaRef.current;
+    const next = new Map<string, MediaEntry>();
+    let unchanged = previous.size === mediaTargets.length;
+
     mediaTargets.forEach((target, index) => {
-      map.set(target.token, mediaData[index]?.data);
+      const result = mediaResults[index];
+      if (!result) {
+        unchanged = false;
+        return;
+      }
+
+      const isPending = result.isPending || result.isFetching;
+      const error = result.error ?? null;
+      const old = previous.get(target.token);
+      const entry =
+        old &&
+        old.data === result.data &&
+        old.isPending === isPending &&
+        old.isError === result.isError &&
+        old.error === error
+          ? old
+          : {
+              target,
+              data: result.data,
+              isPending,
+              isError: result.isError,
+              error,
+            };
+
+      if (entry !== old) {
+        unchanged = false;
+      }
+      next.set(target.token, entry);
     });
-    return map;
-  }, [mediaData, mediaTargets]);
+
+    const resolved = unchanged ? previous : next;
+    previousMediaRef.current = resolved;
+    return resolved;
+  }, [mediaResults, mediaTargets]);
 
   const mediaStatusByToken = useMemo(() => {
     const map = new Map<string, MediaStatus>();
-    mediaTargets.forEach((target, index) => {
-      const entry = mediaData[index];
-      if (entry) {
-        map.set(target.token, {
-          isPending: entry.isPending,
-          isError: entry.isError,
-          error: entry.error ?? undefined,
-          refetch: () => {
-            void queryClient.refetchQueries({
-              queryKey: mediaQueryKey(slug, target),
-              exact: true,
-            });
-          },
-        });
-      }
+    mediaByToken.forEach((entry, token) => {
+      map.set(token, {
+        isPending: entry.isPending,
+        isError: entry.isError,
+        error: entry.error ?? undefined,
+        refetch: () => {
+          void queryClient.refetchQueries({
+            queryKey: mediaQueryKey(slug, entry.target),
+            exact: true,
+          });
+        },
+      });
     });
     return map;
-  }, [mediaData, mediaTargets, queryClient, slug]);
+  }, [mediaByToken, queryClient, slug]);
 
   /* ---------------------------- enriched sections -------------------- */
 
   const sections = useMemo<GallerySection[]>(
-    () =>
-      baseSections.map((section) => enrichSection(section, mediaResultByToken)),
-    [baseSections, mediaResultByToken],
+    () => baseSections.map((section) => enrichSection(section, mediaByToken)),
+    [baseSections, mediaByToken],
   );
 
   const visibleSections = useMemo<VisibleGallerySection[]>(
     () =>
       baseVisibleSections.map((section) =>
-        enrichSection(section, mediaResultByToken),
+        enrichSection(section, mediaByToken),
       ),
-    [baseVisibleSections, mediaResultByToken],
+    [baseVisibleSections, mediaByToken],
   );
 
   const cardsByKey = useMemo(() => {
@@ -515,6 +680,12 @@ export const useGallerySections = ({
 
   const matchCount = useMemo(
     () => visibleSections.reduce((sum, section) => sum + section.matchCount, 0),
+    [visibleSections],
+  );
+
+  const shownCount = useMemo(
+    () =>
+      visibleSections.reduce((sum, section) => sum + section.cards.length, 0),
     [visibleSections],
   );
 
@@ -552,16 +723,24 @@ export const useGallerySections = ({
   const allFailed =
     eligibleEndpoints.length > 0 && errors.every((error) => Boolean(error));
 
-  const mediaErrorCount = useMemo(
-    () => mediaData.filter((entry) => entry.isError).length,
-    [mediaData],
-  );
+  const mediaErrorCount = useMemo(() => {
+    let count = 0;
+    mediaByToken.forEach((entry) => {
+      if (entry.isError) {
+        count += 1;
+      }
+    });
+    return count;
+  }, [mediaByToken]);
 
   return {
     sections,
     visibleSections,
+    sectionCount,
     totalRecords,
     matchCount,
+    shownCount,
+    loadMore,
     isLoading,
     isFetching,
     allFailed,

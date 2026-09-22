@@ -40,16 +40,19 @@ const GalleryRecordDialog = ({
   const name = card?.name ?? "Record details";
   const mediaUrl = card?.mediaUrl;
 
-  const rows: DetailDialogRow[] = card
-    ? [
-        ...(card.tag ? [{ label: "Tag", value: card.tag }] : []),
-        ...(card.meta ?? []),
-      ]
-    : [];
+  // The card's tag is never a row of its own: every strategy (and the index
+  // normaliser) already records the same fact under a real label in `meta`,
+  // and the tag is visible as the chip on the card.
+  const rows: DetailDialogRow[] = card?.meta ?? [];
 
-  const sections: DetailDialogSection[] = card?.summary
-    ? [{ heading: "Summary", content: card.summary }]
-    : [];
+  // Only show a summary that adds to the rows (the class strategy's summary
+  // is its specialization list, which is already the Specializations row).
+  // Every other strategy's summary is the record's description text.
+  const summary = card?.summary?.trim();
+  const sections: DetailDialogSection[] =
+    summary && !rows.some((row) => row.value === summary)
+      ? [{ heading: "Description", content: summary }]
+      : [];
 
   const hasContent = rows.length > 0 || sections.length > 0;
   const settledWithoutMetadata =

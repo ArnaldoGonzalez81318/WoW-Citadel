@@ -1,15 +1,16 @@
-import { Alert, Button, Chip, Stack } from "@mui/material";
-import { useCallback, useEffect, useState } from "react";
+import { Alert, Box, Button, Chip, Stack } from "@mui/material";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import type { MouseEvent } from "react";
 
-import { GRID_PRESETS } from "@/components/common/gridColumns";
 import PageHeader from "@/components/common/PageHeader";
 import type { PageHeaderBreadcrumb } from "@/components/common/PageHeader";
-import { getResultCardHeight } from "@/components/common/ResultCard";
-import {
-  EmptyState,
-  ErrorState,
-  LoadingSkeleton,
-} from "@/components/common/StateBlocks";
+import { EmptyState, ErrorState } from "@/components/common/StateBlocks";
 import {
   ExplorerFilterBar,
   SearchField,
@@ -22,11 +23,13 @@ import {
 } from "@/features/apiExplorer/config/apiCatalog";
 import GallerySection, {
   GallerySectionError,
-  gallerySectionDomId,
 } from "@/features/apiExplorer/gallery/GallerySection";
 import GalleryRecordDialog from "@/features/apiExplorer/gallery/GalleryRecordDialog";
 import { DATASET_PROFILES } from "@/features/apiExplorer/gallery/mediaStrategies";
-import { buildMediaQueryToken } from "@/features/apiExplorer/gallery/normalizeRecords";
+import {
+  buildMediaQueryToken,
+  gallerySectionDomId,
+} from "@/features/apiExplorer/gallery/normalizeRecords";
 import type { GalleryCard } from "@/features/apiExplorer/gallery/normalizeRecords";
 import { useGallerySections } from "@/features/apiExplorer/gallery/useGallerySections";
 import type { GallerySort } from "@/features/apiExplorer/gallery/useGallerySections";
@@ -53,7 +56,6 @@ const SORT_OPTIONS: ReadonlyArray<SegmentedOption<GallerySort>> = [
 
 const DEFAULT_SORT: GallerySort = "api";
 const MIN_FILTER_LENGTH = 2;
-const SKELETON_COUNT = 24;
 
 const isGallerySort = (value: string): value is GallerySort =>
   SORT_OPTIONS.some((option) => option.value === value);
@@ -95,10 +97,41 @@ type DatasetGalleryProps = {
 };
 
 /**
+ * Measured height of the sticky filter bar. It is two rows whenever jump
+ * chips render, and any future change to its contents changes it again, so
+ * the jump allowance is read from the DOM instead of guessed.
+ */
+const useMeasuredHeight = (ref: { current: HTMLElement | null }): number => {
+  const [height, setHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    // The wrapper is `display: contents`; the bar is its first (only) child.
+    const element = ref.current?.firstElementChild;
+    if (!(element instanceof HTMLElement)) {
+      return undefined;
+    }
+
+    const measure = (): void => {
+      setHeight(Math.round(element.getBoundingClientRect().height));
+    };
+    measure();
+
+    if (typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return height;
+};
+
+/**
  * One h2 section per source endpoint, each a virtualised ResultCard grid
  * enriched with media/detail hops as cards scroll into view. `q` and `sort`
  * live in the URL; the dialog reads the live card so enrichment that lands
- * after opening is shown in place.
+ * after opening is shown in place. CategoryPage remounts this per slug.
  */
 const DatasetGallery = ({
   family,
@@ -117,30 +150,54 @@ const DatasetGallery = ({
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [dismissedMediaErrors, setDismissedMediaErrors] = useState(0);
 
-  // Adopt the URL value (navigation, reset) without echoing it back or
-  // rewriting what the user is still typing (the committed value is trimmed).
-  useEffect(() => {
-    setDraft((current) => (current.trim() === q ? current : q));
-  }, [q]);
+  const filterBarWrapperRef = useRef<HTMLDivElement | null>(null);
+  const filterBarHeight = useMeasuredHeight(filterBarWrapperRef);
 
-  useEffect(() => {
-    setSelectedKey(null);
-  }, [slug]);
+  // The last `q` this page wrote. Only a `q` that arrived from elsewhere
+  // (back/forward) is adopted into the draft, so clearing a sub-minimum
+  // filter below never wipes what the user is still typing.
+  const committedRef = useRef(q);
 
-  const commitFilter = useCallback(
-    (value: string): void => {
-      const trimmed = value.trim();
-      setQ(trimmed.length >= MIN_FILTER_LENGTH ? trimmed : null, {
-        replace: true,
-      });
+  const commitQ = useCallback(
+    (next: string | null): void => {
+      committedRef.current = next ?? "";
+      setQ(next, { replace: true });
     },
     [setQ],
   );
 
+  useEffect(() => {
+    if (q !== committedRef.current) {
+      committedRef.current = q;
+      setDraft(q);
+    }
+  }, [q]);
+
+  const handleDraftChange = useCallback(
+    (value: string): void => {
+      setDraft(value);
+      // SearchField never emits sub-minimum values, so backspacing "ab" to
+      // "a" would otherwise leave q=ab applied to a field that shows "a".
+      const length = value.trim().length;
+      if (committedRef.current && length > 0 && length < MIN_FILTER_LENGTH) {
+        commitQ(null);
+      }
+    },
+    [commitQ],
+  );
+
+  const commitFilter = useCallback(
+    (value: string): void => {
+      const trimmed = value.trim();
+      commitQ(trimmed.length >= MIN_FILTER_LENGTH ? trimmed : null);
+    },
+    [commitQ],
+  );
+
   const clearFilter = useCallback((): void => {
     setDraft("");
-    setQ(null, { replace: true });
-  }, [setQ]);
+    commitQ(null);
+  }, [commitQ]);
 
   const handleSortChange = useCallback(
     (value: GallerySort): void => {
@@ -157,11 +214,39 @@ const DatasetGallery = ({
     setSelectedKey(null);
   }, []);
 
+  /*
+   * A same-document fragment click is a POP navigation to the data router,
+   * whose ScrollRestoration (keyed on pathname) then restores the position it
+   * saved for this route and undoes the jump. Handling the click here keeps
+   * the router out of it; the href stays for semantics and the hash is still
+   * written to the URL. User-initiated scrollIntoView is allowed by design.
+   */
+  const jumpToSection = useCallback(
+    (event: MouseEvent<HTMLElement>, sectionId: string): void => {
+      const domId = gallerySectionDomId(sectionId);
+      const target = document.getElementById(domId);
+      if (!target) {
+        return;
+      }
+
+      event.preventDefault();
+      window.history.replaceState(window.history.state, "", `#${domId}`);
+      if (!target.hasAttribute("tabindex")) {
+        target.setAttribute("tabindex", "-1");
+      }
+      target.scrollIntoView({ block: "start" });
+      target.focus({ preventScroll: true });
+    },
+    [],
+  );
+
   const {
-    sections,
     visibleSections,
+    sectionCount,
     totalRecords,
     matchCount,
+    shownCount,
+    loadMore,
     isLoading,
     isFetching,
     allFailed,
@@ -176,6 +261,7 @@ const DatasetGallery = ({
   const tone = getApiFamilyTone(family);
   const layout = DATASET_PROFILES[slug]?.layout ?? "compact";
   const filterActive = q.length > 0;
+  const multiSection = sectionCount > 1;
 
   const selectedCard = getCardByKey(selectedKey);
   const selectedToken = selectedCard?.mediaRequestPath
@@ -192,17 +278,17 @@ const DatasetGallery = ({
     ? selectedStatus.error
     : undefined;
 
-  const showSkeleton =
-    isLoading && sections.every((section) => section.cards.length === 0);
   const showNoMatches =
     !isLoading && !allFailed && filterActive && matchCount === 0;
   const showNoRecords =
     !isLoading && !allFailed && !filterActive && totalRecords === 0;
   const showMediaAlert = mediaErrorCount > dismissedMediaErrors;
 
-  const summary = filterActive
-    ? `Showing ${formatNumber(matchCount)} of ${formatNumber(totalRecords)}`
-    : `Showing ${formatNumber(totalRecords)} records`;
+  // Large sections are paged, so the shown count can trail the match count.
+  const summary =
+    filterActive || shownCount < totalRecords
+      ? `Showing ${formatNumber(shownCount)} of ${formatNumber(totalRecords)}`
+      : `Showing ${formatNumber(totalRecords)} records`;
 
   return (
     <Stack sx={{ gap: (theme) => theme.wc.layout.sectionGap }}>
@@ -221,60 +307,65 @@ const DatasetGallery = ({
                 label={`${formatNumber(totalRecords)} records`}
               />
             ) : null}
-            {sections.length > 1 ? (
-              <Chip size="small" label={`${sections.length} sections`} />
+            {multiSection ? (
+              <Chip size="small" label={`${sectionCount} sections`} />
             ) : null}
           </>
         }
       />
 
-      <ExplorerFilterBar
-        sticky
-        label="Filter records"
-        progress={isFetching && !isLoading}
-        summary={summary}
-      >
-        <SearchField
-          label="Filter records by name"
-          placeholder="Filter by name"
-          value={draft}
-          onChange={setDraft}
-          onDebouncedChange={commitFilter}
-          onSubmit={commitFilter}
-          onClear={clearFilter}
-          minLength={MIN_FILTER_LENGTH}
-        />
-        <SegmentedControl<GallerySort>
-          label="Sort"
-          options={SORT_OPTIONS}
-          value={sort}
-          onChange={handleSortChange}
-          size="small"
-        />
-        {sections.length > 1 && visibleSections.length > 0 ? (
-          <Stack
-            component="nav"
-            aria-label="Jump to section"
-            direction="row"
-            flexWrap="wrap"
-            useFlexGap
-            gap={1}
-            sx={{ flexBasis: "100%", minWidth: 0 }}
-          >
-            {visibleSections.map((section) => (
-              <Chip
-                key={section.id}
-                component="a"
-                clickable
-                href={`#${gallerySectionDomId(section.id)}`}
-                label={section.label}
-                size="small"
-                variant="outlined"
-              />
-            ))}
-          </Stack>
-        ) : null}
-      </ExplorerFilterBar>
+      <Box ref={filterBarWrapperRef} sx={{ display: "contents" }}>
+        <ExplorerFilterBar
+          sticky
+          label="Filter records"
+          progress={isFetching && !isLoading}
+          summary={summary}
+        >
+          <SearchField
+            label="Filter records by name"
+            placeholder="Filter by name"
+            value={draft}
+            onChange={handleDraftChange}
+            onDebouncedChange={commitFilter}
+            onSubmit={commitFilter}
+            onClear={clearFilter}
+            minLength={MIN_FILTER_LENGTH}
+          />
+          <SegmentedControl<GallerySort>
+            label="Sort"
+            options={SORT_OPTIONS}
+            value={sort}
+            onChange={handleSortChange}
+            size="small"
+          />
+          {visibleSections.length > 1 ? (
+            <Stack
+              component="nav"
+              aria-label="Jump to section"
+              direction="row"
+              flexWrap="wrap"
+              useFlexGap
+              gap={1}
+              sx={{ flexBasis: "100%", minWidth: 0 }}
+            >
+              {visibleSections.map((section) => (
+                <Chip
+                  key={section.id}
+                  component="a"
+                  clickable
+                  href={`#${gallerySectionDomId(section.id)}`}
+                  onClick={(event: MouseEvent<HTMLElement>) =>
+                    jumpToSection(event, section.id)
+                  }
+                  label={section.label}
+                  size="small"
+                  variant="outlined"
+                />
+              ))}
+            </Stack>
+          ) : null}
+        </ExplorerFilterBar>
+      </Box>
 
       {showMediaAlert ? (
         <Alert
@@ -284,16 +375,6 @@ const DatasetGallery = ({
           {formatNumber(mediaErrorCount)} previews couldn&apos;t load (Blizzard
           rate limit or missing media). Scroll to retry.
         </Alert>
-      ) : null}
-
-      {showSkeleton ? (
-        <LoadingSkeleton
-          variant="grid"
-          columns={layout === "row" ? GRID_PRESETS.rows : GRID_PRESETS.compact}
-          itemHeight={getResultCardHeight(layout)}
-          count={SKELETON_COUNT}
-          label="Loading records"
-        />
       ) : null}
 
       {allFailed && sectionErrors.length > 0 ? (
@@ -335,8 +416,10 @@ const DatasetGallery = ({
               layout={layout}
               onSelect={handleSelect}
               onVisibleRangeChange={onVisibleRangeChange}
+              onLoadMore={loadMore}
               filterActive={filterActive}
-              showCount={visibleSections.length > 1}
+              headed={multiSection}
+              stickyOffset={filterBarHeight}
             />
           ))
         : null}

@@ -4,11 +4,12 @@ import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
+  Button,
   Chip,
   Stack,
   Typography,
 } from "@mui/material";
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { ExplorerFilterBar, SearchField } from "@/components/common/ExplorerFilterBar";
@@ -31,12 +32,12 @@ import {
 import JsonViewer, {
   CopyApiUrlButton,
 } from "@/features/apiExplorer/workbench/JsonViewer";
+import { JSON_VIEWER_MAX_HEIGHT } from "@/features/apiExplorer/workbench/jsonTokens";
 import {
   resolveEndpointRequest,
   useEndpointRequest,
   useFamilyEndpointDiscovery,
 } from "@/features/apiExplorer/workbench/useEndpointRequest";
-import { useSearchParamState } from "@/hooks/useSearchParamState";
 import { formatNumber } from "@/lib/format";
 
 export type ApiEndpointWorkbenchProps = {
@@ -48,6 +49,15 @@ export type ApiEndpointWorkbenchProps = {
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
+
+const ENDPOINT_PARAM = "endpoint";
+
+/**
+ * Height of the loading placeholder: the viewer's `<pre>` at max height plus
+ * its padding and border, the viewer header, the summary caption and the
+ * progress bar, so a loaded panel does not shift the accordions below it.
+ */
+const RESPONSE_PLACEHOLDER_HEIGHT = JSON_VIEWER_MAX_HEIGHT + 120;
 
 /** Values the URL currently holds for an endpoint's parameters ("" when absent). */
 const appliedValuesFor = (
@@ -107,14 +117,18 @@ type EndpointPanelProps = {
   family: ApiFamilyConfig;
   endpoint: ApiEndpointDefinition;
   expanded: boolean;
-  onToggle: (open: boolean) => void;
+  onToggle: (endpointId: string, open: boolean) => void;
   /** The current URL; parameter values are read from it. */
   searchParams: URLSearchParams;
   discovered: Record<string, string>;
-  onSubmit: (values: Record<string, string>) => void;
+  onSubmit: (endpoint: ApiEndpointDefinition, values: Record<string, string>) => void;
 };
 
-const EndpointPanel = ({
+/**
+ * Details of one panel. Mounted only while the accordion is open
+ * (`unmountOnExit`), so collapsed panels render no form and no viewer.
+ */
+const EndpointPanelDetails = ({
   family,
   endpoint,
   expanded,
@@ -124,8 +138,6 @@ const EndpointPanel = ({
   onSubmit,
 }: EndpointPanelProps): JSX.Element => {
   const parameters = endpoint.parameters ?? [];
-  const summaryId = `${endpoint.id}-summary`;
-  const detailsId = `${endpoint.id}-details`;
 
   const appliedValues = useMemo(
     () => appliedValuesFor(endpoint, searchParams),
@@ -148,29 +160,132 @@ const EndpointPanel = ({
     enabled: expanded,
   });
 
+  const handleSubmit = useCallback(
+    (values: Record<string, string>) => onSubmit(endpoint, values),
+    [endpoint, onSubmit],
+  );
+
   const queryString = new URLSearchParams(request.queryParams).toString();
   const requestLine = `${request.requestPath}${queryString ? `?${queryString}` : ""}`;
   const isBlocked = request.unresolvedPathParams.length > 0;
-  const namespaceLabel = resolveNamespace(endpoint.namespace) ?? "No namespace";
 
   const errorCopy = useMemo(
     () =>
       query.isError ? describeEndpointError(query.error, endpoint, family) : null,
     [query.isError, query.error, endpoint, family],
   );
+  const suggested = errorCopy?.suggestedEndpoint;
+
+  return (
+    <Stack spacing={3}>
+      {parameters.length > 0 ? (
+        <EndpointForm
+          endpoint={endpoint}
+          values={formValues}
+          defaults={defaults}
+          onSubmit={handleSubmit}
+          idPrefix={`${family.slug}-${endpoint.id}`}
+        />
+      ) : null}
+
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+        <Typography
+          component="code"
+          variant="body2"
+          sx={(theme) => ({
+            fontFamily: theme.wc.fontMono,
+            overflowWrap: "anywhere",
+            minWidth: 0,
+          })}
+        >
+          {requestLine}
+        </Typography>
+        <CopyApiUrlButton apiUrl={apiUrl} label={endpoint.label} />
+      </Stack>
+
+      {isBlocked ? (
+        <EmptyState
+          compact
+          icon={<KeyRoundedIcon />}
+          {...needsIdCopy(request.unresolvedPathParams)}
+        />
+      ) : query.isLoading ? (
+        <LoadingSkeleton
+          variant="block"
+          height={RESPONSE_PLACEHOLDER_HEIGHT}
+          label={`Loading ${endpoint.label}`}
+        />
+      ) : query.isError && errorCopy ? (
+        <ErrorState
+          compact
+          error={query.error}
+          title={errorCopy.title}
+          context={endpoint.label}
+          onRetry={() => {
+            void query.refetch();
+          }}
+          secondaryAction={
+            suggested ? (
+              <Button
+                size="small"
+                variant="text"
+                color="inherit"
+                onClick={() => onToggle(suggested.id, true)}
+              >
+                Open {suggested.label}
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : query.isSuccess ? (
+        <Stack spacing={1.5}>
+          <InlineProgress
+            active={query.isFetching}
+            label={`Refreshing ${endpoint.label}`}
+          />
+          <Typography variant="caption" color="text.secondary" component="p">
+            {describeData(query.data)}
+          </Typography>
+          <JsonViewer
+            data={query.data}
+            label={endpoint.label}
+            fileName={`${family.slug}-${endpoint.id}`}
+            apiUrl={apiUrl}
+          />
+        </Stack>
+      ) : null}
+    </Stack>
+  );
+};
+
+const EndpointPanel = memo((props: EndpointPanelProps): JSX.Element => {
+  const { endpoint, expanded, onToggle } = props;
+  const summaryId = `${endpoint.id}-summary`;
+  const detailsId = `${endpoint.id}-details`;
+  const labelId = `${summaryId}-label`;
+  const descriptionId = `${summaryId}-description`;
+  const namespaceLabel = resolveNamespace(endpoint.namespace) ?? "No namespace";
 
   return (
     <Accordion
       disableGutters
       expanded={expanded}
-      onChange={(_event, open) => onToggle(open)}
-      // The panels sit directly under the page h1, so the summary heading
-      // MUI wraps the button in is an h2 (its default h3 would skip a level).
-      slotProps={{ heading: { component: "h2" } }}
+      onChange={(_event, open) => onToggle(endpoint.id, open)}
+      slotProps={{
+        // The panels sit directly under the page h1, so the summary heading
+        // MUI wraps the button in is an h2 (its default h3 would skip a
+        // level). Named by the label alone so heading navigation reads
+        // "Item", not the chips, description and path as well.
+        heading: { component: "h2", "aria-labelledby": labelId },
+        // Collapsed panels mount no form or viewer; the URL holds the state.
+        transition: { unmountOnExit: true },
+      }}
     >
       <AccordionSummary
         expandIcon={<ExpandMoreRoundedIcon />}
         aria-controls={detailsId}
+        aria-labelledby={labelId}
+        aria-describedby={descriptionId}
         id={summaryId}
       >
         <Stack spacing={0.75} sx={{ width: "100%", minWidth: 0, paddingRight: 1 }}>
@@ -181,7 +296,7 @@ const EndpointPanel = ({
             justifyContent="space-between"
             useFlexGap
           >
-            <Typography variant="h6" component="span" sx={{ minWidth: 0 }}>
+            <Typography id={labelId} variant="h6" component="span" sx={{ minWidth: 0 }}>
               {endpoint.label}
             </Typography>
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
@@ -189,7 +304,12 @@ const EndpointPanel = ({
               <Chip label={namespaceLabel} size="small" variant="outlined" />
             </Stack>
           </Stack>
-          <Typography variant="caption" component="span" color="text.secondary">
+          <Typography
+            id={descriptionId}
+            variant="caption"
+            component="span"
+            color="text.secondary"
+          >
             {endpoint.description}
           </Typography>
           <Typography
@@ -208,83 +328,12 @@ const EndpointPanel = ({
 
       {/* MUI renders the role="region" wrapper with `detailsId` itself. */}
       <AccordionDetails>
-        <Stack spacing={3}>
-          {parameters.length > 0 ? (
-            <EndpointForm
-              endpoint={endpoint}
-              values={formValues}
-              defaults={defaults}
-              onSubmit={onSubmit}
-              idPrefix={`${family.slug}-${endpoint.id}`}
-            />
-          ) : null}
-
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-            <Typography
-              component="code"
-              variant="body2"
-              sx={(theme) => ({
-                fontFamily: theme.wc.fontMono,
-                overflowWrap: "anywhere",
-                minWidth: 0,
-              })}
-            >
-              {requestLine}
-            </Typography>
-            <CopyApiUrlButton apiUrl={apiUrl} label={endpoint.label} />
-          </Stack>
-
-          {isBlocked ? (
-            <EmptyState
-              compact
-              icon={<KeyRoundedIcon />}
-              {...needsIdCopy(request.unresolvedPathParams)}
-            />
-          ) : query.isLoading ? (
-            <LoadingSkeleton
-              variant="block"
-              height={240}
-              label={`Loading ${endpoint.label}`}
-            />
-          ) : query.isError && errorCopy ? (
-            <ErrorState
-              compact
-              error={query.error}
-              title={errorCopy.title}
-              context={endpoint.label}
-              onRetry={() => {
-                void query.refetch();
-              }}
-              secondaryAction={
-                errorCopy.hint ? (
-                  <Typography variant="body2" component="p" sx={{ margin: 0 }}>
-                    {errorCopy.hint}
-                  </Typography>
-                ) : undefined
-              }
-            />
-          ) : query.isSuccess ? (
-            <Stack spacing={1.5}>
-              <InlineProgress
-                active={query.isFetching}
-                label={`Refreshing ${endpoint.label}`}
-              />
-              <Typography variant="caption" color="text.secondary" component="p">
-                {describeData(query.data)}
-              </Typography>
-              <JsonViewer
-                data={query.data}
-                label={endpoint.label}
-                fileName={`${family.slug}-${endpoint.id}`}
-                apiUrl={apiUrl}
-              />
-            </Stack>
-          ) : null}
-        </Stack>
+        <EndpointPanelDetails {...props} />
       </AccordionDetails>
     </Accordion>
   );
-};
+});
+EndpointPanel.displayName = "EndpointPanel";
 
 /* ------------------------------------------------------------------ */
 /* ApiEndpointWorkbench                                                */
@@ -299,27 +348,64 @@ const ApiEndpointWorkbench = ({
   family,
   initialEndpointId,
 }: ApiEndpointWorkbenchProps): JSX.Element => {
-  const { discoveredPathValues } = useFamilyEndpointDiscovery(family);
+  // Only the discovered ids are needed here; the panels fetch their own
+  // responses (sharing the cache), so nothing is downloaded for a family
+  // that has no blank path parameter.
+  const { discoveredPathValues } = useFamilyEndpointDiscovery(family, {
+    mode: "discovery",
+  });
   const [searchParams, setSearchParams] = useSearchParams();
 
   const defaultEndpointId = initialEndpointId ?? family.endpoints[0]?.id ?? "";
-  const [urlEndpointId, setUrlEndpointId] = useSearchParamState("endpoint", "");
+  const urlEndpointId = searchParams.get(ENDPOINT_PARAM) ?? "";
   // Lets the user collapse the default panel without writing a sentinel to the URL.
   const [defaultDismissed, setDefaultDismissed] = useState(false);
   const activeEndpointId =
     urlEndpointId || (defaultDismissed ? "" : defaultEndpointId);
 
-  const setActiveEndpointId = useCallback(
-    (next: string | null) => {
-      if (next === null) {
-        setDefaultDismissed(true);
-        setUrlEndpointId(null, { replace: true });
-        return;
-      }
-      setDefaultDismissed(false);
-      setUrlEndpointId(next, { replace: true });
+  const endpointsById = useMemo(
+    () => new Map(family.endpoints.map((endpoint) => [endpoint.id, endpoint])),
+    [family],
+  );
+  const allParameterKeys = useMemo(
+    () =>
+      new Set(
+        family.endpoints.flatMap((endpoint) =>
+          (endpoint.parameters ?? []).map((parameter) => parameter.key),
+        ),
+      ),
+    [family],
+  );
+
+  const toggleEndpoint = useCallback(
+    (endpointId: string, open: boolean) => {
+      setSearchParams(
+        (previous) => {
+          const next = new URLSearchParams(previous);
+          if (!open) {
+            next.delete(ENDPOINT_PARAM);
+            return next;
+          }
+          next.set(ENDPOINT_PARAM, endpointId);
+          // Drop parameters the newly opened endpoint does not take, so a
+          // shared URL never carries another panel's id.
+          const keep = new Set(
+            (endpointsById.get(endpointId)?.parameters ?? []).map(
+              (parameter) => parameter.key,
+            ),
+          );
+          allParameterKeys.forEach((key) => {
+            if (!keep.has(key)) {
+              next.delete(key);
+            }
+          });
+          return next;
+        },
+        { replace: true, preventScrollReset: true },
+      );
+      setDefaultDismissed(!open);
     },
-    [setUrlEndpointId],
+    [allParameterKeys, endpointsById, setSearchParams],
   );
 
   const applyValues = useCallback(
@@ -335,10 +421,10 @@ const ApiEndpointWorkbench = ({
               next.delete(parameter.key);
             }
           });
-          next.set("endpoint", endpoint.id);
+          next.set(ENDPOINT_PARAM, endpoint.id);
           return next;
         },
-        { replace: true },
+        { replace: true, preventScrollReset: true },
       );
       setDefaultDismissed(false);
     },
@@ -384,10 +470,10 @@ const ApiEndpointWorkbench = ({
               family={family}
               endpoint={endpoint}
               expanded={activeEndpointId === endpoint.id}
-              onToggle={(open) => setActiveEndpointId(open ? endpoint.id : null)}
+              onToggle={toggleEndpoint}
               searchParams={searchParams}
               discovered={discoveredPathValues}
-              onSubmit={(values) => applyValues(endpoint, values)}
+              onSubmit={applyValues}
             />
           ))}
         </Stack>
