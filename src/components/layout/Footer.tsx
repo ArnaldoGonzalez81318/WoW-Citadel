@@ -39,8 +39,8 @@ const FOOTER_RESOURCE_LINKS: FooterExternalLink[] = [
   },
 ];
 
-/** Build-time version injected by vite.config `define`; absent in plain dev. */
-const APP_VERSION = import.meta.env.VITE_APP_VERSION as string | undefined;
+/** package.json version injected by vite.config `define` (dev and build). */
+const APP_VERSION = import.meta.env.VITE_APP_VERSION;
 
 const FooterLink = styled(Link)(({ theme }) => ({
   ...theme.typography.body2,

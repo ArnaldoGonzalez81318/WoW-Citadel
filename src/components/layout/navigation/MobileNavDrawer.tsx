@@ -10,6 +10,7 @@ import {
   Drawer,
   IconButton,
   List,
+  ListItem,
   ListItemButton,
   ListItemText,
 } from "@mui/material";
@@ -83,6 +84,11 @@ const MobileNavDrawer = (): JSX.Element => {
         onClose={close}
         slotProps={{
           paper: {
+            // The hamburger promises a dialog (aria-haspopup): give the
+            // trapped, Escape-closable paper that role and a name.
+            role: "dialog",
+            "aria-modal": true,
+            "aria-label": "Site navigation",
             sx: {
               width: "min(360px, 88vw)",
               display: "flex",
@@ -111,7 +117,12 @@ const MobileNavDrawer = (): JSX.Element => {
         <Box
           component="nav"
           aria-label="Primary"
-          sx={{ flex: 1, overflowY: "auto", overscrollBehavior: "contain", py: 1 }}
+          sx={{
+            flex: 1,
+            overflowY: "auto",
+            overscrollBehavior: "contain",
+            py: 1,
+          }}
         >
           <List disablePadding sx={{ px: 1 }}>
             {NAV_SECTIONS.map((section) => {
@@ -123,13 +134,16 @@ const MobileNavDrawer = (): JSX.Element => {
                   <ListItemButton
                     onClick={() => toggleSection(section.id)}
                     aria-expanded={expanded}
-                    aria-controls={groupId}
+                    aria-controls={expanded ? groupId : undefined}
                     sx={{ minHeight: theme.wc.layout.touchTarget, gap: 1 }}
                   >
                     <ListItemText
                       primary={section.label}
                       slotProps={{
-                        primary: { variant: "subtitle2", color: "text.primary" },
+                        primary: {
+                          variant: "subtitle2",
+                          color: "text.primary",
+                        },
                       }}
                     />
                     <ExpandMoreRounded
@@ -140,33 +154,51 @@ const MobileNavDrawer = (): JSX.Element => {
                       }}
                     />
                   </ListItemButton>
-                  <Collapse in={expanded} timeout={theme.wc.motion.base}>
+                  {/* Collapsed groups stay unmounted: ~30 RouterLink rows are not worth rendering at height 0 on every open. */}
+                  <Collapse
+                    in={expanded}
+                    timeout={theme.wc.motion.base}
+                    mountOnEnter
+                    unmountOnExit
+                  >
                     <List id={groupId} disablePadding sx={{ pb: 1 }}>
                       {section.items.map((item) => {
                         const isCurrent = item.path === pathname;
-                        const preload = (): void => preloadRouteChunk(item.path);
+                        const preload = (): void =>
+                          preloadRouteChunk(item.path);
 
                         return (
-                          <ListItemButton
-                            key={item.id}
-                            component={RouterLink}
-                            to={item.path}
-                            selected={isCurrent}
-                            aria-current={isCurrent ? "page" : undefined}
-                            onPointerEnter={preload}
-                            onFocus={preload}
-                            sx={{
-                              minHeight: theme.wc.layout.touchTarget,
-                              pl: 3,
-                              color: isCurrent ? "text.primary" : "text.secondary",
-                              "&:hover": { color: "text.primary" },
-                            }}
-                          >
-                            <ListItemText
-                              primary={item.label}
-                              slotProps={{ primary: { variant: "body2" } }}
-                            />
-                          </ListItemButton>
+                          <ListItem key={item.id} disablePadding>
+                            <ListItemButton
+                              component={RouterLink}
+                              to={item.path}
+                              selected={isCurrent}
+                              aria-current={isCurrent ? "page" : undefined}
+                              // Close before the Link navigates: the Modal's
+                              // focus restore (to the hamburger) then runs in
+                              // this commit's cleanup phase, ahead of
+                              // AppShell's route-change focus on `main`.
+                              // Closing from the pathname effect instead
+                              // would restore focus one commit later and
+                              // undo it.
+                              onClick={close}
+                              onPointerEnter={preload}
+                              onFocus={preload}
+                              sx={{
+                                minHeight: theme.wc.layout.touchTarget,
+                                pl: 3,
+                                color: isCurrent
+                                  ? "text.primary"
+                                  : "text.secondary",
+                                "&:hover": { color: "text.primary" },
+                              }}
+                            >
+                              <ListItemText
+                                primary={item.label}
+                                slotProps={{ primary: { variant: "body2" } }}
+                              />
+                            </ListItemButton>
+                          </ListItem>
                         );
                       })}
                     </List>

@@ -56,6 +56,12 @@ export type HeaderSearchAutocompleteProps = {
   onOptionsChange: (options: SuggestionOption[]) => void;
   onSelect: (option: SuggestionOption) => void;
   onHoverIndex: (index: number) => void;
+  /**
+   * Reports whether the `<ul role="listbox">` is actually in the DOM, so the
+   * input's aria-expanded / aria-controls never reference a missing element
+   * (lazy chunk still loading, first fetch in flight, or list closed).
+   */
+  onVisibleChange: (visible: boolean) => void;
 };
 
 /* ------------------------------------------------------------------ */
@@ -108,11 +114,25 @@ const SearchCombobox = ({
   const [debounced, setDebounced] = useState(qualifies(query) ? query : "");
   const [enhanced, setEnhanced] = useState(false);
   const [listOpen, setListOpen] = useState(false);
+  /** True only while the suggestion `<ul role="listbox">` exists in the DOM. */
+  const [listVisible, setListVisible] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [options, setOptions] = useState<SuggestionOption[]>([]);
   const [wrapperEl, setWrapperEl] = useState<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listboxId = `${id}-listbox`;
+
+  /**
+   * Mirror of SearchField's own "last emitted" value: it never re-emits a
+   * value equal to its last emission or to a value the parent set
+   * programmatically, so every programmatic draft change goes through
+   * `adoptDraft` to keep the two in step.
+   */
+  const fieldEmittedRef = useRef(query);
+  const adoptDraft = useCallback((value: string): void => {
+    fieldEmittedRef.current = value;
+    setDraft(value);
+  }, []);
 
   /* Adopt an external query change (URL -> SearchProvider) without opening the list. */
   const lastQueryRef = useRef(query);
@@ -121,10 +141,10 @@ const SearchCombobox = ({
       return;
     }
     lastQueryRef.current = query;
-    setDraft(query);
+    adoptDraft(query);
     setDebounced("");
     setListOpen(false);
-  }, [query]);
+  }, [query, adoptDraft]);
 
   const closeList = useCallback((): void => {
     setListOpen(false);
@@ -137,9 +157,31 @@ const SearchCombobox = ({
   }, [pathname, closeList]);
 
   const handleDebouncedChange = (value: string): void => {
+    fieldEmittedRef.current = value;
     setDebounced(value);
     setActiveIndex(-1);
     setListOpen(qualifies(value));
+  };
+
+  /**
+   * SearchField only debounces values that qualify, so a draft shrinking
+   * below the minimum never reaches `handleDebouncedChange`: drop the stale
+   * suggestions here, immediately. When the user retypes exactly the last
+   * emitted value, SearchField stays silent; reopen at once (react-query
+   * already holds those results).
+   */
+  const handleDraftChange = (value: string): void => {
+    setDraft(value);
+    if (!qualifies(value)) {
+      setDebounced("");
+      closeList();
+      return;
+    }
+    if (value === fieldEmittedRef.current && value !== debounced) {
+      setDebounced(value);
+      setActiveIndex(-1);
+      setListOpen(true);
+    }
   };
 
   const enhance = (): void => {
@@ -166,11 +208,11 @@ const SearchCombobox = ({
       }
       closeList();
       lastQueryRef.current = trimmed;
-      setDraft(trimmed);
+      adoptDraft(trimmed);
       submitQuery(trimmed);
       onNavigated?.();
     },
-    [draft, closeList, onNavigated, submitQuery],
+    [draft, adoptDraft, closeList, onNavigated, submitQuery],
   );
 
   /**
@@ -186,25 +228,30 @@ const SearchCombobox = ({
       }
       closeList();
       lastQueryRef.current = option.name;
-      setDraft(option.name);
+      adoptDraft(option.name);
       pushRecentSearch(option.name);
       navigate(
         `${buildSearchUrl(option.name)}&cat=${encodeURIComponent(option.categoryId)}`,
       );
       onNavigated?.();
     },
-    [closeList, navigate, onNavigated, pushRecentSearch, submit],
+    [adoptDraft, closeList, navigate, onNavigated, pushRecentSearch, submit],
   );
 
   const handleClear = (): void => {
-    setDraft("");
+    adoptDraft("");
     setDebounced("");
     lastQueryRef.current = "";
     clearQuery();
     closeList();
   };
 
-  /* Combobox ARIA on the input (SearchField has no attribute passthrough). */
+  /*
+   * Combobox ARIA on the input (SearchField has no attribute passthrough).
+   * Driven by `listVisible`, not `listOpen`: the listbox element only exists
+   * once the lazy chunk has mounted and the Popper is showing, and
+   * aria-controls must never point at an id that is not in the DOM.
+   */
   useLayoutEffect(() => {
     const input = inputRef.current;
     if (!input) {
@@ -213,13 +260,13 @@ const SearchCombobox = ({
     input.setAttribute("role", "combobox");
     input.setAttribute("aria-autocomplete", "list");
     input.setAttribute("aria-haspopup", "listbox");
-    input.setAttribute("aria-expanded", listOpen ? "true" : "false");
-    if (listOpen) {
+    input.setAttribute("aria-expanded", listVisible ? "true" : "false");
+    if (listVisible) {
       input.setAttribute("aria-controls", listboxId);
     } else {
       input.removeAttribute("aria-controls");
     }
-    if (listOpen && activeIndex >= 0 && activeIndex < options.length) {
+    if (listVisible && activeIndex >= 0 && activeIndex < options.length) {
       input.setAttribute(
         "aria-activedescendant",
         `${listboxId}-opt-${activeIndex}`,
@@ -227,7 +274,7 @@ const SearchCombobox = ({
     } else {
       input.removeAttribute("aria-activedescendant");
     }
-  }, [listOpen, activeIndex, options.length, listboxId]);
+  }, [listVisible, activeIndex, options.length, listboxId]);
 
   /* Capture phase: runs before SearchField's own Enter / Escape handling. */
   const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -312,7 +359,7 @@ const SearchCombobox = ({
         <SearchField
           id={id}
           value={draft}
-          onChange={setDraft}
+          onChange={handleDraftChange}
           onDebouncedChange={handleDebouncedChange}
           debounceMs={DEBOUNCE_MS}
           minLength={MIN_QUERY_LENGTH}
@@ -325,9 +372,10 @@ const SearchCombobox = ({
           size={size}
           sx={{ flex: "1 1 auto", minWidth: 0 }}
         />
-        {listOpen ? (
-          <LiveStatus visuallyHidden>{`${options.length} suggestions`}</LiveStatus>
-        ) : null}
+        {/* Always mounted: a live region inserted together with its first text is not reliably announced. */}
+        <LiveStatus visuallyHidden>
+          {listVisible ? `${options.length} suggestions` : ""}
+        </LiveStatus>
         {showSuggestions ? (
           <Suspense fallback={null}>
             <HeaderSearchAutocomplete
@@ -339,6 +387,7 @@ const SearchCombobox = ({
               onOptionsChange={setOptions}
               onSelect={handleSelect}
               onHoverIndex={setActiveIndex}
+              onVisibleChange={setListVisible}
             />
           </Suspense>
         ) : null}
@@ -362,8 +411,22 @@ const HeaderSearch = (): JSX.Element => {
   const isDesktop = useMediaQuery(theme.breakpoints.up("md"));
   const [dialogOpen, setDialogOpen] = useState(false);
   const inlineRef = useRef<HTMLDivElement | null>(null);
+  const dialogBodyRef = useRef<HTMLDivElement | null>(null);
 
   const closeDialog = useCallback((): void => setDialogOpen(false), []);
+
+  /**
+   * The field's `autoFocus` fires on mount, but the Modal's FocusTrap can
+   * still end up on its container (StrictMode replays its mount effect, which
+   * restores focus to the trigger and then re-traps on the container). Once
+   * the transition has settled, make sure the field really has focus.
+   */
+  const focusDialogField = useCallback((): void => {
+    const input = dialogBodyRef.current?.querySelector("input");
+    if (input && document.activeElement !== input) {
+      input.focus({ preventScroll: true });
+    }
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent): void => {
@@ -435,6 +498,7 @@ const HeaderSearch = (): JSX.Element => {
         open={dialogOpen}
         onClose={closeDialog}
         aria-labelledby={DIALOG_TITLE_ID}
+        slotProps={{ transition: { onEntered: focusDialogField } }}
       >
         <Toolbar
           sx={{
@@ -451,11 +515,15 @@ const HeaderSearch = (): JSX.Element => {
           >
             Search
           </Typography>
-          <IconButton aria-label="Close search" onClick={closeDialog} edge="end">
+          <IconButton
+            aria-label="Close search"
+            onClick={closeDialog}
+            edge="end"
+          >
             <CloseRounded />
           </IconButton>
         </Toolbar>
-        <Box role="search" sx={{ p: 2 }}>
+        <Box role="search" ref={dialogBodyRef} sx={{ p: 2 }}>
           <SearchCombobox
             id="site-search-dialog"
             autoFocus

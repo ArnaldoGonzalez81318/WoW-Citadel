@@ -7,17 +7,34 @@ import type { PointerEvent as ReactPointerEvent } from "react";
  * router will await on click. Dynamic imports only: a static import would
  * pull every page into the shell bundle.
  */
-type ChunkLoader = () => Promise<unknown>;
+type ChunkLoader = (path: string) => Promise<unknown>;
+
+const CATEGORY_PREFIX = "/category/";
 
 const ROUTE_CHUNKS: ReadonlyArray<{
   matches: (path: string) => boolean;
+  /** Dedupe key; `perPath` keys by the full path instead (one warm-up per explorer). */
   key: string;
+  perPath?: boolean;
   load: ChunkLoader;
 }> = [
   {
     key: "category",
-    matches: (path) => path.startsWith("/category/"),
-    load: () => import("@/pages/CategoryPage"),
+    perPath: true,
+    matches: (path) => path.startsWith(CATEGORY_PREFIX),
+    // CategoryPage is only a thin wrapper: chain into the registry so the
+    // explorer chunk it will lazily render downloads in parallel rather than
+    // after the wrapper has mounted. The registry is bundled with
+    // CategoryPage, so the second import resolves from the same chunk.
+    load: (path) =>
+      Promise.all([
+        import("@/pages/CategoryPage"),
+        import("@/pages/categoryRegistry").then((registry) =>
+          registry.preloadCategory(
+            registry.normalizeSlug(path.slice(CATEGORY_PREFIX.length)),
+          ),
+        ),
+      ]),
   },
   {
     key: "achievements",
@@ -27,7 +44,8 @@ const ROUTE_CHUNKS: ReadonlyArray<{
   {
     key: "connected-realms",
     matches: (path) => path === "/connected-realms",
-    load: () => import("@/features/connectedRealms/components/ConnectedRealmsPage"),
+    load: () =>
+      import("@/features/connectedRealms/components/ConnectedRealmsPage"),
   },
   {
     key: "search",
@@ -45,14 +63,18 @@ const preloaded = new Set<string>();
  */
 export const preloadRouteChunk = (path: string): void => {
   const entry = ROUTE_CHUNKS.find((chunk) => chunk.matches(path));
-  if (!entry || preloaded.has(entry.key)) {
+  if (!entry) {
+    return;
+  }
+  const key = entry.perPath ? path : entry.key;
+  if (preloaded.has(key)) {
     return;
   }
 
-  preloaded.add(entry.key);
-  entry.load().catch(() => {
+  preloaded.add(key);
+  entry.load(path).catch(() => {
     // Allow a retry on the next hover if the network hiccupped.
-    preloaded.delete(entry.key);
+    preloaded.delete(key);
     return undefined;
   });
 };

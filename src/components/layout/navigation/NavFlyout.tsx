@@ -1,4 +1,12 @@
-import { Box, Chip, Grow, Link, Paper, Popper, Typography } from "@mui/material";
+import {
+  Box,
+  Chip,
+  Grow,
+  Link,
+  Paper,
+  Popper,
+  Typography,
+} from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useEffect } from "react";
 import type { MutableRefObject, RefObject } from "react";
@@ -66,9 +74,12 @@ const NavFlyout = ({
     return null;
   }
 
-  const anchorBottom =
-    anchorEl?.getBoundingClientRect().bottom ?? theme.wc.layout.headerHeight.md;
-  const maxHeight = `calc(100vh - ${anchorBottom + POPPER_OFFSET + VIEWPORT_MARGIN}px)`;
+  // The trigger sits inside the sticky header, so its bottom edge never
+  // exceeds the header height: derive the cap from the theme rather than
+  // forcing a layout read (getBoundingClientRect) on every render.
+  const maxHeight = `calc(100vh - ${
+    theme.wc.layout.headerHeight.md + POPPER_OFFSET + VIEWPORT_MARGIN
+  }px)`;
   const titleId = `${id}-title`;
 
   return (

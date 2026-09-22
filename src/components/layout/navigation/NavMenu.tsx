@@ -1,5 +1,5 @@
 import ExpandMoreRounded from "@mui/icons-material/ExpandMoreRounded";
-import { Box, Button, ClickAwayListener } from "@mui/material";
+import { Box, Button, ClickAwayListener, useMediaQuery } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -38,6 +38,13 @@ const sectionById = (id: string | null): NavFlyoutSection | null =>
 const NavMenu = (): JSX.Element => {
   const theme = useTheme();
   const { pathname } = useLocation();
+  /**
+   * Header hides this menubar with CSS below md, so the trigger buttons stay
+   * mounted but leave layout (zero rect). Read live (useSyncExternalStore) so
+   * the very render that follows a breakpoint crossing already reports the
+   * panel closed: Popper never sees `open` with a display:none anchor.
+   */
+  const isMdUp = useMediaQuery(theme.breakpoints.up("md"));
   const [openId, setOpenId] = useState<string | null>(null);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const focusFirstOnOpen = useRef(false);
@@ -62,12 +69,15 @@ const NavMenu = (): JSX.Element => {
     setOpenId(null);
   }, []);
 
-  const openNow = useCallback((id: string, element: HTMLElement | null): void => {
-    if (element) {
-      setAnchorEl(element);
-    }
-    setOpenId(id);
-  }, []);
+  const openNow = useCallback(
+    (id: string, element: HTMLElement | null): void => {
+      if (element) {
+        setAnchorEl(element);
+      }
+      setOpenId(id);
+    },
+    [],
+  );
 
   const hover = useHoverIntent({
     onOpen: (id) => openNow(id, triggerRefs.current.get(id) ?? null),
@@ -86,14 +96,45 @@ const NavMenu = (): JSX.Element => {
     close();
   }, [pathname, close]);
 
+  /* Below md the menubar is display:none; drop the stale open state too. */
+  useEffect(() => {
+    if (!isMdUp) {
+      close();
+    }
+  }, [isMdUp, close]);
+
   useEffect(() => {
     if (!openId) {
       return undefined;
     }
     const handleResize = (): void => close();
+    /**
+     * The nav's own onKeyDown only sees keys while focus is inside the nav or
+     * the portaled panel. A hover-opened panel with focus on `main` needs
+     * this document listener; focus is left where it is (no trigger to
+     * return to) and the in-nav handler keeps owning the focused case.
+     */
+    const handleDocumentKeyDown = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== "Escape" || event.defaultPrevented) {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        (navRef.current?.contains(target) || panelRef.current?.contains(target))
+      ) {
+        return;
+      }
+      hover.clearAll();
+      close();
+    };
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [openId, close]);
+    document.addEventListener("keydown", handleDocumentKeyDown);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      document.removeEventListener("keydown", handleDocumentKeyDown);
+    };
+  }, [openId, close, hover]);
 
   const registerTrigger = useCallback(
     (id: string) => (node: HTMLButtonElement | null) => {
@@ -120,6 +161,8 @@ const NavMenu = (): JSX.Element => {
       if (!isMouseLike(event)) {
         return;
       }
+      // A hover-driven open must never pull keyboard focus into the panel.
+      focusFirstOnOpen.current = false;
       hover.cancelClose();
       if (openId) {
         // A panel is already showing: switch sections without the intent delay.
@@ -141,19 +184,22 @@ const NavMenu = (): JSX.Element => {
       openNow(section.id, event.currentTarget);
     };
 
-  const handleTriggerFocus =
-    (section: NavFlyoutSection) => (): void => {
-      // Focus never opens the panel (mousedown focus + click would toggle twice).
-      preloadSection(section);
-    };
+  const handleTriggerFocus = (section: NavFlyoutSection) => (): void => {
+    // Focus never opens the panel (mousedown focus + click would toggle twice).
+    preloadSection(section);
+  };
 
-  const handleNavPointerEnter = (event: ReactPointerEvent<HTMLElement>): void => {
+  const handleNavPointerEnter = (
+    event: ReactPointerEvent<HTMLElement>,
+  ): void => {
     if (isMouseLike(event)) {
       hover.cancelClose();
     }
   };
 
-  const handleNavPointerLeave = (event: ReactPointerEvent<HTMLElement>): void => {
+  const handleNavPointerLeave = (
+    event: ReactPointerEvent<HTMLElement>,
+  ): void => {
     if (!isMouseLike(event)) {
       return;
     }
@@ -169,8 +215,8 @@ const NavMenu = (): JSX.Element => {
       : [];
 
   const sectionIdOfTrigger = (button: HTMLElement): string | null =>
-    NAV_SECTIONS.find((section) => triggerIdFor(section.id) === button.id)?.id ??
-    null;
+    NAV_SECTIONS.find((section) => triggerIdFor(section.id) === button.id)
+      ?.id ?? null;
 
   /**
    * Portal events bubble through the React tree, so keys pressed inside the
@@ -179,7 +225,8 @@ const NavMenu = (): JSX.Element => {
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
     const target = event.target as HTMLElement;
     const isTrigger =
-      target instanceof HTMLButtonElement && sectionIdOfTrigger(target) !== null;
+      target instanceof HTMLButtonElement &&
+      sectionIdOfTrigger(target) !== null;
     const inPanel = Boolean(panelRef.current?.contains(target));
 
     if (event.key === "Escape") {
@@ -198,11 +245,18 @@ const NavMenu = (): JSX.Element => {
       const sectionId = sectionIdOfTrigger(target);
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        if (sectionId) {
-          focusFirstOnOpen.current = true;
-          hover.clearAll();
-          openNow(sectionId, target);
+        if (!sectionId) {
+          return;
         }
+        hover.clearAll();
+        if (openId === sectionId) {
+          // Already open: no state change would re-run NavFlyout's focus
+          // effect, so move focus into the panel directly.
+          panelRef.current?.querySelector<HTMLAnchorElement>("a")?.focus();
+          return;
+        }
+        focusFirstOnOpen.current = true;
+        openNow(sectionId, target);
         return;
       }
       if (event.key === "Enter" || event.key === " ") {
@@ -360,7 +414,7 @@ const NavMenu = (): JSX.Element => {
 
         <NavFlyout
           section={openSection}
-          open={Boolean(openId)}
+          open={Boolean(openId) && isMdUp}
           anchorEl={anchorEl}
           id={PANEL_ID}
           triggerId={triggerIdFor(openId ?? openSection?.id ?? "")}

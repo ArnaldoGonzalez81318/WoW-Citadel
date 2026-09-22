@@ -85,7 +85,7 @@ export const NAV_SECTIONS: NavFlyoutSection[] = [
         id: "pet",
         slug: "pet",
         label: "Battle Pets",
-        description: "Collectable companions and their abilities",
+        description: "Collectable companions from the pet journal",
         status: "gallery",
       }),
       defineItem({
@@ -240,7 +240,7 @@ export const NAV_SECTIONS: NavFlyoutSection[] = [
         id: "quest",
         slug: "quest",
         label: "Quests",
-        description: "Questlines, requirements, and story hooks",
+        description: "Quest categories, areas, and types, with lookup by id",
       }),
       defineItem({
         id: "creature",
@@ -286,7 +286,8 @@ export const NAV_SECTIONS: NavFlyoutSection[] = [
         id: "mythic-keystone-affix",
         slug: "mythic-keystone-affix",
         label: "Mythic Keystone Affixes",
-        description: "Weekly seasonal affixes and details",
+        description: "Every keystone affix with its icon and effect",
+        status: "gallery",
       }),
       defineItem({
         id: "mythic-keystone-dungeon",
