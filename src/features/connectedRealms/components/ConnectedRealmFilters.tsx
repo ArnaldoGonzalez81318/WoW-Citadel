@@ -1,106 +1,13 @@
 import { Button, Chip } from "@mui/material";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   ExplorerFilterBar,
   FilterChipGroup,
   SearchField,
 } from "@/components/common/ExplorerFilterBar";
-import type { FilterOption } from "@/components/common/ExplorerFilterBar";
-import type { ConnectedRealmSnapshot } from "@/features/connectedRealms/types";
-import { useSearchParamsRecord } from "@/hooks/useSearchParamState";
-import { formatNumber, humanizeEnum } from "@/lib/format";
-
-export type ConnectedRealmFilterState = {
-  q: string;
-  population: string;
-  /** "1" keeps only clusters with an active queue. */
-  queue: string;
-};
-
-const FILTER_DEFAULTS: ConnectedRealmFilterState = {
-  q: "",
-  population: "",
-  queue: "",
-};
-
-export type ConnectedRealmFilterResult = {
-  filters: ConnectedRealmFilterState;
-  setFilter: (key: keyof ConnectedRealmFilterState, value: string | null) => void;
-  clearFilters: () => void;
-  hasActiveFilters: boolean;
-  /** Clusters matching the filters. */
-  visible: ConnectedRealmSnapshot[];
-  populationOptions: FilterOption[];
-};
-
-const compareText = (left: string, right: string): number =>
-  left.localeCompare(right, undefined, { sensitivity: "base" });
-
-/** URL-backed filter state plus the filtered cluster list. */
-export const useConnectedRealmFilters = (
-  snapshots: ConnectedRealmSnapshot[],
-): ConnectedRealmFilterResult => {
-  const [params, setParams] = useSearchParamsRecord(FILTER_DEFAULTS);
-
-  const populationOptions = useMemo<FilterOption[]>(() => {
-    const counts = new Map<string, number>();
-    snapshots.forEach((snapshot) => {
-      if (snapshot.populationType) {
-        counts.set(
-          snapshot.populationType,
-          (counts.get(snapshot.populationType) ?? 0) + 1,
-        );
-      }
-    });
-    return Array.from(counts.entries())
-      .map(([value, count]) => ({ value, label: humanizeEnum(value), count }))
-      .sort((left, right) => compareText(left.label, right.label));
-  }, [snapshots]);
-
-  const visible = useMemo(() => {
-    const needle = params.q.trim().toLowerCase();
-    return snapshots.filter((snapshot) => {
-      if (
-        needle.length > 0 &&
-        !snapshot.displayName.toLowerCase().includes(needle) &&
-        !snapshot.realmSlugs.some((slug) => slug.toLowerCase().includes(needle))
-      ) {
-        return false;
-      }
-      if (params.population && snapshot.populationType !== params.population) {
-        return false;
-      }
-      if (params.queue === "1" && !snapshot.has_queue) {
-        return false;
-      }
-      return true;
-    });
-  }, [params.population, params.q, params.queue, snapshots]);
-
-  const setFilter = useCallback(
-    (key: keyof ConnectedRealmFilterState, value: string | null): void => {
-      setParams({ [key]: value }, { replace: key === "q" });
-    },
-    [setParams],
-  );
-
-  const clearFilters = useCallback((): void => {
-    setParams({ q: null, population: null, queue: null });
-  }, [setParams]);
-
-  return {
-    filters: params,
-    setFilter,
-    clearFilters,
-    hasActiveFilters:
-      params.q.trim().length > 0 ||
-      params.population.length > 0 ||
-      params.queue === "1",
-    visible,
-    populationOptions,
-  };
-};
+import type { ConnectedRealmFilterResult } from "@/features/connectedRealms/hooks/useConnectedRealmFilters";
+import { formatNumber } from "@/lib/format";
 
 export type ConnectedRealmFiltersProps = {
   filterState: ConnectedRealmFilterResult;
@@ -122,10 +29,23 @@ const ConnectedRealmFilters = ({
     populationOptions,
   } = filterState;
 
+  // The field echoes keystrokes immediately; the URL only changes after the
+  // debounce. The URL is mirrored back into the field only when it changed
+  // elsewhere (Back/Forward, Clear filters) — never for the value the field
+  // itself just emitted, so a transition commit cannot swallow a keystroke.
   const [text, setText] = useState(filters.q);
+  const lastEmitted = useRef(filters.q);
   useEffect(() => {
-    setText(filters.q);
+    if (filters.q !== lastEmitted.current) {
+      lastEmitted.current = filters.q;
+      setText(filters.q);
+    }
   }, [filters.q]);
+
+  const emitQuery = (value: string): void => {
+    lastEmitted.current = value;
+    setFilter("q", value || null);
+  };
 
   const queueActive = filters.queue === "1";
   const summary = `Showing ${formatNumber(visible.length)} of ${formatNumber(
@@ -143,8 +63,8 @@ const ConnectedRealmFilters = ({
         placeholder="Search by realm name"
         value={text}
         onChange={setText}
-        onDebouncedChange={(value) => setFilter("q", value || null)}
-        onClear={() => setFilter("q", null)}
+        onDebouncedChange={emitQuery}
+        onClear={() => emitQuery("")}
         size="small"
       />
 

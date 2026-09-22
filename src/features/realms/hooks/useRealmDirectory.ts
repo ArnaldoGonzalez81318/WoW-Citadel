@@ -14,7 +14,7 @@ import type {
 } from "@/features/realms/types";
 import { useSearchParamsRecord } from "@/hooks/useSearchParamState";
 import { env } from "@/lib/env";
-import { formatTimezone, humanizeEnum } from "@/lib/format";
+import { formatLocale, formatTimezone, humanizeEnum } from "@/lib/format";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -59,7 +59,10 @@ export type RealmDirectory = {
   total: number;
   visibleCount: number;
   facets: RealmFacets;
-  /** Full/high-population realms of this region, at most six. */
+  /**
+   * One realm per full/high-population cluster (FULL first), at most six.
+   * Empty until the connected-realm catalog resolves.
+   */
   quickPicks: RealmDirectoryRow[];
   sort: RealmSort;
   setSort: (sort: RealmSort) => void;
@@ -82,7 +85,15 @@ export type RealmDirectory = {
 const CATALOG_STALE_TIME = 30 * 60_000;
 const CATALOG_GC_TIME = 60 * 60_000;
 const QUICK_PICK_LIMIT = 6;
-const QUICK_PICK_TIERS: ReadonlySet<string> = new Set(["FULL", "HIGH"]);
+/** Population tiers that qualify for the quick picks, busiest first. */
+const QUICK_PICK_TIERS: readonly string[] = ["FULL", "HIGH"];
+
+/** Row height of the desktop realm table (also its skeleton). */
+export const REALM_ROW_HEIGHT = 56;
+
+/** Blizzard's own label ("Roleplaying") first; the enum only when it is missing. */
+export const realmTypeLabel = (row: RealmSummary): string =>
+  row.typeName || humanizeEnum(row.typeCode) || "";
 
 export const realmCatalogQueryKey = (): readonly [
   "realm-catalog",
@@ -143,16 +154,21 @@ const compareOptional = (
   return direction === "asc" ? compareText(a, b) : compareText(b, a);
 };
 
+/**
+ * The value the user sees in that column, so the order matches the table:
+ * time zones sort by "Chicago (UTC−5)", not "America/Chicago", and locales
+ * by "English (US)", not "enUS".
+ */
 const sortValue = (row: RealmDirectoryRow, key: RealmSortKey): string => {
   switch (key) {
     case "type":
-      return row.typeCode ?? row.typeName ?? "";
+      return realmTypeLabel(row);
     case "category":
       return row.category ?? "";
     case "timezone":
-      return row.timezone ?? "";
+      return row.timezone ? formatTimezone(row.timezone) : "";
     case "locale":
-      return row.locale ?? "";
+      return row.locale ? formatLocale(row.locale) : "";
     case "status":
       return row.statusLabel ?? "";
     default:
@@ -165,14 +181,13 @@ const sortRows = (
   sort: RealmSort,
 ): RealmDirectoryRow[] => {
   const { key, direction } = parseRealmSort(sort);
-  return [...rows].sort((left, right) => {
-    const primary = compareOptional(
-      sortValue(left, key),
-      sortValue(right, key),
-      direction,
-    );
-    return primary !== 0 ? primary : compareText(left.name, right.name);
+  // Labels are computed once per row, not once per comparison.
+  const keyed = rows.map((row) => ({ row, value: sortValue(row, key) }));
+  keyed.sort((left, right) => {
+    const primary = compareOptional(left.value, right.value, direction);
+    return primary !== 0 ? primary : compareText(left.row.name, right.row.name);
   });
+  return keyed.map((entry) => entry.row);
 };
 
 const facetOptions = (
@@ -285,14 +300,31 @@ export const useRealmDirectory = (): RealmDirectory => {
     };
   }, [catalogRows]);
 
-  const quickPicks = useMemo(
-    () =>
-      catalogRows
-        .filter((row) => QUICK_PICK_TIERS.has(row.populationType ?? ""))
-        .sort((left, right) => compareText(left.name, right.name))
-        .slice(0, QUICK_PICK_LIMIT),
-    [catalogRows],
-  );
+  // Population is a per-cluster attribute, so every member of a full cluster
+  // would qualify: keep one realm per cluster (the catalog is sorted by name,
+  // so the first member seen is the cluster's lead realm), rank FULL before
+  // HIGH, then by name.
+  const quickPicks = useMemo(() => {
+    const byCluster = new Map<number, RealmDirectoryRow>();
+    catalogRows.forEach((row) => {
+      if (!QUICK_PICK_TIERS.includes(row.populationType ?? "")) {
+        return;
+      }
+      const clusterId = row.connectedRealmId ?? row.id;
+      if (!byCluster.has(clusterId)) {
+        byCluster.set(clusterId, row);
+      }
+    });
+
+    return Array.from(byCluster.values())
+      .sort(
+        (left, right) =>
+          QUICK_PICK_TIERS.indexOf(left.populationType ?? "") -
+            QUICK_PICK_TIERS.indexOf(right.populationType ?? "") ||
+          compareText(left.name, right.name),
+      )
+      .slice(0, QUICK_PICK_LIMIT);
+  }, [catalogRows]);
 
   const rows = useMemo(() => {
     const needle = params.q.trim().toLowerCase();

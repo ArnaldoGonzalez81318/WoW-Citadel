@@ -9,8 +9,10 @@ import {
   Typography,
 } from "@mui/material";
 import type { Theme } from "@mui/material/styles";
+import { memo } from "react";
 import type { ReactNode } from "react";
 
+import { LoadingSkeleton } from "@/components/common/StateBlocks";
 import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid";
 import { statusChipColor } from "@/features/connectedRealms/services/connectedRealmService";
 import type {
@@ -18,12 +20,16 @@ import type {
   RealmSortDirection,
   RealmSortKey,
 } from "@/features/realms/hooks/useRealmDirectory";
-import { parseRealmSort } from "@/features/realms/hooks/useRealmDirectory";
+import {
+  parseRealmSort,
+  REALM_ROW_HEIGHT,
+  realmTypeLabel,
+} from "@/features/realms/hooks/useRealmDirectory";
 import type { RealmDirectoryRow } from "@/features/realms/types";
-import { formatLocale, formatTimezone, humanizeEnum } from "@/lib/format";
+import { formatLocale, formatTimezone } from "@/lib/format";
 import { focusRing, truncate } from "@/theme";
 
-export const REALM_ROW_HEIGHT = 56;
+const SKELETON_ROWS = 12;
 
 const GRID_TEMPLATE = "minmax(200px,2fr) 1fr 1.2fr 1.4fr 1.2fr 0.9fr";
 
@@ -42,10 +48,6 @@ const COLUMNS: readonly ColumnDefinition[] = [
   { key: "locale", label: "Locale" },
   { key: "status", label: "Status" },
 ];
-
-/** Blizzard's own label ("Roleplaying") first; the enum only when it is missing. */
-export const realmTypeLabel = (row: RealmDirectoryRow): string =>
-  row.typeName || humanizeEnum(row.typeCode) || "";
 
 const rowAriaLabel = (row: RealmDirectoryRow): string =>
   [
@@ -206,7 +208,9 @@ type RealmRowProps = {
   onSelect: (row: RealmDirectoryRow) => void;
 };
 
-const RealmRow = ({ row, statusPending, onSelect }: RealmRowProps): JSX.Element => {
+// Memoised: the virtual grid re-renders on every range change while `rows`,
+// `onSelect` and `statusPending` stay referentially stable.
+const RealmRow = memo(({ row, statusPending, onSelect }: RealmRowProps): JSX.Element => {
   const typeLabel = realmTypeLabel(row);
   const timezone = row.timezone ? formatTimezone(row.timezone) : undefined;
   const locale = row.locale ? formatLocale(row.locale) : undefined;
@@ -271,7 +275,9 @@ const RealmRow = ({ row, statusPending, onSelect }: RealmRowProps): JSX.Element 
       </Box>
     </ButtonBase>
   );
-};
+});
+
+RealmRow.displayName = "RealmRow";
 
 /* ------------------------------------------------------------------ */
 /* Table                                                               */
@@ -286,6 +292,8 @@ export type RealmTableProps = {
   statusPending?: boolean;
   /** Distance from the viewport top at which the header sticks (px). */
   stickyOffset?: number;
+  /** First load: the header stays and the rows become a same-height skeleton. */
+  loading?: boolean;
   emptyState?: ReactNode;
 };
 
@@ -300,6 +308,7 @@ const RealmTable = ({
   onSelect,
   statusPending = false,
   stickyOffset,
+  loading = false,
   emptyState,
 }: RealmTableProps): JSX.Element => {
   const { key: activeKey, direction } = parseRealmSort(sort);
@@ -337,18 +346,28 @@ const RealmTable = ({
         ))}
       </Box>
 
-      <VirtualizedCardGrid
-        items={rows}
-        columns={{ xs: 1 }}
-        itemHeight={REALM_ROW_HEIGHT}
-        gap={0}
-        aria-label="Realms"
-        getItemKey={(row) => row.id}
-        renderItem={(row) => (
-          <RealmRow row={row} statusPending={statusPending} onSelect={onSelect} />
-        )}
-        emptyState={emptyState}
-      />
+      {loading ? (
+        <LoadingSkeleton
+          variant="rows"
+          itemHeight={REALM_ROW_HEIGHT}
+          count={SKELETON_ROWS}
+          gap={0}
+          label="Loading realms"
+        />
+      ) : (
+        <VirtualizedCardGrid
+          items={rows}
+          columns={{ xs: 1 }}
+          itemHeight={REALM_ROW_HEIGHT}
+          gap={0}
+          aria-label="Realms"
+          getItemKey={(row) => row.id}
+          renderItem={(row) => (
+            <RealmRow row={row} statusPending={statusPending} onSelect={onSelect} />
+          )}
+          emptyState={emptyState}
+        />
+      )}
     </Box>
   );
 };

@@ -31,8 +31,14 @@ type ConnectedRealmSearchResponse = {
   }>;
 };
 
+/**
+ * Requested page size; Blizzard answers with its own `pageSize` (1000 is
+ * accepted today, but the loop trusts the response's `pageCount`, so a
+ * smaller cap only costs extra requests).
+ */
 const SEARCH_PAGE_SIZE = 1000;
-const MAX_SEARCH_PAGES = 3;
+/** Safety ceiling: hitting it before `pageCount` is an error, never a silent cut. */
+const MAX_SEARCH_PAGES = 20;
 const DETAIL_CONCURRENCY = 6;
 const SHORT_LABEL_NAMES = 3;
 
@@ -57,7 +63,7 @@ const normalizeRealm = (realm: RealmReference): ConnectedRealmMember => ({
   timezone: realm.timezone,
   type: localized(realm.type?.name),
   typeCode: realm.type?.type,
-  category: localized(realm.category?.name),
+  category: localized(realm.category),
   locale: realm.locale,
 });
 
@@ -150,11 +156,13 @@ const searchConnectedRealms = async (
 
     const pageCount = response?.pageCount ?? 1;
     if (results.length === 0 || page >= pageCount) {
-      break;
+      return [...recordsById.values()];
     }
   }
 
-  return [...recordsById.values()];
+  throw new Error(
+    `Connected-realm search did not finish within ${MAX_SEARCH_PAGES} pages`,
+  );
 };
 
 /**
@@ -204,8 +212,8 @@ const sortSnapshots = (
   snapshots.sort((left, right) => compareNames(left.leadName, right.leadName));
 
 /**
- * Every connected realm in the region, in one search request (three at
- * most). Falls back to the index + per-cluster details when the search
+ * Every connected realm in the region from the paged search endpoint
+ * (typically one request). Falls back to the index + per-cluster details when the search
  * endpoint is unavailable or empty.
  */
 export const fetchConnectedRealmCatalog = async (

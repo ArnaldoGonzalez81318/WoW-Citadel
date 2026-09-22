@@ -67,13 +67,14 @@ export type AuctionRow = {
 };
 
 export type AuctionSnapshot = {
+  /** Every priced row from the scan, most expensive first; the table sorts and keeps `limit`. */
   rows: AuctionRow[];
   /** Listings read from the dump before the cap. */
   scannedListings: number;
   bytesRead: number;
   /** The whole dump was read (no cap was hit). */
   complete: boolean;
-  /** Rows kept after sorting. */
+  /** Rows the table shows after sorting. */
   limit: number;
 };
 
@@ -89,13 +90,17 @@ export type AuctionSortKey =
   | "price-desc"
   | "price-asc"
   | "quantity-desc"
-  | "name-asc";
+  | "quantity-asc"
+  | "name-asc"
+  | "name-desc";
 
 export const AUCTION_SORT_KEYS: readonly AuctionSortKey[] = [
   "price-desc",
   "price-asc",
   "quantity-desc",
+  "quantity-asc",
   "name-asc",
+  "name-desc",
 ];
 
 export const isAuctionSortKey = (value: unknown): value is AuctionSortKey =>

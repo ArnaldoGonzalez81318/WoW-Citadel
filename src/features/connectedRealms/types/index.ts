@@ -47,7 +47,8 @@ export type RealmReference = {
   timezone?: string;
   locale?: string;
   type?: RealmType;
-  category?: RealmType;
+  /** Localized category label ("United States", "Oceanic"); never an object. */
+  category?: LocalizedString;
   realm?: LinkReference;
 };
 
@@ -91,6 +92,9 @@ export type ConnectedRealmSnapshot = ConnectedRealm & {
   statusType?: RealmStatusType;
   populationType?: RealmPopulationType;
 };
+
+/** Fixed card height for the connected-realm grid and its skeleton. */
+export const CONNECTED_REALM_CARD_HEIGHT = 236;
 
 export type ConnectedRealmCatalog = {
   snapshots: ConnectedRealmSnapshot[];

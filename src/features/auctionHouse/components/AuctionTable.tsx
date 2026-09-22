@@ -16,6 +16,7 @@ import {
   Typography,
 } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
+import { memo } from "react";
 import type { ReactNode } from "react";
 
 import GoldAmount from "@/components/common/GoldAmount";
@@ -32,26 +33,42 @@ import { qualityColor, truncate } from "@/theme";
 
 const SKELETON_ROWS = 10;
 const ICON_SIZE = 40;
+/**
+ * Phone layout: the table is `table-layout: fixed` so the Item column
+ * truncates instead of forcing a hidden horizontal scroll; the price column
+ * gets a fixed width wide enough for "1,234,567g 89s 99c" at the small size.
+ */
+const PRICE_COLUMN_WIDTH_XS = 128;
 
 type SortableColumn = "name" | "quantity" | "price";
 
 type AriaSort = "ascending" | "descending" | undefined;
 
 const activeColumn = (sort: AuctionSortKey): SortableColumn =>
-  sort === "name-asc" ? "name" : sort === "quantity-desc" ? "quantity" : "price";
+  sort.startsWith("name-")
+    ? "name"
+    : sort.startsWith("quantity-")
+      ? "quantity"
+      : "price";
 
 const sortDirection = (sort: AuctionSortKey): "asc" | "desc" =>
   sort.endsWith("-asc") ? "asc" : "desc";
 
+/** Names start ascending, numbers descending; a second click flips. */
+const DEFAULT_DIRECTION: Record<SortableColumn, "asc" | "desc"> = {
+  name: "asc",
+  quantity: "desc",
+  price: "desc",
+};
+
 const nextSort = (column: SortableColumn, current: AuctionSortKey): AuctionSortKey => {
-  switch (column) {
-    case "name":
-      return "name-asc";
-    case "quantity":
-      return "quantity-desc";
-    default:
-      return current === "price-desc" ? "price-asc" : "price-desc";
-  }
+  const direction =
+    activeColumn(current) === column
+      ? sortDirection(current) === "asc"
+        ? "desc"
+        : "asc"
+      : DEFAULT_DIRECTION[column];
+  return `${column}-${direction}`;
 };
 
 const hideBelowSm: SxProps<Theme> = {
@@ -61,6 +78,18 @@ const hideBelowSm: SxProps<Theme> = {
 const numericCell: SxProps<Theme> = {
   fontVariantNumeric: "tabular-nums",
   whiteSpace: "nowrap",
+};
+
+const itemCell: SxProps<Theme> = {
+  minWidth: { xs: 0, sm: 220 },
+};
+
+const priceHeadCell: SxProps<Theme> = {
+  width: { xs: PRICE_COLUMN_WIDTH_XS, sm: "auto" },
+};
+
+const goldSx: SxProps<Theme> = {
+  fontSize: { xs: "0.75rem", sm: "0.875rem" },
 };
 
 /* ------------------------------------------------------------------ */
@@ -96,12 +125,36 @@ const SortHeader = ({
     <TableCell align={align} aria-sort={ariaSort} sx={sx}>
       <TableSortLabel
         active={active}
-        direction={active ? direction : column === "name" ? "asc" : "desc"}
+        direction={active ? direction : DEFAULT_DIRECTION[column]}
         onClick={() => onSortChange(nextSort(column, sort))}
       >
         {label}
       </TableSortLabel>
     </TableCell>
+  );
+};
+
+const TimeLeftCell = ({ row }: { row: AuctionTableRow }): JSX.Element => {
+  const short = row.timeLeft === "SHORT";
+  const chip = (
+    <Chip
+      size="small"
+      label={row.timeLeftLabel}
+      color={short ? "warning" : "default"}
+      variant={short ? "filled" : "outlined"}
+      // Focusable so the hint is reachable from the keyboard; `describeChild`
+      // keeps the visible label as the accessible name and makes the hint
+      // its description.
+      tabIndex={row.timeLeftHint ? 0 : undefined}
+    />
+  );
+
+  return row.timeLeftHint ? (
+    <Tooltip title={row.timeLeftHint} describeChild enterTouchDelay={0}>
+      {chip}
+    </Tooltip>
+  ) : (
+    chip
   );
 };
 
@@ -176,36 +229,27 @@ const ItemCell = ({ row }: { row: AuctionTableRow }): JSX.Element => {
             ) : null}
           </>
         )}
+        {/* Below sm the Time-left column is hidden; the chip rides here. */}
+        <Box sx={{ display: { xs: "block", sm: "none" }, marginTop: 0.5 }}>
+          <TimeLeftCell row={row} />
+        </Box>
       </Box>
     </Stack>
   );
 };
 
-const TimeLeftCell = ({ row }: { row: AuctionTableRow }): JSX.Element => {
-  const short = row.timeLeft === "SHORT";
-  const chip = (
-    <Chip
-      size="small"
-      label={row.timeLeftLabel}
-      color={short ? "warning" : "default"}
-      variant={short ? "filled" : "outlined"}
-    />
-  );
+const SkeletonCell = ({ sx }: { sx?: SxProps<Theme> }): JSX.Element => (
+  <TableCell align="right" sx={sx}>
+    <Skeleton variant="text" width={64} sx={{ marginLeft: "auto" }} />
+  </TableCell>
+);
 
-  return row.timeLeftHint ? (
-    <Tooltip title={row.timeLeftHint} enterTouchDelay={0}>
-      {chip}
-    </Tooltip>
-  ) : (
-    chip
-  );
-};
-
-const SkeletonRows = ({ columns }: { columns: number }): JSX.Element => (
+/** Same columns (and responsive visibility) as the real rows. */
+const SkeletonRows = ({ commodities }: { commodities: boolean }): JSX.Element => (
   <>
     {Array.from({ length: SKELETON_ROWS }, (_, index) => (
       <TableRow key={index}>
-        <TableCell>
+        <TableCell sx={itemCell}>
           <Stack direction="row" spacing={1.5} alignItems="center">
             <Skeleton variant="rounded" width={ICON_SIZE} height={ICON_SIZE} />
             <Box sx={{ flex: 1 }}>
@@ -214,11 +258,10 @@ const SkeletonRows = ({ columns }: { columns: number }): JSX.Element => (
             </Box>
           </Stack>
         </TableCell>
-        {Array.from({ length: columns - 1 }, (_, cell) => (
-          <TableCell key={cell} align="right">
-            <Skeleton variant="text" width={64} sx={{ marginLeft: "auto" }} />
-          </TableCell>
-        ))}
+        <SkeletonCell sx={hideBelowSm} />
+        {commodities ? <SkeletonCell sx={hideBelowSm} /> : null}
+        <SkeletonCell />
+        <SkeletonCell sx={hideBelowSm} />
       </TableRow>
     ))}
   </>
@@ -261,10 +304,20 @@ const AuctionTable = ({
       variant="outlined"
       sx={{ overflowX: "auto", minWidth: 0 }}
     >
-      <Table size="small" aria-label="Auction listings">
+      <Table
+        size="small"
+        aria-label="Auction listings"
+        sx={{ tableLayout: { xs: "fixed", sm: "auto" } }}
+      >
         <TableHead>
           <TableRow>
-            <SortHeader column="name" label="Item" sort={sort} onSortChange={onSortChange} />
+            <SortHeader
+              column="name"
+              label="Item"
+              sort={sort}
+              onSortChange={onSortChange}
+              sx={itemCell}
+            />
             <SortHeader
               column="quantity"
               label="Quantity"
@@ -284,13 +337,14 @@ const AuctionTable = ({
               align="right"
               sort={sort}
               onSortChange={onSortChange}
+              sx={priceHeadCell}
             />
-            <TableCell>Time left</TableCell>
+            <TableCell sx={hideBelowSm}>Time left</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {loading && rows.length === 0 ? (
-            <SkeletonRows columns={columnCount} />
+            <SkeletonRows commodities={commodities} />
           ) : rows.length === 0 ? (
             <TableRow>
               <TableCell colSpan={columnCount} sx={{ padding: 2, borderBottom: 0 }}>
@@ -305,7 +359,7 @@ const AuctionTable = ({
           ) : (
             rows.map((row) => (
               <TableRow key={row.key} hover>
-                <TableCell sx={{ minWidth: 220 }}>
+                <TableCell sx={itemCell}>
                   <ItemCell row={row} />
                 </TableCell>
                 <TableCell align="right" sx={{ ...hideBelowSm, ...numericCell }}>
@@ -317,9 +371,9 @@ const AuctionTable = ({
                   </TableCell>
                 ) : null}
                 <TableCell align="right" sx={numericCell}>
-                  <GoldAmount copper={row.priceCopper} />
+                  <GoldAmount copper={row.priceCopper} sx={goldSx} />
                 </TableCell>
-                <TableCell>
+                <TableCell sx={hideBelowSm}>
                   <TimeLeftCell row={row} />
                 </TableCell>
               </TableRow>
@@ -331,4 +385,6 @@ const AuctionTable = ({
   );
 };
 
-export default AuctionTable;
+// Memoised: the page re-renders on every progress tick while the table's
+// props (`rows`, `sort`, `view`, stable callbacks and empty state) do not.
+export default memo(AuctionTable);

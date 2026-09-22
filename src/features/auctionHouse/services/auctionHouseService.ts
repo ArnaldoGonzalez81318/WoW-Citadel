@@ -52,7 +52,7 @@ export const COMMODITY_LISTING_CAP = 25_000;
 export const REALM_LISTING_CAP = 15_000;
 /** Bytes read from either dump before cancelling. */
 export const AUCTION_DUMP_BYTE_CAP = 6 * 1024 * 1024;
-/** Rows kept after sorting. */
+/** Rows the table shows after sorting (the snapshot keeps every priced row). */
 export const AUCTION_ROW_LIMIT = 50;
 
 const PROGRESS_INTERVAL_MS = 200;
@@ -355,7 +355,7 @@ const isPrice = (value: unknown): value is number =>
 export type AuctionSnapshotOptions = {
   signal?: AbortSignal;
   onProgress?: (progress: AuctionScanProgress) => void;
-  /** Rows kept after sorting (default 50). */
+  /** Rows the table shows after sorting (default 50). */
   limit?: number;
 };
 
@@ -368,8 +368,10 @@ type CommodityAccumulator = {
 
 /**
  * Regional commodities: every scanned listing is folded by item id (lowest
- * unit price, summed quantity, listing count, SHORT wins), then the most
- * expensive `limit` items are kept. No item metadata is fetched here.
+ * unit price, summed quantity, listing count, SHORT wins), most expensive
+ * first. Every item is kept so the table can sort by quantity or price
+ * across the whole scan before showing `limit` rows. No item metadata is
+ * fetched here.
  */
 export const fetchCommoditySnapshot = async ({
   signal,
@@ -417,8 +419,7 @@ export const fetchCommoditySnapshot = async ({
         entry.timeLeft,
       ),
     )
-    .sort((left, right) => right.priceCopper - left.priceCopper)
-    .slice(0, limit);
+    .sort((left, right) => right.priceCopper - left.priceCopper);
 
   return {
     rows,
@@ -430,8 +431,9 @@ export const fetchCommoditySnapshot = async ({
 };
 
 /**
- * Connected-realm auctions: listings with a buyout, most expensive first,
- * capped at `limit`. No item metadata is fetched here.
+ * Connected-realm auctions: every listing with a buyout, most expensive
+ * first; the table sorts and shows `limit` rows. No item metadata is
+ * fetched here.
  */
 export const fetchConnectedRealmAuctionSnapshot = async (
   connectedRealmId: number,
@@ -450,7 +452,6 @@ export const fetchConnectedRealmAuctionSnapshot = async (
   const rows = dump.listings
     .filter((listing) => isPrice(listing.buyout))
     .sort((left, right) => (right.buyout ?? 0) - (left.buyout ?? 0))
-    .slice(0, limit)
     .map((listing) =>
       toRow(
         `listing-${listing.id}`,

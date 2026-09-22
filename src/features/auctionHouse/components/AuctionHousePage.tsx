@@ -1,7 +1,7 @@
 import GavelRoundedIcon from "@mui/icons-material/GavelRounded";
 import { Chip, Stack, Typography } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 import PageHeader from "@/components/common/PageHeader";
 import { EmptyState, ErrorState } from "@/components/common/StateBlocks";
@@ -98,6 +98,18 @@ const AuctionHousePage = ({
 
   const awaitingRealm = view === "realm" && realmId === null;
 
+  // Stable element so `memo(AuctionTable)` skips the progress-tick re-renders.
+  const emptyState = useMemo(
+    () =>
+      awaitingRealm ? (
+        <EmptyState
+          title="Choose a connected realm"
+          description="Pick a connected realm above to load its buyout listings"
+        />
+      ) : undefined,
+    [awaitingRealm],
+  );
+
   return (
     <Stack
       spacing={{
@@ -144,14 +156,7 @@ const AuctionHousePage = ({
           sort={sort}
           onSortChange={handleSortChange}
           loading={query.isPending && !awaitingRealm}
-          emptyState={
-            awaitingRealm ? (
-              <EmptyState
-                title="Choose a connected realm"
-                description="Pick a connected realm above to load its buyout listings"
-              />
-            ) : undefined
-          }
+          emptyState={emptyState}
         />
       )}
 

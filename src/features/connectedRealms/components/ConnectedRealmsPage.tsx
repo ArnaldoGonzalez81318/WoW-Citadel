@@ -13,13 +13,11 @@ import {
   LoadingSkeleton,
 } from "@/components/common/StateBlocks";
 import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid";
-import ConnectedRealmCard, {
-  CONNECTED_REALM_CARD_HEIGHT,
-} from "@/features/connectedRealms/components/ConnectedRealmCard";
-import ConnectedRealmFilters, {
-  useConnectedRealmFilters,
-} from "@/features/connectedRealms/components/ConnectedRealmFilters";
+import ConnectedRealmCard from "@/features/connectedRealms/components/ConnectedRealmCard";
+import ConnectedRealmFilters from "@/features/connectedRealms/components/ConnectedRealmFilters";
+import { useConnectedRealmFilters } from "@/features/connectedRealms/hooks/useConnectedRealmFilters";
 import { useConnectedRealmCatalog } from "@/features/connectedRealms/hooks/useConnectedRealmSnapshots";
+import { CONNECTED_REALM_CARD_HEIGHT } from "@/features/connectedRealms/types";
 import type { ConnectedRealmSnapshot } from "@/features/connectedRealms/types";
 import { env } from "@/lib/env";
 import { formatNumber } from "@/lib/format";

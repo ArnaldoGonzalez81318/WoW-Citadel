@@ -12,6 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import type { Theme } from "@mui/material/styles";
+import { memo } from "react";
 import { Link as RouterLink } from "react-router-dom";
 
 import {
@@ -23,12 +24,7 @@ import type { ConnectedRealmSnapshot } from "@/features/connectedRealms/types";
 import { formatTimezone } from "@/lib/format";
 import { truncate } from "@/theme";
 
-export const CONNECTED_REALM_CARD_HEIGHT = 236;
-
 const MEMBER_PREVIEW = 3;
-
-const HOVER_LIFT =
-  "@media (hover: hover) and (prefers-reduced-motion: no-preference)";
 
 export type ConnectedRealmCardProps = {
   snapshot: ConnectedRealmSnapshot;
@@ -88,18 +84,14 @@ const ConnectedRealmCard = ({
         height: "100%",
         display: "flex",
         flexDirection: "column",
-        transition: theme.transitions.create(
-          ["border-color", "box-shadow", "transform"],
-          { duration: theme.wc.motion.base, easing: theme.wc.motion.easing },
-        ),
+        // A static card (only the footer buttons are interactive): no lift or
+        // glow, which DESIGN.md reserves for CardActionArea cards.
+        transition: theme.transitions.create("border-color", {
+          duration: theme.wc.motion.base,
+          easing: theme.wc.motion.easing,
+        }),
         "@media (hover: hover)": {
-          "&:hover": {
-            borderColor: theme.palette.border.strong,
-            boxShadow: theme.palette.glow.card,
-          },
-        },
-        [HOVER_LIFT]: {
-          "&:hover": { transform: "translateY(-2px)" },
+          "&:hover": { borderColor: theme.palette.border.strong },
         },
       })}
     >
@@ -153,8 +145,9 @@ const ConnectedRealmCard = ({
             />
           ) : null}
           {populationLabel ? (
-            <Tooltip title={populationHint} enterTouchDelay={0}>
+            <Tooltip title={populationHint} describeChild enterTouchDelay={0}>
               <Chip
+                tabIndex={0}
                 size="small"
                 label={populationLabel}
                 color={populationColor}
@@ -167,11 +160,12 @@ const ConnectedRealmCard = ({
           ) : null}
         </Stack>
 
-        <Tooltip title={memberNames.join(", ")} enterTouchDelay={0}>
+        <Tooltip title={memberNames.join(", ")} describeChild enterTouchDelay={0}>
           <Typography
             variant="body2"
             component="p"
             color="text.secondary"
+            tabIndex={0}
             sx={{ ...truncate, margin: 0 }}
           >
             {memberSummary(memberNames)}
@@ -180,17 +174,20 @@ const ConnectedRealmCard = ({
       </CardContent>
 
       <CardActions sx={{ mt: "auto", px: 2, pb: 2, gap: 1 }}>
-        {snapshot.auctions?.href ? (
-          <Button
-            size="small"
-            variant="contained"
-            component={RouterLink}
-            to={`/category/auction-house?view=realm&realm=${snapshot.id}`}
-            startIcon={<GavelRoundedIcon />}
-          >
-            View auctions
-          </Button>
-        ) : null}
+        {/*
+          Every connected realm has an auctions endpoint keyed by id; the
+          search payload carries no `auctions` link, so the button is never
+          gated on it.
+        */}
+        <Button
+          size="small"
+          variant="contained"
+          component={RouterLink}
+          to={`/category/auction-house?view=realm&realm=${snapshot.id}`}
+          startIcon={<GavelRoundedIcon />}
+        >
+          View auctions
+        </Button>
         {leadName ? (
           <Button
             size="small"
@@ -206,4 +203,6 @@ const ConnectedRealmCard = ({
   );
 };
 
-export default ConnectedRealmCard;
+// `snapshot` comes from the query cache and `highlightQuery` is a string, so
+// the shallow comparison skips every card the scroll range did not change.
+export default memo(ConnectedRealmCard);

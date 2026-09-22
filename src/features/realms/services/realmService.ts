@@ -26,9 +26,14 @@ type RealmSearchEntry = {
   connected_realm?: { href?: string; id?: number };
 };
 
-/** Never page past this: the whole region fits in one 1000-row page. */
-const MAX_SEARCH_PAGES = 3;
+/**
+ * Requested page size; Blizzard answers with its own `pageSize` (1000 is
+ * accepted today) and the loop trusts the response's `pageCount`, so a
+ * smaller server cap only costs extra requests, never realms.
+ */
 const SEARCH_PAGE_SIZE = 1000;
+/** Safety ceiling: hitting it before `pageCount` is an error, never a silent cut. */
+const MAX_SEARCH_PAGES = 20;
 
 const CONNECTED_REALM_ID_PATTERN = /connected-realm\/(\d+)/;
 
@@ -66,8 +71,8 @@ const toRealmSummary = (
 
 /**
  * Every realm in the region with ruleset, category, time zone, locale and
- * connected-realm id, from the search endpoint (typically one request;
- * never more than three). Sorted by name client-side because Blizzard's
+ * connected-realm id, from the paged search endpoint (typically one
+ * request). Sorted by name client-side because Blizzard's
  * `orderby` on localized fields is unreliable.
  */
 export const fetchAllRealms = async (
@@ -101,19 +106,27 @@ export const fetchAllRealms = async (
 
     const pageCount = response?.pageCount ?? 1;
     if (results.length === 0 || page >= pageCount) {
-      break;
+      return [...realmsById.values()].sort((left, right) =>
+        left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
+      );
     }
   }
 
-  return [...realmsById.values()].sort((left, right) =>
-    left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
-  );
+  throw new Error(`Realm search did not finish within ${MAX_SEARCH_PAGES} pages`);
 };
 
-/** Blizzard-internal entries (development category, account/test realms). */
+/**
+ * Blizzard-internal slugs: instance hosts (`us1a1inst`, `au2a3instsl`,
+ * `us1a3instbfa`), auxiliary and partner realms, account/RDB/test realms.
+ */
+const INTERNAL_SLUG_PATTERN =
+  /account-realm|^rdb-|^test|^[a-z]{2}\d[ab]\d*inst|auxiliary|-partner$/i;
+
+/** Blizzard-internal entries (development category, instance/account/test realms). */
 export const isInternalRealm = (realm: RealmSummary): boolean =>
   realm.category?.toLowerCase() === "development" ||
-  /account-realm|^rdb-|^test/i.test(realm.slug);
+  INTERNAL_SLUG_PATTERN.test(realm.slug) ||
+  /-INST\b/i.test(realm.name);
 
 export const fetchRealmDetail = async (
   realmSlug: string,

@@ -10,6 +10,7 @@ import {
 import type {
   AuctionItemSummary,
   AuctionMarketView,
+  AuctionRow,
   AuctionScanProgress,
   AuctionSnapshot,
   AuctionSortKey,
@@ -35,6 +36,7 @@ const ENRICH_BATCH = 16;
 
 const EMPTY_PROGRESS: AuctionScanProgress = { bytesRead: 0, scannedListings: 0 };
 const EMPTY_ROWS: AuctionTableRow[] = [];
+const EMPTY_IDS: number[] = [];
 
 /* ------------------------------------------------------------------ */
 /* Query keys                                                          */
@@ -58,28 +60,66 @@ const compareText = (left: string, right: string): number =>
 const rowName = (row: AuctionTableRow): string =>
   row.name ?? `Item #${row.itemId}`;
 
-const sortRows = (
+const byPriceDesc = (left: AuctionRow, right: AuctionRow): number =>
+  right.priceCopper - left.priceCopper;
+
+/** What each sort ranks, for the filter-bar summary ("Top 50 by …"). */
+export const AUCTION_SORT_SCOPES: Record<AuctionSortKey, string> = {
+  "price-desc": "highest price",
+  "price-asc": "lowest price",
+  "quantity-desc": "largest quantity",
+  "quantity-asc": "smallest quantity",
+  "name-asc": "highest price, sorted by name",
+  "name-desc": "highest price, sorted by name",
+};
+
+/**
+ * Price and quantity sorts rank the whole scan before the top `limit` rows
+ * are kept. Names only exist for rows on screen, so a name sort orders the
+ * `limit` most expensive rows (`rows` already arrive most expensive first).
+ */
+const selectRows = (
+  rows: AuctionRow[],
+  sort: AuctionSortKey,
+  limit: number,
+): AuctionRow[] => {
+  switch (sort) {
+    case "price-asc":
+      return [...rows]
+        .sort((left, right) => left.priceCopper - right.priceCopper)
+        .slice(0, limit);
+    case "quantity-desc":
+      return [...rows]
+        .sort(
+          (left, right) =>
+            right.quantity - left.quantity || byPriceDesc(left, right),
+        )
+        .slice(0, limit);
+    case "quantity-asc":
+      return [...rows]
+        .sort(
+          (left, right) =>
+            left.quantity - right.quantity || byPriceDesc(left, right),
+        )
+        .slice(0, limit);
+    default:
+      return rows.slice(0, limit);
+  }
+};
+
+const sortByName = (
   rows: AuctionTableRow[],
   sort: AuctionSortKey,
 ): AuctionTableRow[] => {
-  const sorted = [...rows];
-  switch (sort) {
-    case "price-asc":
-      return sorted.sort((left, right) => left.priceCopper - right.priceCopper);
-    case "quantity-desc":
-      return sorted.sort(
-        (left, right) =>
-          right.quantity - left.quantity || right.priceCopper - left.priceCopper,
-      );
-    case "name-asc":
-      return sorted.sort(
-        (left, right) =>
-          compareText(rowName(left), rowName(right)) ||
-          right.priceCopper - left.priceCopper,
-      );
-    default:
-      return sorted.sort((left, right) => right.priceCopper - left.priceCopper);
+  if (sort !== "name-asc" && sort !== "name-desc") {
+    return rows;
   }
+  const direction = sort === "name-asc" ? 1 : -1;
+  return [...rows].sort(
+    (left, right) =>
+      direction * compareText(rowName(left), rowName(right)) ||
+      byPriceDesc(left, right),
+  );
 };
 
 /* ------------------------------------------------------------------ */
@@ -87,6 +127,7 @@ const sortRows = (
 /* ------------------------------------------------------------------ */
 
 type SummaryResults = {
+  /** Indexed by position in `itemIds`. */
   data: Array<AuctionItemSummary | undefined>;
   /** Success (including a 404 resolved to undefined) or error. */
   settled: boolean[];
@@ -100,13 +141,15 @@ const combineSummaries = (
 });
 
 type IconResults = {
+  /** Indexed by position in `itemIds`. */
   data: Array<string | undefined>;
 };
 
 const combineIcons = (
-  results: UseQueryResult<string | undefined>[],
+  results: UseQueryResult<string | null | undefined>[],
 ): IconResults => ({
-  data: results.map((result) => result.data),
+  // `fetchItemMediaUrl` resolves `null` for "no icon"; the table wants undefined.
+  data: results.map((result) => result.data ?? undefined),
 });
 
 /* ------------------------------------------------------------------ */
@@ -115,7 +158,7 @@ const combineIcons = (
 
 export type UseAuctionSnapshotResult = {
   snapshot: AuctionSnapshot | undefined;
-  /** Snapshot rows merged with item summaries and icons, sorted. */
+  /** The `limit` rows to show, merged with item summaries and icons, sorted. */
   rows: AuctionTableRow[];
   /** Bytes / listings read so far while the dump downloads. */
   progress: AuctionScanProgress;
@@ -125,8 +168,9 @@ export type UseAuctionSnapshotResult = {
 
 /**
  * One bounded auction snapshot (commodities or a connected realm) plus
- * per-row item enrichment. Item lookups never gate the table: a failed
- * summary leaves the row as "Item #id" with the icon fallback.
+ * per-item enrichment of the rows on screen. Item lookups never gate the
+ * table: a failed summary leaves the row as "Item #id" with the icon
+ * fallback.
  */
 export const useAuctionSnapshot = (
   view: AuctionMarketView,
@@ -166,11 +210,25 @@ export const useAuctionSnapshot = (
   });
 
   const snapshot = query.data;
-  const baseRows = snapshot?.rows;
-  const rowCount = baseRows?.length ?? 0;
+
+  const baseRows = useMemo<AuctionRow[] | undefined>(
+    () =>
+      snapshot ? selectRows(snapshot.rows, sort, snapshot.limit) : undefined,
+    [snapshot, sort],
+  );
+
+  // Realm snapshots list the same item several times: enrich each item once
+  // (react-query warns about duplicate keys inside one `useQueries`).
+  const itemIds = useMemo<number[]>(
+    () =>
+      baseRows
+        ? Array.from(new Set(baseRows.map((row) => row.itemId)))
+        : EMPTY_IDS,
+    [baseRows],
+  );
 
   const enrichWindow = useIdlePrefetchWindow({
-    totalCount: rowCount,
+    totalCount: itemIds.length,
     initialCount: ENRICH_INITIAL,
     batchSize: ENRICH_BATCH,
     resetKey: isRealm ? `realm:${connectedRealmId ?? ""}` : "commodities",
@@ -179,10 +237,10 @@ export const useAuctionSnapshot = (
   // `combine` with stable callbacks returns referentially stable results, so
   // the merge below only recomputes when a summary or icon actually settles.
   const summaries = useQueries({
-    queries: (baseRows ?? []).map((row, index) => ({
-      queryKey: auctionKeys.itemSummary(row.itemId),
+    queries: itemIds.map((itemId, index) => ({
+      queryKey: auctionKeys.itemSummary(itemId),
       queryFn: ({ signal }: { signal: AbortSignal }) =>
-        fetchAuctionItemSummary(row.itemId, signal),
+        fetchAuctionItemSummary(itemId, signal),
       staleTime: Infinity,
       gcTime: ITEM_GC_MS,
       retry: false,
@@ -192,10 +250,10 @@ export const useAuctionSnapshot = (
   });
 
   const icons = useQueries({
-    queries: (baseRows ?? []).map((row, index) => ({
-      queryKey: itemKeys.media(row.itemId),
+    queries: itemIds.map((itemId, index) => ({
+      queryKey: itemKeys.media(itemId),
       queryFn: ({ signal }: { signal: AbortSignal }) =>
-        fetchItemMediaUrl(row.itemId, signal),
+        fetchItemMediaUrl(itemId, signal),
       staleTime: Infinity,
       gcTime: ITEM_GC_MS,
       retry: false,
@@ -209,7 +267,9 @@ export const useAuctionSnapshot = (
       return EMPTY_ROWS;
     }
 
-    const merged = baseRows.map((row, index): AuctionTableRow => {
+    const indexById = new Map(itemIds.map((itemId, index) => [itemId, index]));
+    const merged = baseRows.map((row): AuctionTableRow => {
+      const index = indexById.get(row.itemId) ?? -1;
       const summary = summaries.data[index];
       return {
         ...row,
@@ -223,8 +283,8 @@ export const useAuctionSnapshot = (
       };
     });
 
-    return sortRows(merged, sort);
-  }, [baseRows, icons.data, sort, summaries.data, summaries.settled]);
+    return sortByName(merged, sort);
+  }, [baseRows, icons.data, itemIds, sort, summaries.data, summaries.settled]);
 
   return {
     snapshot,

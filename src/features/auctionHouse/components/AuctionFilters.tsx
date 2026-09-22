@@ -18,6 +18,7 @@ import {
 } from "@/components/common/ExplorerFilterBar";
 import type { SegmentedOption } from "@/components/common/ExplorerFilterBar";
 import { ErrorState } from "@/components/common/StateBlocks";
+import { AUCTION_SORT_SCOPES } from "@/features/auctionHouse/hooks/useAuctionSnapshot";
 import type { UseAuctionSnapshotResult } from "@/features/auctionHouse/hooks/useAuctionSnapshot";
 import type {
   AuctionMarketView,
@@ -38,8 +39,10 @@ const VIEW_OPTIONS: ReadonlyArray<SegmentedOption<AuctionMarketView>> = [
 const SORT_OPTIONS: ReadonlyArray<{ value: AuctionSortKey; label: string }> = [
   { value: "price-desc", label: "Price: high to low" },
   { value: "price-asc", label: "Price: low to high" },
-  { value: "quantity-desc", label: "Quantity" },
-  { value: "name-asc", label: "Name" },
+  { value: "quantity-desc", label: "Quantity: high to low" },
+  { value: "quantity-asc", label: "Quantity: low to high" },
+  { value: "name-asc", label: "Name: A to Z" },
+  { value: "name-desc", label: "Name: Z to A" },
 ];
 
 const REALM_PICKER_MIN_WIDTH = 280;
@@ -49,7 +52,7 @@ const KILOBYTE = 1024;
 const MEGABYTE = KILOBYTE * KILOBYTE;
 
 /** "1.2 MB" / "480 KB" for the download progress line. */
-export const formatBytes = (bytes: number): string => {
+const formatBytes = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes <= 0) {
     return "0 KB";
   }
@@ -155,9 +158,13 @@ const AuctionFilters = ({
       return undefined;
     }
     if (query.isFetching) {
-      return `Downloading snapshot - ${formatBytes(progress.bytesRead)}, ${formatNumber(
-        progress.scannedListings,
-      )} listings scanned`;
+      // The proxy buffers Blizzard's whole dump before replying, so no bytes
+      // arrive until it finishes; "0 KB" would read as a stall.
+      return progress.bytesRead > 0
+        ? `Downloading snapshot - ${formatBytes(progress.bytesRead)}, ${formatNumber(
+            progress.scannedListings,
+          )} listings scanned`
+        : "Waiting for Blizzard's auction snapshot…";
     }
     const data = snapshot.snapshot;
     if (!data) {
@@ -167,7 +174,7 @@ const AuctionFilters = ({
       dataUpdatedAt > 0
         ? ` · fetched ${formatRelativeTime(dataUpdatedAt, now)}`
         : "";
-    return `Top ${formatNumber(rows.length)} of ${formatNumber(
+    return `Top ${formatNumber(rows.length)} by ${AUCTION_SORT_SCOPES[sort]} of ${formatNumber(
       data.scannedListings,
     )} listings${data.complete ? "" : " scanned"}${fetched}`;
   })();

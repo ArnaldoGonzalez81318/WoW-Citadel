@@ -2,7 +2,7 @@ import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import PublicRoundedIcon from "@mui/icons-material/PublicRounded";
 import { Box, Button, Chip, Stack, useMediaQuery } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 
 import DetailDialog from "@/components/common/DetailDialog";
@@ -17,11 +17,11 @@ import {
 import VirtualizedCardGrid from "@/components/common/VirtualizedCardGrid";
 import RealmCard from "@/features/realms/components/RealmCard";
 import RealmFilters from "@/features/realms/components/RealmFilters";
-import RealmTable, {
-  REALM_ROW_HEIGHT,
+import RealmTable from "@/features/realms/components/RealmTable";
+import {
   realmTypeLabel,
-} from "@/features/realms/components/RealmTable";
-import { useRealmDirectory } from "@/features/realms/hooks/useRealmDirectory";
+  useRealmDirectory,
+} from "@/features/realms/hooks/useRealmDirectory";
 import type { RealmDirectoryRow } from "@/features/realms/types";
 import { env } from "@/lib/env";
 import {
@@ -38,9 +38,8 @@ export type RealmsPageProps = {
 };
 
 const DEFAULT_EYEBROW = "World & Factions";
-const SKELETON_ROWS = 12;
 const SKELETON_CARDS = 8;
-const COMPACT_CARD_HEIGHT = getResultCardHeight("compact");
+const MOBILE_CARD_HEIGHT = getResultCardHeight("row");
 const EMPTY = "—";
 
 const realmStatusUrl = (): string =>
@@ -77,35 +76,33 @@ const detailRows = (realm: RealmDirectoryRow): DetailDialogRow[] => {
 
 /**
  * Measures the filter bar so the table header can stick directly beneath
- * it (the bar itself sticks under the app header on md+).
+ * it (the bar itself sticks under the app header on md+). The node lives in
+ * state and the observer in an effect, so StrictMode's simulated unmount
+ * re-subscribes instead of leaving a dead observer behind.
  */
 const useMeasuredHeight = (): [
   (node: HTMLDivElement | null) => void,
   number,
 ] => {
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
   const [height, setHeight] = useState(0);
-  const observerRef = useRef<ResizeObserver | null>(null);
 
-  const attach = useCallback((node: HTMLDivElement | null): void => {
-    observerRef.current?.disconnect();
-    observerRef.current = null;
-
+  useLayoutEffect(() => {
     if (!node) {
-      return;
+      return undefined;
     }
 
-    setHeight(node.offsetHeight);
-    if (typeof ResizeObserver !== "undefined") {
-      observerRef.current = new ResizeObserver(() => {
-        setHeight(node.offsetHeight);
-      });
-      observerRef.current.observe(node);
+    const update = (): void => setHeight(node.offsetHeight);
+    update();
+    if (typeof ResizeObserver === "undefined") {
+      return undefined;
     }
-  }, []);
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node]);
 
-  useEffect(() => () => observerRef.current?.disconnect(), []);
-
-  return [attach, height];
+  return [setNode, height];
 };
 
 const RealmsPage = ({ eyebrow = DEFAULT_EYEBROW }: RealmsPageProps): JSX.Element => {
@@ -156,31 +153,13 @@ const RealmsPage = ({ eyebrow = DEFAULT_EYEBROW }: RealmsPageProps): JSX.Element
   );
 
   const renderBody = (): JSX.Element => {
-    if (isLoading) {
-      return isDesktop ? (
-        <LoadingSkeleton
-          variant="rows"
-          itemHeight={REALM_ROW_HEIGHT}
-          count={SKELETON_ROWS}
-          gap={0}
-          label="Loading realms"
-        />
-      ) : (
-        <LoadingSkeleton
-          variant="grid"
-          columns={{ xs: 1 }}
-          itemHeight={COMPACT_CARD_HEIGHT}
-          count={SKELETON_CARDS}
-          label="Loading realms"
-        />
-      );
-    }
-
     if (error) {
       return <ErrorState error={error} context="realms" onRetry={refetch} />;
     }
 
     if (isDesktop) {
+      // The table draws its own header above the row skeleton so the list
+      // does not shift when the data arrives.
       return (
         <RealmTable
           rows={rows}
@@ -189,7 +168,20 @@ const RealmsPage = ({ eyebrow = DEFAULT_EYEBROW }: RealmsPageProps): JSX.Element
           onSelect={openRealm}
           statusPending={statusPending}
           stickyOffset={stickyOffset}
+          loading={isLoading}
           emptyState={emptyState}
+        />
+      );
+    }
+
+    if (isLoading) {
+      return (
+        <LoadingSkeleton
+          variant="grid"
+          columns={{ xs: 1 }}
+          itemHeight={MOBILE_CARD_HEIGHT}
+          count={SKELETON_CARDS}
+          label="Loading realms"
         />
       );
     }
@@ -198,7 +190,7 @@ const RealmsPage = ({ eyebrow = DEFAULT_EYEBROW }: RealmsPageProps): JSX.Element
       <VirtualizedCardGrid
         items={rows}
         columns={{ xs: 1 }}
-        itemHeight={COMPACT_CARD_HEIGHT}
+        itemHeight={MOBILE_CARD_HEIGHT}
         gap={16}
         aria-label="Realms"
         getItemKey={(row) => row.id}
