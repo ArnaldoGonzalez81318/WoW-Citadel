@@ -37,18 +37,29 @@ export type BlizzardProxyRequest = {
   requestHeaders?: Record<string, HeaderValue>
   /** Client address used as the rate-limit key. */
   clientIp?: string
+  /** Aborts the upstream fetch when the client disconnects. */
+  signal?: AbortSignal
 }
 
 export type BlizzardProxyResponse = {
   status: number
   headers: Record<string, string>
-  body: string
+  /**
+   * Successful upstream bodies are passed through as the upstream stream so
+   * multi-megabyte documents (auction dumps) reach the client as they arrive
+   * and the caller can stop reading early. Locally produced JSON (errors, 304,
+   * HEAD) is a string.
+   */
+  body: string | ReadableStream<Uint8Array>
 }
 
 export const NETLIFY_PROXY_FUNCTION_PATH = "/.netlify/functions/blizzard-proxy"
 
 const DEFAULT_OAUTH_BASE_URL = "https://oauth.battle.net"
-const DEFAULT_RATE_LIMIT_PER_MINUTE = 300
+// Blizzard's own quota is 36,000 requests/hour (600/min) per client, so a
+// per-IP cap above that buys nothing. The app fans out about 2 requests per
+// card (detail + media), so a gallery page costs ~50 requests on first paint.
+const DEFAULT_RATE_LIMIT_PER_MINUTE = 600
 const DEFAULT_TOKEN_TTL_SECONDS = 3600
 const TOKEN_ATTEMPTS = 2
 const TOKEN_RETRY_DELAY_MS = 300
@@ -57,7 +68,9 @@ const ALLOWED_PATH = /^\/data\/wow\/[A-Za-z0-9._~-]+(\/[A-Za-z0-9._~-]+)*$/
 const ALLOWED_QUERY_KEY =
   /^(namespace|locale|orderby|_page|_pageSize|[a-z][a-z0-9_]*(\.[A-Za-z0-9_]+)*)$/
 const BLOCKED_QUERY_KEYS = new Set(["access_token"])
-const MAX_PAGE_SIZE = 100
+// Blizzard's documented maximum for `_pageSize`; the realm services request
+// 1000 so a whole region fits in one page.
+const MAX_PAGE_SIZE = 1000
 const DEFAULT_PAGE_SIZE = 50
 const MAX_QUERY_KEYS = 16
 const MAX_QUERY_VALUE = 256
@@ -313,7 +326,11 @@ const sanitizeQuery = (search: string): QueryValidation => {
 
   for (const value of params.values()) {
     if (value.length > MAX_QUERY_VALUE) {
-      return { ok: false, response: jsonResponse(400, "Query parameter value too long.") }
+      // Reachable from the UI (a pasted search term), so it is worded for people.
+      return {
+        ok: false,
+        response: jsonResponse(400, "That search term is too long. Try a shorter one."),
+      }
     }
   }
 
@@ -380,6 +397,7 @@ export const proxyBlizzardRequest = async ({
   method = "GET",
   requestHeaders,
   clientIp,
+  signal,
 }: BlizzardProxyRequest): Promise<BlizzardProxyResponse> => {
   const normalizedMethod = method.toUpperCase()
 
@@ -404,7 +422,12 @@ export const proxyBlizzardRequest = async ({
 
   const retryAfterSeconds = checkRateLimit(clientIp, config.rateLimitPerMinute)
   if (retryAfterSeconds !== null) {
-    return jsonResponse(429, "Too many requests.", { "retry-after": String(retryAfterSeconds) })
+    // `x-proxy-rate-limited` lets the client tell this limiter apart from
+    // Blizzard's own 429s.
+    return jsonResponse(429, "Too many requests from your network. Try again in a moment.", {
+      "retry-after": String(retryAfterSeconds),
+      "x-proxy-rate-limited": "1",
+    })
   }
 
   // Upstream host follows the namespace region unless BNET_API_BASE_URL pins one.
@@ -439,6 +462,7 @@ export const proxyBlizzardRequest = async ({
   const upstreamResponse = await fetch(url.toString(), {
     method: normalizedMethod,
     headers: upstreamHeaders,
+    signal,
   })
 
   const etag = upstreamResponse.headers.get("etag")
@@ -451,14 +475,27 @@ export const proxyBlizzardRequest = async ({
     ...(lastModified ? { "last-modified": lastModified } : {}),
   }
 
-  if (upstreamResponse.status === 304) {
-    return { status: 304, headers, body: "" }
+  if (upstreamResponse.status === 304 || normalizedMethod === "HEAD" || !upstreamResponse.body) {
+    // Drain so the connection can be reused; these bodies are empty anyway.
+    await upstreamResponse.body?.cancel().catch(() => undefined)
+    return { status: upstreamResponse.status, headers, body: "" }
   }
 
+  if (!upstreamResponse.ok) {
+    // Error envelopes are small; buffer them so callers can inspect them.
+    return {
+      status: upstreamResponse.status,
+      headers,
+      body: await upstreamResponse.text(),
+    }
+  }
+
+  // Stream successful bodies instead of buffering them: auction dumps are
+  // tens of MB and the client cancels its reader once it has enough.
   return {
     status: upstreamResponse.status,
     headers,
-    body: await upstreamResponse.text(),
+    body: upstreamResponse.body,
   }
 }
 

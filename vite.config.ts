@@ -2,6 +2,9 @@ import { defineConfig, loadEnv } from "vite";
 import type { Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "path";
+import { createRequire } from "node:module";
+import { Readable } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import {
   getProxySubpath,
   normalizeProxyPrefix,
@@ -11,10 +14,25 @@ import {
 } from "./server/blizzardProxy.ts";
 import type { BlizzardProxyResponse } from "./server/blizzardProxy.ts";
 
+// createRequire rather than a JSON import: tsconfig.node.json has no
+// resolveJsonModule, and the footer only needs the version string.
+const nodeRequire = createRequire(import.meta.url);
+const { version: appVersion } = nodeRequire("./package.json") as {
+  version: string;
+};
+
 const blizzardDevProxyPlugin = (env: Record<string, string>): Plugin => {
   // Same normalization src/lib/env.ts applies, so the browser and the
   // middleware agree on the prefix when VITE_BNET_PROXY_PATH is customised.
   const proxyPrefix = normalizeProxyPrefix(env.VITE_BNET_PROXY_PATH);
+
+  // Every dev request comes from the loopback address, so the per-IP limiter
+  // would throttle all local tabs and tools together. It stays off in dev
+  // unless BNET_PROXY_RATE_LIMIT is set explicitly; Netlify keeps the default.
+  const serverEnv: Record<string, string> = {
+    ...env,
+    BNET_PROXY_RATE_LIMIT: env.BNET_PROXY_RATE_LIMIT ?? "0",
+  };
 
   return {
     name: "blizzard-dev-proxy",
@@ -39,12 +57,37 @@ const blizzardDevProxyPlugin = (env: Record<string, string>): Plugin => {
           return;
         }
 
+        // Cancels the upstream fetch when the browser aborts (react-query
+        // signal, auction stream cancelled at its byte cap, tab closed).
+        const abort = new AbortController();
+        res.on("close", () => {
+          if (!res.writableFinished) {
+            abort.abort();
+          }
+        });
+
         const send = (response: BlizzardProxyResponse): void => {
           res.statusCode = response.status;
           Object.entries(response.headers).forEach(([header, value]) => {
             res.setHeader(header, value);
           });
-          res.end(response.body);
+
+          if (typeof response.body === "string") {
+            res.end(response.body);
+            return;
+          }
+
+          // Pipe the upstream stream through so bytes reach the browser as
+          // they arrive instead of after the whole document is buffered.
+          const stream = Readable.fromWeb(
+            response.body as unknown as NodeReadableStream<Uint8Array>,
+          );
+          stream.on("error", () => {
+            if (!res.writableEnded) {
+              res.destroy();
+            }
+          });
+          stream.pipe(res);
         };
 
         try {
@@ -52,15 +95,21 @@ const blizzardDevProxyPlugin = (env: Record<string, string>): Plugin => {
           // body instead of crashing the dev server at startup.
           send(
             await proxyBlizzardRequest({
-              config: resolveBlizzardServerConfig(env),
+              config: resolveBlizzardServerConfig(serverEnv),
               path,
               search: requestUrl.search,
               method: req.method,
               requestHeaders: req.headers,
               clientIp: req.socket?.remoteAddress,
+              signal: abort.signal,
             }),
           );
         } catch (error) {
+          if (abort.signal.aborted) {
+            // The client is gone; nothing to answer.
+            res.destroy();
+            return;
+          }
           send(toProxyErrorResponse(error));
         }
       });
@@ -73,6 +122,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), blizzardDevProxyPlugin(env)],
+    define: {
+      // Surfaces package.json's version to the footer (Footer.tsx).
+      "import.meta.env.VITE_APP_VERSION": JSON.stringify(appVersion),
+    },
     build: {
       rollupOptions: {
         output: {

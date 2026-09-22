@@ -20,10 +20,11 @@ browser  ->  /api/blizzard/*  ->  Vite middleware (dev) / Netlify function (prod
 Both entry points (`vite.config.ts` and `netlify/functions/blizzard-proxy.ts`) share one module, `server/blizzardProxy.ts`:
 
 - **Single-flight OAuth.** The client-credentials token is cached per process and concurrent cold-start requests share a single `POST /token` (with one retry on 5xx or network failure).
-- **Allow-list.** Only `GET`/`HEAD` on `/data/wow/...` paths are forwarded; dot segments and protocol-relative paths are rejected with 404. Query keys are filtered to `namespace`, `locale`, `orderby`, `_page`, `_pageSize` and dotted field filters such as `name.en_US`; `profile-*` namespaces are refused with 400 and `_pageSize` is clamped to 100.
+- **Allow-list.** Only `GET`/`HEAD` on `/data/wow/...` paths are forwarded; dot segments and protocol-relative paths are rejected with 404. Query keys are filtered to `namespace`, `locale`, `orderby`, `_page`, `_pageSize` and dotted field filters such as `name.en_US`; `profile-*` namespaces are refused with 400 and `_pageSize` is clamped to 1000 (Blizzard's own maximum; the realm directory relies on a whole region fitting in one page).
 - **Per-region upstream host.** The region suffix of the `namespace` parameter (`static-eu`, `dynamic-kr`, ...) selects `https://<region>.api.blizzard.com`, unless `BNET_API_BASE_URL` pins a host.
+- **Streaming bodies.** Successful upstream bodies are piped through as they arrive rather than buffered, and a client disconnect aborts the upstream fetch. The auction house reads the multi-megabyte dumps as a stream and stops at its byte cap, so the proxy must not hold the whole document; the Netlify function uses the Functions 2.0 (`Request` -> `Response`) signature, which streams and is not bound by the 6 MB synchronous response limit.
 - **Caching tiers.** Responses carry `Cache-Control` for the browser and `Netlify-CDN-Cache-Control` for the CDN: media and static-namespace documents cache for a day (durable for a week on the CDN), static searches for an hour, dynamic namespaces for a minute. `ETag` / `Last-Modified` are forwarded and conditional requests return 304.
-- **Rate limit.** A best-effort per-client-IP limiter (`BNET_PROXY_RATE_LIMIT`, default 300/min) returns 429 with `Retry-After`. State lives in the process, so on Netlify it is per warm instance, not global.
+- **Rate limit.** A best-effort per-client-IP limiter (`BNET_PROXY_RATE_LIMIT`, default 600/min, matching Blizzard's own 36,000/hour quota) returns 429 with `Retry-After` and `x-proxy-rate-limited: 1`. The app fans out about two requests per card (detail + media), so a 24-card gallery page costs roughly 50 requests. State lives in the process, so on Netlify it is per warm instance, not global. In `vite dev` every request comes from the loopback address, so the limiter is off unless `BNET_PROXY_RATE_LIMIT` is set explicitly; it is enforced by the Netlify function by default.
 
 Region-and-path helpers shared by the browser and the proxy live in `src/lib/region.ts`, which is deliberately dependency-free.
 
@@ -52,7 +53,7 @@ Copy `.env.example` to `.env`. Variables prefixed `VITE_` are inlined into the b
 | `BNET_REGION`                  | server       | Default upstream region when the namespace does not name one (`us`, `eu`, `kr`, `tw`)    |
 | `BNET_API_BASE_URL`            | server       | Pins the upstream API host and disables per-region routing                               |
 | `BNET_OAUTH_BASE_URL`          | server       | OAuth host override (default `https://oauth.battle.net`)                                 |
-| `BNET_PROXY_RATE_LIMIT`        | server       | Requests per client per minute, per instance (default `300`, `0` disables)               |
+| `BNET_PROXY_RATE_LIMIT`        | server       | Requests per client per minute, per instance (default `600`, `0` disables; off in dev unless set) |
 | `VITE_BNET_REGION`             | dev + prod   | Client region used to build namespaces (default `us`)                                    |
 | `VITE_BNET_LOCALE`             | dev + prod   | Client locale for localised strings (default `en_US`)                                    |
 | `VITE_BNET_ACCESS_TOKEN`       | dev only     | Browser bearer token that bypasses the proxy in `vite dev`; ignored by `vite build`      |
