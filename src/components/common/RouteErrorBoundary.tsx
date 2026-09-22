@@ -10,45 +10,23 @@ import {
   useRouteError,
 } from "react-router-dom";
 
+import {
+  clearChunkReloadFlag,
+  hasChunkReloadFlag,
+  isChunkLoadError,
+  markChunkReload,
+} from "@/app/chunkReload";
 import { EmptyState, ErrorState } from "@/components/common/StateBlocks";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 
-/** Session flag that prevents a reload loop when the new bundle also fails. */
-export const CHUNK_RELOAD_KEY = "wc:chunk-reload";
-
-const CHUNK_ERROR_PATTERN =
-  /dynamically imported module|Loading chunk|Importing a module script failed/i;
-
-/** True for the errors a stale `index.html` throws after a deploy. */
-export const isChunkLoadError = (error: unknown): boolean =>
-  error instanceof Error && CHUNK_ERROR_PATTERN.test(error.message);
-
-const readReloadFlag = (): boolean => {
-  try {
-    return window.sessionStorage.getItem(CHUNK_RELOAD_KEY) !== null;
-  } catch {
-    return false;
-  }
-};
-
-const writeReloadFlag = (): void => {
-  try {
-    window.sessionStorage.setItem(CHUNK_RELOAD_KEY, "1");
-  } catch {
-    /* private mode: reload without the guard */
-  }
-};
-
-const clearReloadFlag = (): void => {
-  try {
-    window.sessionStorage.removeItem(CHUNK_RELOAD_KEY);
-  } catch {
-    /* ignore */
-  }
-};
-
 const reloadPage = (): void => {
   window.location.reload();
+};
+
+/** Manual reload from a chunk-load fallback: guarded like the automatic one. */
+const reloadForNewVersion = (): void => {
+  markChunkReload();
+  reloadPage();
 };
 
 const goHomeHard = (): void => {
@@ -96,7 +74,7 @@ const GoHomeButton = (): JSX.Element => (
 export const RouteErrorBoundary = (): JSX.Element => {
   const error = useRouteError();
   const chunkError = isChunkLoadError(error);
-  const alreadyReloaded = chunkError && readReloadFlag();
+  const alreadyReloaded = chunkError && hasChunkReloadFlag();
 
   useDocumentTitle(chunkError ? "Update available" : "Something went wrong");
 
@@ -124,7 +102,7 @@ export const RouteErrorBoundary = (): JSX.Element => {
                 variant="contained"
                 startIcon={<HomeRounded />}
                 onClick={() => {
-                  clearReloadFlag();
+                  clearChunkReloadFlag();
                   goHomeHard();
                 }}
               >
@@ -134,10 +112,7 @@ export const RouteErrorBoundary = (): JSX.Element => {
               <Button
                 variant="contained"
                 startIcon={<RefreshRounded />}
-                onClick={() => {
-                  writeReloadFlag();
-                  reloadPage();
-                }}
+                onClick={reloadForNewVersion}
               >
                 Reload
               </Button>
@@ -257,10 +232,7 @@ export class AppErrorBoundary extends Component<
             <Button
               variant="contained"
               startIcon={<RefreshRounded />}
-              onClick={() => {
-                writeReloadFlag();
-                reloadPage();
-              }}
+              onClick={reloadForNewVersion}
             >
               Reload
             </Button>

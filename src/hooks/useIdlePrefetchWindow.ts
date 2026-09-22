@@ -46,6 +46,13 @@ const useIdlePrefetchWindow = ({
     Math.min(totalCount, initialCount),
   );
   const lastResetKey = useRef(resetKey);
+  // Read through a ref inside the tick so scroll-driven target updates do not
+  // cancel and re-arm the pending idle callback (which would stall growth
+  // during a sustained scroll). The effect only re-runs when the target
+  // actually exceeds the current window.
+  const targetRef = useRef(targetCount);
+  targetRef.current = targetCount;
+  const needsJump = Math.min(totalCount, targetCount ?? 0) > activeCount;
 
   useEffect(() => {
     const keyChanged = lastResetKey.current !== resetKey;
@@ -65,7 +72,6 @@ const useIdlePrefetchWindow = ({
       return undefined;
     }
 
-    const target = Math.min(totalCount, targetCount ?? 0);
     let cancelled = false;
     let idleId: number | undefined;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -77,6 +83,7 @@ const useIdlePrefetchWindow = ({
       setActiveCount((current) => {
         const proportional = Math.ceil(current / 2);
         const step = Math.min(maxBatchSize, Math.max(batchSize, proportional));
+        const target = Math.min(totalCount, targetRef.current ?? 0);
         return Math.min(totalCount, Math.max(current + step, target));
       });
     };
@@ -100,7 +107,7 @@ const useIdlePrefetchWindow = ({
         clearTimeout(timeoutId);
       }
     };
-  }, [activeCount, batchSize, maxBatchSize, targetCount, totalCount]);
+  }, [activeCount, batchSize, maxBatchSize, needsJump, totalCount]);
 
   return activeCount;
 };

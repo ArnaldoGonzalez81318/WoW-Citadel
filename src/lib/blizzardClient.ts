@@ -20,7 +20,15 @@ export type BlizzardRequestErrorExtra = {
   /** Parsed `Retry-After` header, in milliseconds. */
   retryAfterMs?: number;
   reason?: BlizzardErrorReason;
+  /**
+   * The 429 came from this app's own proxy (`x-proxy-rate-limited: 1`, a
+   * per-client cap), not from Blizzard's quota.
+   */
+  proxyRateLimited?: boolean;
 };
+
+/** Set by the proxy on the 429s its own per-client limiter produces. */
+export const PROXY_RATE_LIMIT_HEADER = "x-proxy-rate-limited";
 
 /**
  * Error thrown for every failed Blizzard request.
@@ -35,6 +43,7 @@ export class BlizzardRequestError extends Error {
   public readonly detail?: string;
   public readonly retryAfterMs?: number;
   public readonly reason: BlizzardErrorReason;
+  public readonly proxyRateLimited: boolean;
 
   constructor(
     message: string,
@@ -50,6 +59,7 @@ export class BlizzardRequestError extends Error {
     this.detail = extra.detail;
     this.retryAfterMs = extra.retryAfterMs;
     this.reason = extra.reason ?? "http";
+    this.proxyRateLimited = extra.proxyRateLimited === true;
   }
 
   /** 404, or a 204 "no content" answer that a caller chose to treat as missing. */
@@ -62,13 +72,23 @@ export class BlizzardRequestError extends Error {
     return this.status === 401 || this.status === 403;
   }
 
-  /** 429: Blizzard's per-second or per-hour quota was exceeded. */
+  /** 429: Blizzard's per-second or per-hour quota, or the proxy's own cap. */
   get isRateLimited(): boolean {
     return this.status === 429;
   }
 
+  /** 429 raised by this app's proxy for the client's own request rate. */
+  get isProxyRateLimited(): boolean {
+    return this.status === 429 && this.proxyRateLimited;
+  }
+
   get isTimeout(): boolean {
     return this.reason === "timeout";
+  }
+
+  /** `fetch` could not reach the API at all (offline, DNS, proxy down). */
+  get isNetwork(): boolean {
+    return this.reason === "network";
   }
 
   /** 5xx, or an unparsable body from a 2xx: worth retrying. */
@@ -77,7 +97,18 @@ export class BlizzardRequestError extends Error {
   }
 }
 
-export type QueryParamValue = string | number | boolean | null | undefined;
+export type QueryParamScalar = string | number | boolean;
+
+/**
+ * An array repeats the key once per element
+ * (`name.en_US=Chaos&name.en_US=Bolt`), which is how Blizzard's search
+ * endpoints AND several terms; one value holding both words matches either.
+ */
+export type QueryParamValue =
+  | QueryParamScalar
+  | readonly QueryParamScalar[]
+  | null
+  | undefined;
 
 export type QueryParams = Record<string, QueryParamValue>;
 
@@ -105,9 +136,14 @@ const buildQuery = (params: QueryParams | undefined): string => {
 
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        searchParams.set(key, String(value));
+      if (value === undefined || value === null) {
+        return;
       }
+      if (Array.isArray(value)) {
+        value.forEach((item) => searchParams.append(key, String(item)));
+        return;
+      }
+      searchParams.set(key, String(value));
     });
   }
 
@@ -225,6 +261,15 @@ const timeoutError = (): BlizzardRequestError =>
     reason: "timeout",
   });
 
+/** Transport failure (offline, DNS, proxy down): status 0, reason "network". */
+const networkError = (cause: TypeError): BlizzardRequestError => {
+  const error = new BlizzardRequestError("Network request failed", 0, undefined, {
+    reason: "network",
+  });
+  error.cause = cause;
+  return error;
+};
+
 type ErrorEnvelope = {
   code?: unknown;
   detail?: unknown;
@@ -314,21 +359,31 @@ const request = async <T>(
     timeoutMs = DEFAULT_TIMEOUT_MS,
     ...init
   } = options;
+  // Built before the fetch `try` so a malformed path (a TypeError from `URL`)
+  // is a programming error, not a "network" failure.
+  const url = buildRequestUrl(path, params);
   const combined = combineSignals(signal, timeoutMs);
 
   try {
     let response: Response;
     try {
-      response = await fetch(buildRequestUrl(path, params), {
+      response = await fetch(url, {
         ...init,
         method: init.method ?? "GET",
         headers: buildHeaders(headers),
         signal: combined.signal,
       });
     } catch (error) {
-      // Timeouts become a typed error; a real AbortError (react-query
-      // cancellation) and transport TypeErrors propagate untouched.
-      throw isTimeoutError(error) ? timeoutError() : error;
+      // Timeouts and transport failures (fetch rejects with a TypeError when
+      // the network or the proxy is unreachable) become typed errors; a real
+      // AbortError (react-query cancellation) propagates untouched.
+      if (isTimeoutError(error)) {
+        throw timeoutError();
+      }
+      if (error instanceof TypeError) {
+        throw networkError(error);
+      }
+      throw error;
     }
 
     if (!response.ok) {
@@ -341,6 +396,8 @@ const request = async <T>(
         {
           ...envelope,
           retryAfterMs: parseRetryAfter(response.headers.get("retry-after")),
+          proxyRateLimited:
+            response.headers.get(PROXY_RATE_LIMIT_HEADER) === "1",
         },
       );
     }

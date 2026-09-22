@@ -1,14 +1,14 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { isChunkReloadPending, markChunkReload } from "@/app/chunkReload";
 import AppProviders from "@/app/providers/AppProviders";
-import { isChunkReloadPending, markChunkReload } from "@/app/RootLayout";
 import App from "./App";
 
 /**
  * After a deploy, an open tab still holds the old `index.html`, and its lazy
  * route imports 404. Vite reports those as `vite:preloadError`: reload once,
- * guarded by a session flag with a cooldown (see `RootLayout`), and when the
+ * guarded by a session flag with a cooldown (see `app/chunkReload`), and when the
  * fresh bundle fails too let the error reach `RouteErrorBoundary`, which then
  * offers a hard "Go home".
  */

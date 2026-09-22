@@ -1,70 +1,21 @@
 import { Box } from "@mui/material";
 import { Suspense, useEffect } from "react";
 import { Outlet, ScrollRestoration, useLocation } from "react-router-dom";
-import type { Location } from "react-router-dom";
 
-import { CHUNK_RELOAD_KEY } from "@/components/common/RouteErrorBoundary";
+import {
+  clearChunkReloadFlag,
+  isChunkReloadPending,
+  readChunkReloadAt,
+} from "@/app/chunkReload";
+import { AppErrorBoundary } from "@/components/common/RouteErrorBoundary";
 import SkipLink from "@/components/common/SkipLink";
 import { LoadingSkeleton } from "@/components/common/StateBlocks";
 import AppShell from "@/components/layout/AppShell";
+import { MAIN_PADDING_TOP } from "@/components/layout/layoutMetrics";
 import { SearchProvider } from "@/features/search/context/SearchContext";
 
 /** id of the skip-link target; the shell must not reuse it. */
-export const MAIN_CONTENT_ID = "main-content";
-
-/* ------------------------------------------------------------------ */
-/* Chunk-reload guard                                                  */
-/* ------------------------------------------------------------------ */
-
-/**
- * A second chunk failure this soon after an automatic reload means the fresh
- * bundle is broken too: stop reloading and let `RouteErrorBoundary` offer a
- * hard "Go home" instead. Nested lazy explorers fail *after* their parent
- * page has rendered, which is why the guard is time-based rather than
- * "cleared once anything rendered".
- */
-export const CHUNK_RELOAD_COOLDOWN_MS = 60_000;
-
-const readChunkReloadAt = (): number | null => {
-  try {
-    const raw = window.sessionStorage.getItem(CHUNK_RELOAD_KEY);
-    if (raw === null) {
-      return null;
-    }
-    const value = Number(raw);
-    // "1" (written by RouteErrorBoundary's Reload button) reads as long ago.
-    return Number.isFinite(value) ? value : 0;
-  } catch {
-    return null;
-  }
-};
-
-/** True while the last automatic reload is younger than the cooldown. */
-export const isChunkReloadPending = (now: number = Date.now()): boolean => {
-  const reloadedAt = readChunkReloadAt();
-  return reloadedAt !== null && now - reloadedAt < CHUNK_RELOAD_COOLDOWN_MS;
-};
-
-/**
- * Records an automatic reload. Returns false when storage is unavailable so
- * the caller never reloads without the guard.
- */
-export const markChunkReload = (now: number = Date.now()): boolean => {
-  try {
-    window.sessionStorage.setItem(CHUNK_RELOAD_KEY, String(now));
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const clearChunkReloadFlag = (): void => {
-  try {
-    window.sessionStorage.removeItem(CHUNK_RELOAD_KEY);
-  } catch {
-    /* storage unavailable: nothing to clear */
-  }
-};
+const MAIN_CONTENT_ID = "main-content";
 
 /**
  * Mounted inside the route Suspense boundary, so it runs after a page has
@@ -89,39 +40,60 @@ const ChunkReloadReset = (): null => {
 /* ------------------------------------------------------------------ */
 
 /**
- * Scroll positions are keyed by pathname, so filter and query changes on the
- * same page (`?q=`, `?class=`) keep their scroll position while a different
- * page restores its own.
- */
-const getScrollKey = (location: Location): string => location.pathname;
-
-/**
  * Root route element: search state, skip link, app shell, the page-level
- * Suspense boundary and router scroll restoration.
+ * Suspense and error boundaries, and router scroll restoration.
+ *
+ * `AppErrorBoundary` sits inside the shell so a page render error or a stale
+ * lazy chunk keeps the header and footer mounted; it resets on navigation.
+ * The router's root `errorElement` remains the fallback for errors thrown by
+ * this layout itself.
+ *
+ * Scroll positions are keyed per history entry (the router default), so a
+ * new navigation to a page always starts at the top and only Back/Forward
+ * restore a saved position. Filter and query changes on the same page
+ * (`?q=`, `?class=`) keep their scroll position because `useSearchParamState`
+ * navigates with `preventScrollReset`; keying by pathname instead would
+ * replay a stale position on every later visit to that page.
  */
-const RootLayout = (): JSX.Element => (
-  <SearchProvider>
-    <SkipLink targetId={MAIN_CONTENT_ID} />
-    <AppShell>
-      <Box
-        id={MAIN_CONTENT_ID}
-        tabIndex={-1}
-        sx={{
-          minWidth: 0,
-          // Skip-link target only; it is never in the tab sequence.
-          "&:focus, &:focus-visible": { outline: "none" },
-        }}
-      >
-        <Suspense
-          fallback={<LoadingSkeleton variant="page" label="Loading page" />}
+const RootLayout = (): JSX.Element => {
+  const { pathname } = useLocation();
+
+  return (
+    <SearchProvider>
+      <SkipLink targetId={MAIN_CONTENT_ID} />
+      <AppShell>
+        <Box
+          id={MAIN_CONTENT_ID}
+          tabIndex={-1}
+          sx={(theme) => ({
+            minWidth: 0,
+            // The skip link focuses this box; keep it clear of the sticky
+            // header (plus main's top padding) when the browser scrolls to it.
+            scrollMarginTop: {
+              xs: `calc(${theme.wc.layout.headerHeight.xs}px + ${theme.spacing(
+                MAIN_PADDING_TOP.xs,
+              )})`,
+              md: `calc(${theme.wc.layout.headerHeight.md}px + ${theme.spacing(
+                MAIN_PADDING_TOP.md,
+              )})`,
+            },
+            // Skip-link target only; it is never in the tab sequence.
+            "&:focus, &:focus-visible": { outline: "none" },
+          })}
         >
-          <Outlet />
-          <ChunkReloadReset />
-        </Suspense>
-      </Box>
-    </AppShell>
-    <ScrollRestoration getKey={getScrollKey} />
-  </SearchProvider>
-);
+          <AppErrorBoundary resetKey={pathname} context="this page">
+            <Suspense
+              fallback={<LoadingSkeleton variant="page" label="Loading page" />}
+            >
+              <Outlet />
+              <ChunkReloadReset />
+            </Suspense>
+          </AppErrorBoundary>
+        </Box>
+      </AppShell>
+      <ScrollRestoration />
+    </SearchProvider>
+  );
+};
 
 export default RootLayout;

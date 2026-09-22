@@ -74,14 +74,47 @@ export const namespace = (kind: NamespaceKind): string =>
   `${kind}-${env.region}`;
 
 /**
+ * Words Blizzard's search analyser drops from names (Elasticsearch's English
+ * stop-word list). Sent on their own they match nothing, and since repeated
+ * terms are ANDed, `name.en_US=of` would empty "Ashes of Al'ar".
+ */
+const SEARCH_STOP_WORDS: ReadonlySet<string> = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "if", "in",
+  "into", "is", "it", "no", "not", "of", "on", "or", "such", "that", "the",
+  "their", "then", "there", "these", "they", "this", "to", "was", "will",
+  "with",
+]);
+
+/**
+ * The terms a search should require, one per `name.<locale>` occurrence.
+ * A single value holding "Chaos Bolt" matches either word (54 spells); the
+ * key repeated once per word matches only names carrying both. Stop words
+ * are left out; when nothing else remains the raw text is sent as before.
+ */
+export const searchNameTerms = (value: string): readonly string[] => {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return [];
+  }
+
+  const words = trimmed.split(/\s+/);
+  const required = words.filter(
+    (word) => !SEARCH_STOP_WORDS.has(word.toLowerCase()),
+  );
+  return required.length > 0 ? required : [trimmed];
+};
+
+/**
  * Search endpoints filter on `name.<locale>`; this builds that query
- * parameter for the configured locale.
+ * parameter for the configured locale, repeating the key once per required
+ * word so multi-word queries find the named entity rather than every name
+ * sharing one of its words.
  */
 export const nameParam = (
   value: string,
   locale: string = env.locale,
-): Record<string, string> => ({
-  [`name.${locale}`]: value.trim(),
+): Record<string, readonly string[]> => ({
+  [`name.${locale}`]: searchNameTerms(value),
 });
 
 /**

@@ -7,7 +7,7 @@ import { menuItemClasses } from "@mui/material/MenuItem";
 import { outlinedInputClasses } from "@mui/material/OutlinedInput";
 import { toggleButtonClasses } from "@mui/material/ToggleButton";
 
-import { focusRing } from "./mixins";
+import { focusRing, touchHitArea } from "./mixins";
 import { BLUE_GREY, SHADOW_INK } from "./tokens";
 
 type ComponentOverrides = NonNullable<ThemeOptions["components"]>;
@@ -25,6 +25,8 @@ export const components = (base: Theme): ComponentOverrides => {
   const { palette, wc, breakpoints } = base;
   const ring = focusRing(base);
   const ringInset = focusRing(base, true);
+  // 44px tap targets for 28px chips and 32/40px icon buttons on touch screens.
+  const hitArea = touchHitArea(base);
 
   const transition = (
     properties: string[],
@@ -170,6 +172,7 @@ export const components = (base: Theme): ComponentOverrides => {
           "&:hover": {
             backgroundColor: palette.action.hover,
           },
+          ...hitArea,
         },
         sizeSmall: {
           width: 32,
@@ -274,6 +277,10 @@ export const components = (base: Theme): ComponentOverrides => {
         },
       },
       variants: [
+        {
+          props: { clickable: true },
+          style: hitArea,
+        },
         {
           props: { variant: "filled", color: "default" },
           style: {

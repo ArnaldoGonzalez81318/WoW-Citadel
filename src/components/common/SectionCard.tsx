@@ -3,7 +3,7 @@ import type { SxProps, Theme } from "@mui/material/styles";
 import { useId } from "react";
 import type { ElementType, ReactNode } from "react";
 
-import { toSxArray } from "@/components/common/StateBlocks";
+import { toSxArray } from "@/lib/sx";
 
 export type SectionCardPadding = "none" | "compact" | "default";
 

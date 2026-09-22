@@ -11,7 +11,6 @@ import type { FocusEvent, ReactNode } from "react";
 
 import { GRID_PRESETS, useGridColumns } from "@/components/common/gridColumns";
 import type { GridColumns, GridPresetKey } from "@/components/common/gridColumns";
-import { getResultCardHeight } from "@/components/common/ResultCard";
 
 export type VisibleRange = {
   /** Index of the first rendered item (inclusive). */
@@ -25,10 +24,11 @@ export type VirtualizedCardGridProps<T> = {
   renderItem: (item: T, index: number) => ReactNode;
   getItemKey: (item: T, index: number) => string | number;
   /**
-   * Fixed cell height in px; pass `getResultCardHeight(layout)` for
-   * ResultCard grids. Defaults to the tile height until callers migrate.
+   * Fixed cell height in px. Always derive it from the card actually
+   * rendered (`getResultCardHeight(layout, mediaHeight)` for ResultCard grids)
+   * so spacer maths and cell heights match what is drawn.
    */
-  itemHeight?: number;
+  itemHeight: number;
   /** A preset key (`tiles` / `rows` / `compact`) or an explicit column map. */
   columns?: GridColumns | GridPresetKey;
   gap?: number;
@@ -81,7 +81,7 @@ const VirtualizedCardGrid = <T,>({
   items,
   renderItem,
   getItemKey,
-  itemHeight = getResultCardHeight("tile"),
+  itemHeight,
   columns: columnsProp = GRID_PRESETS.tiles,
   gap = 16,
   overscanRows = 2,
@@ -269,8 +269,10 @@ const VirtualizedCardGrid = <T,>({
       onBlur={handleBlur}
       sx={{ outline: "none", minWidth: 0, width: "100%" }}
     >
+      {/* Spacer heights change on every range update: inline styles keep
+          emotion from minting a new class per value. */}
       {topSpacerHeight > 0 ? (
-        <Box aria-hidden="true" sx={{ height: topSpacerHeight }} />
+        <div aria-hidden="true" style={{ height: topSpacerHeight }} />
       ) : null}
       <Box
         role="list"
@@ -303,7 +305,7 @@ const VirtualizedCardGrid = <T,>({
         })}
       </Box>
       {bottomSpacerHeight > 0 ? (
-        <Box aria-hidden="true" sx={{ height: bottomSpacerHeight }} />
+        <div aria-hidden="true" style={{ height: bottomSpacerHeight }} />
       ) : null}
     </Box>
   );

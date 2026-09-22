@@ -27,9 +27,14 @@ export const isTimeoutError = (error: unknown): boolean =>
   hasName(error, "TimeoutError") ||
   (error instanceof BlizzardRequestError && error.isTimeout);
 
-/** `fetch` rejects with a TypeError when the network or the proxy is unreachable. */
+/**
+ * The client could not reach Blizzard at all (offline, DNS, proxy down).
+ * `blizzardClient` converts fetch's transport `TypeError` into a
+ * `BlizzardRequestError` with `reason: "network"`; other TypeErrors are
+ * programming errors and must not be reported as connectivity problems.
+ */
 export const isNetworkError = (error: unknown): boolean =>
-  error instanceof TypeError;
+  error instanceof BlizzardRequestError && error.isNetwork;
 
 const errorMessage = (error: unknown): string | undefined => {
   if (error instanceof Error && error.message.trim().length > 0) {
@@ -71,9 +76,13 @@ export const describeBlizzardError = (
 
   if (error instanceof BlizzardRequestError) {
     if (error.isAuth) {
+      // The env-var hint is for whoever runs the dev server, never for users.
+      const hint = import.meta.env.DEV
+        ? " Check the VITE_BNET_* values in .env and restart the dev server."
+        : " Try again later.";
       return {
         title: "Blizzard credentials rejected",
-        message: `${intro} Blizzard refused the request (HTTP ${error.status}). Check the VITE_BNET_* credentials in .env and restart the dev server.`,
+        message: `${intro} Blizzard rejected the app's credentials (HTTP ${error.status}).${hint}`,
         severity: "error",
         retryable: false,
         status: error.status,
@@ -84,9 +93,15 @@ export const describeBlizzardError = (
       const wait = error.retryAfterMs
         ? `Try again in ${formatSeconds(error.retryAfterMs)}.`
         : "Try again in a moment.";
+      // The proxy caps requests per client address; that is not Blizzard's doing.
+      const cause = error.isProxyRateLimited
+        ? "Too many requests from your network."
+        : "Blizzard is throttling requests right now.";
       return {
-        title: "Rate limit reached",
-        message: `${intro} Blizzard is throttling requests right now. ${wait}`,
+        title: error.isProxyRateLimited
+          ? "Too many requests"
+          : "Rate limit reached",
+        message: `${intro} ${cause} ${wait}`,
         severity: "warning",
         retryable: true,
         status: error.status,
@@ -96,9 +111,11 @@ export const describeBlizzardError = (
     if (error.isNotFound) {
       return {
         title: "Nothing found",
-        message: context
-          ? `Blizzard has no data for ${context.trim()}.`
-          : "Blizzard has no data for this request.",
+        message: `${
+          context
+            ? `Blizzard has no data for ${context.trim()}.`
+            : "Blizzard has no data for this request."
+        } It may not exist in this region, or the link may be out of date; try a different selection.`,
         severity: "info",
         retryable: false,
         status: error.status,
@@ -109,6 +126,16 @@ export const describeBlizzardError = (
       return {
         title: "Request timed out",
         message: `${intro} Blizzard took too long to answer. Check your connection and try again.`,
+        severity: "warning",
+        retryable: true,
+        status: 0,
+      };
+    }
+
+    if (error.isNetwork) {
+      return {
+        title: "You appear to be offline",
+        message: `${intro} We couldn't reach Blizzard's API. Check your connection and try again.`,
         severity: "warning",
         retryable: true,
         status: 0,
@@ -163,16 +190,6 @@ export const describeBlizzardError = (
     return {
       title: "Request timed out",
       message: `${intro} The request took too long. Check your connection and try again.`,
-      severity: "warning",
-      retryable: true,
-      status: 0,
-    };
-  }
-
-  if (isNetworkError(error)) {
-    return {
-      title: "You appear to be offline",
-      message: `${intro} We couldn't reach Blizzard's API. Check your connection and try again.`,
       severity: "warning",
       retryable: true,
       status: 0,

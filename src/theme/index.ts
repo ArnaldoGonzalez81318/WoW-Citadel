@@ -38,9 +38,11 @@ export default theme;
 export { tokens, mixins, qualityColor, QUALITY_KEYS };
 export { isQualityKey } from "./tokens";
 export {
+  COARSE_POINTER,
   focusRing,
   lineClamp,
   surface,
+  touchHitArea,
   truncate,
   visuallyHidden,
 } from "./mixins";
@@ -65,6 +67,7 @@ export type {
   Mixins,
   SurfaceLevel,
   SurfaceStyles,
+  TouchHitAreaStyles,
   TruncateStyles,
   VisuallyHiddenStyles,
 } from "./mixins";

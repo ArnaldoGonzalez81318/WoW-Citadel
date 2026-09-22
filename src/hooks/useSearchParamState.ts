@@ -4,7 +4,21 @@ import { useSearchParams } from "react-router-dom";
 export type SetSearchParamOptions = {
   /** Replace the current history entry instead of pushing (typing, toggles). */
   replace?: boolean;
+  /**
+   * Keep the current scroll position (default). Filters, sorts and view
+   * switches refine the page the user is looking at, so the router must not
+   * reset it to the top; pass `false` for a change that starts the page over
+   * (a newly submitted search term).
+   */
+  preventScrollReset?: boolean;
 };
+
+const navigateOptions = (
+  options: SetSearchParamOptions | undefined,
+): { replace: boolean; preventScrollReset: boolean } => ({
+  replace: options?.replace ?? false,
+  preventScrollReset: options?.preventScrollReset ?? true,
+});
 
 export type SearchParamSetter = (
   next: string | null | undefined,
@@ -35,6 +49,12 @@ const applyParam = (
  *
  * `const [q, setQ] = useSearchParamState("q");`
  * `setQ("thunderfury", { replace: true })`
+ *
+ * Every `set` is a router navigation. Do not bind a controlled input's
+ * `value`/`onChange` straight to this pair: keep the keystrokes in local
+ * state (`SearchField` `value`/`onChange`) and write the URL from
+ * `onDebouncedChange`, then reset the draft in an effect when the URL value
+ * changes externally. Toggles, selects and chips can call `set` directly.
  */
 export const useSearchParamState = (
   key: string,
@@ -51,7 +71,7 @@ export const useSearchParamState = (
           applyParam(params, key, next, defaultValue);
           return params;
         },
-        { replace: options?.replace ?? false },
+        navigateOptions(options),
       );
     },
     [key, defaultValue, setSearchParams],
@@ -120,7 +140,7 @@ export const useSearchParamsRecord = <D extends Record<string, string>>(
           });
           return params;
         },
-        { replace: options?.replace ?? false },
+        navigateOptions(options),
       );
     },
     [setSearchParams],

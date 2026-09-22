@@ -31,15 +31,28 @@ const LANGUAGE_NAMES: Record<string, string> = {
   ja: "Japanese",
 };
 
+/** Lazily created once; `null` when the platform lacks `Intl.DisplayNames`. */
+let languageNames: Intl.DisplayNames | null | undefined;
+
+const getLanguageNames = (): Intl.DisplayNames | null => {
+  if (languageNames === undefined) {
+    try {
+      languageNames =
+        typeof Intl.DisplayNames === "function"
+          ? new Intl.DisplayNames(["en"], { type: "language" })
+          : null;
+    } catch {
+      languageNames = null;
+    }
+  }
+  return languageNames;
+};
+
 const languageDisplayName = (language: string): string => {
   try {
-    if (typeof Intl.DisplayNames === "function") {
-      const name = new Intl.DisplayNames(["en"], { type: "language" }).of(
-        language,
-      );
-      if (name && name.toLowerCase() !== language.toLowerCase()) {
-        return name;
-      }
+    const name = getLanguageNames()?.of(language);
+    if (name && name.toLowerCase() !== language.toLowerCase()) {
+      return name;
     }
   } catch {
     /* fall through to the static map */
@@ -194,6 +207,17 @@ const RELATIVE_UNITS: RelativeUnit[] = [
 const toTimestamp = (value: Date | number | string): number =>
   value instanceof Date ? value.getTime() : new Date(value).getTime();
 
+const relativeTimeFormatters = new Map<string, Intl.RelativeTimeFormat>();
+
+const getRelativeTimeFormatter = (locale: string): Intl.RelativeTimeFormat => {
+  let formatter = relativeTimeFormatters.get(locale);
+  if (!formatter) {
+    formatter = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+    relativeTimeFormatters.set(locale, formatter);
+  }
+  return formatter;
+};
+
 /**
  * "just now", "5 minutes ago", "in 2 hours", "yesterday" for a date
  * relative to `now` (defaults to the current time).
@@ -225,9 +249,7 @@ export const formatRelativeTime = (
   const amount = Math.round(delta / ms);
 
   try {
-    return new Intl.RelativeTimeFormat(toBcp47(env.locale), {
-      numeric: "auto",
-    }).format(amount, unit);
+    return getRelativeTimeFormatter(toBcp47(env.locale)).format(amount, unit);
   } catch {
     const magnitude = Math.abs(amount);
     const label = `${magnitude} ${unit}${magnitude === 1 ? "" : "s"}`;
@@ -254,13 +276,17 @@ const formatUtcOffset = (offsetMinutes: number): string => {
 
 const UTC_ALIASES: ReadonlySet<string> = new Set(["UTC", "GMT", "Zulu", "UCT"]);
 
-/** Offset of `timeZone` from UTC at `at`, in minutes; undefined if unknown. */
-const utcOffsetMinutes = (
-  timeZone: string,
-  at: Date,
-): number | undefined => {
-  try {
-    const parts = new Intl.DateTimeFormat("en-US", {
+/**
+ * One `DateTimeFormat` per IANA zone: constructing it costs ~40µs, and the
+ * realm table calls `formatTimezone` for every visible row on each scroll.
+ */
+const zoneFormatters = new Map<string, Intl.DateTimeFormat>();
+
+const getZoneFormatter = (timeZone: string): Intl.DateTimeFormat => {
+  let formatter = zoneFormatters.get(timeZone);
+  if (!formatter) {
+    // Throws RangeError for an unknown zone; the caller falls back to the city.
+    formatter = new Intl.DateTimeFormat("en-US", {
       timeZone,
       hourCycle: "h23",
       year: "numeric",
@@ -269,7 +295,19 @@ const utcOffsetMinutes = (
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
-    }).formatToParts(at);
+    });
+    zoneFormatters.set(timeZone, formatter);
+  }
+  return formatter;
+};
+
+/** Offset of `timeZone` from UTC at `at`, in minutes; undefined if unknown. */
+const utcOffsetMinutes = (
+  timeZone: string,
+  at: Date,
+): number | undefined => {
+  try {
+    const parts = getZoneFormatter(timeZone).formatToParts(at);
     const read = (type: Intl.DateTimeFormatPartTypes): number =>
       Number(parts.find((part) => part.type === type)?.value ?? "0");
     const asUtc = Date.UTC(

@@ -15,9 +15,10 @@ import type { SxProps, Theme } from "@mui/material/styles";
 import { useCallback, useEffect, useId, useRef } from "react";
 import type { KeyboardEvent, ReactElement, ReactNode, Ref } from "react";
 
-import { InlineProgress, LiveStatus, toSxArray } from "@/components/common/StateBlocks";
+import { InlineProgress, LiveStatus } from "@/components/common/StateBlocks";
 import { formatNumber } from "@/lib/format";
-import { visuallyHidden } from "@/theme";
+import { toSxArray } from "@/lib/sx";
+import { COARSE_POINTER, visuallyHidden } from "@/theme";
 
 /* ------------------------------------------------------------------ */
 /* ExplorerFilterBar                                                   */
@@ -81,7 +82,15 @@ export const ExplorerFilterBar = ({
       {summary ? (
         <LiveStatus
           busy={progress}
-          sx={{ marginLeft: { md: "auto" }, flexShrink: 0 }}
+          sx={{
+            // Its own wrapping line on phones; right-aligned on md+. It must
+            // stay shrinkable so a long summary wraps instead of widening the
+            // page (no horizontal scroll at phone width).
+            flex: { xs: "1 1 100%", md: "0 1 auto" },
+            minWidth: 0,
+            marginLeft: { md: "auto" },
+            overflowWrap: "anywhere",
+          }}
         >
           {summary}
         </LiveStatus>
@@ -391,7 +400,15 @@ export const FilterChipGroup = <V extends string = string>({
     useFlexGap
     gap={1}
     alignItems="center"
-    sx={[{ minWidth: 0 }, ...toSxArray(sx)]}
+    sx={[
+      {
+        minWidth: 0,
+        // Chips grow a 44px hit area on touch screens (theme MuiChip); a
+        // wider row gap keeps neighbouring targets from overlapping much.
+        [COARSE_POINTER]: { rowGap: 1.5 },
+      },
+      ...toSxArray(sx),
+    ]}
   >
     {hideAll ? null : (
       <Chip

@@ -2,8 +2,8 @@ import { Box } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
 import type { ElementType } from "react";
 
-import { toSxArray } from "@/components/common/StateBlocks";
 import { formatCopper, formatNumber, splitCopper } from "@/lib/format";
+import { toSxArray } from "@/lib/sx";
 import { visuallyHidden } from "@/theme";
 
 export type GoldAmountSize = "small" | "medium" | "large";

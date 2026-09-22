@@ -12,6 +12,8 @@ interface ImportMetaEnv {
   readonly VITE_BNET_LOCALE?: string;
   /** Proxy prefix the browser calls; defaults to `/api/blizzard`. */
   readonly VITE_BNET_PROXY_PATH?: string;
+  /** package.json version, injected by vite.config.ts `define` (not a .env value). */
+  readonly VITE_APP_VERSION?: string;
   /** @deprecated Legacy CRA name, still read as a fallback for `VITE_BNET_ACCESS_TOKEN`. */
   readonly VITE_REACT_APP_ACCESS_TOKEN?: string;
   /** @deprecated Legacy CRA name, still read to derive the region and API host. */

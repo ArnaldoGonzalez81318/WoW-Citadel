@@ -27,7 +27,11 @@ const SkipLink = ({
     if (!target.hasAttribute("tabindex")) {
       target.setAttribute("tabindex", "-1");
     }
-    target.focus();
+    target.focus({ preventScroll: true });
+    // `focus()` alone leaves a target that already fills the viewport where
+    // it is; align its start instead (honours the target's scroll-margin-top,
+    // which keeps it clear of the sticky header).
+    target.scrollIntoView({ block: "start" });
   };
 
   return (

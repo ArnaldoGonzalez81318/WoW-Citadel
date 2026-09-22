@@ -20,6 +20,8 @@ import {
 } from "@/components/common/gridColumns";
 import type { GridColumns, GridPresetKey } from "@/components/common/gridColumns";
 import { describeBlizzardError } from "@/lib/errors";
+import { toSxArray } from "@/lib/sx";
+import type { SxArrayEntry } from "@/lib/sx";
 import { visuallyHidden as visuallyHiddenMixin } from "@/theme";
 
 /* ------------------------------------------------------------------ */
@@ -42,6 +44,11 @@ export type LoadingSkeletonProps = {
   height?: number;
   /** Accessible label, announced by the status region. */
   label?: string;
+  /**
+   * Page variant: reserve the breadcrumb caption row that `PageHeader`
+   * renders on category routes, so the swap causes no vertical shift.
+   */
+  breadcrumbs?: boolean;
   sx?: SxProps<Theme>;
 };
 
@@ -51,18 +58,6 @@ const DEFAULT_ROW_HEIGHT = 96;
 const DEFAULT_TILE_HEIGHT = 288;
 const DEFAULT_BLOCK_HEIGHT = 240;
 const PAGE_TILE_COUNT = 8;
-
-type SxArrayEntry = Extract<SxProps<Theme>, readonly unknown[]>[number];
-
-/** Normalises an optional `sx` prop so it can be spread into an sx array. */
-export const toSxArray = (
-  sx: SxProps<Theme> | undefined,
-): readonly SxArrayEntry[] =>
-  sx === undefined
-    ? []
-    : Array.isArray(sx)
-      ? (sx as readonly SxArrayEntry[])
-      : [sx as SxArrayEntry];
 
 const cardSkeletonSx =
   (height: number): SxArrayEntry =>
@@ -118,6 +113,7 @@ export const LoadingSkeleton = ({
   gap = 16,
   height,
   label,
+  breadcrumbs = false,
   sx,
 }: LoadingSkeletonProps): JSX.Element => {
   const statusProps = {
@@ -190,6 +186,9 @@ export const LoadingSkeleton = ({
         ]}
       >
         <Stack spacing={1.5}>
+          {breadcrumbs ? (
+            <Skeleton variant="text" sx={{ fontSize: "0.75rem", width: 180 }} />
+          ) : null}
           <Skeleton variant="text" sx={{ fontSize: "0.6875rem", width: 96 }} />
           <Skeleton
             variant="text"

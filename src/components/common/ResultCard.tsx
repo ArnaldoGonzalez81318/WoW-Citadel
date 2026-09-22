@@ -8,22 +8,58 @@ import {
   Skeleton,
   Typography,
 } from "@mui/material";
+import type { ChipProps } from "@mui/material";
 import type { Theme } from "@mui/material/styles";
 import { memo } from "react";
 import type { ReactNode } from "react";
 
 import MediaTile from "@/components/common/MediaTile";
+import {
+  DEFAULT_MEDIA_HEIGHT,
+  getResultCardHeight,
+  resolveResultCardLayout,
+} from "@/components/common/resultCardLayout";
+import type {
+  ResolvedResultCardLayout,
+  ResultCardLayout,
+} from "@/components/common/resultCardLayout";
 import type { SearchResult } from "@/features/search/types";
 import { WOWHEAD_LABEL, getExternalLink } from "@/lib/externalLinks";
-import { focusRing, lineClamp, qualityColor, truncate } from "@/theme";
+import {
+  focusRing,
+  lineClamp,
+  qualityColor,
+  touchHitArea,
+  truncate,
+} from "@/theme";
+
+/**
+ * Layout maths live in `./resultCardLayout` (value-only module). They are
+ * re-exported here for existing importers; new code should import them from
+ * `@/components/common/resultCardLayout` so this file can be a Fast Refresh
+ * boundary once every caller has moved.
+ *
+ * @deprecated import from "@/components/common/resultCardLayout" instead.
+ */
+export {
+  DEFAULT_MEDIA_HEIGHT,
+  RESULT_CARD_HEIGHTS,
+  getResultCardHeight,
+  resolveResultCardLayout,
+} from "@/components/common/resultCardLayout";
+export type {
+  ResolvedResultCardLayout,
+  ResultCardLayout,
+} from "@/components/common/resultCardLayout";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
 /* ------------------------------------------------------------------ */
 
-export type ResultCardLayout = "auto" | "row" | "compact" | "tile";
-
 export type ResultCardTone = "primary" | "secondary";
+
+/** MUI Chip palette key; the semantic ones carry realm / population status. */
+export type ResultCardTagColor = NonNullable<ChipProps["color"]>;
 
 export type ResultCardMeta = {
   label: string;
@@ -53,6 +89,11 @@ export type ResultCardProps = {
   layout?: ResultCardLayout;
   /** Accent for the selected border and tag chip (secondary = gold value context). */
   tone?: ResultCardTone;
+  /**
+   * Semantic colour for the tag chip when the tag is a status ("Up" success,
+   * "Down" error); overrides the tone's chip styling.
+   */
+  tagColor?: ResultCardTagColor;
   /** Makes the card body a button; the external link stays a separate control. */
   onSelect?: (result: ResultCardResult) => void;
   /** Artwork height for the tile layout. */
@@ -64,52 +105,6 @@ export type ResultCardProps = {
   loading?: boolean;
   /** Position in the list (exposed as `data-index`). */
   index?: number;
-};
-
-export type ResolvedResultCardLayout = Exclude<ResultCardLayout, "auto">;
-
-/* ------------------------------------------------------------------ */
-/* Heights                                                             */
-/* ------------------------------------------------------------------ */
-
-export const RESULT_CARD_HEIGHTS = {
-  row: 96,
-  compact: 124,
-  tileBase: 128,
-} as const;
-
-export const DEFAULT_MEDIA_HEIGHT = 160;
-
-/**
- * Fixed height of a card for a layout, for grid cells and skeletons.
- * `auto` is measured as a tile (the tallest possibility).
- */
-export const getResultCardHeight = (
-  layout: ResultCardLayout,
-  mediaHeight: number = DEFAULT_MEDIA_HEIGHT,
-): number => {
-  if (layout === "row") {
-    return RESULT_CARD_HEIGHTS.row;
-  }
-  if (layout === "compact") {
-    return RESULT_CARD_HEIGHTS.compact;
-  }
-  return mediaHeight + RESULT_CARD_HEIGHTS.tileBase;
-};
-
-const SMALL_ICON_PATTERN = /\/icons\/56\//;
-
-export const resolveResultCardLayout = (
-  layout: ResultCardLayout,
-  result: Pick<ResultCardResult, "mediaUrl">,
-): ResolvedResultCardLayout => {
-  if (layout !== "auto") {
-    return layout;
-  }
-  if (!result.mediaUrl || SMALL_ICON_PATTERN.test(result.mediaUrl)) {
-    return "row";
-  }
-  return "tile";
 };
 
 /* ------------------------------------------------------------------ */
@@ -164,43 +159,55 @@ const MOTION_HOVER_LIFT =
 /* ------------------------------------------------------------------ */
 
 type ExternalLinkProps = ExternalLinkTarget & {
+  /** Entity name, so each link in a grid has a distinct accessible name. */
+  name: string;
   iconOnly?: boolean;
 };
 
-/** Sibling of the action area: never nested inside the card button. */
+/**
+ * Sibling of the action area: never nested inside the card button. The
+ * accessible name starts with the visible label ("View on Wowhead: Thunderfury")
+ * so screen-reader link lists and voice control can tell rows apart.
+ */
 const ExternalLink = ({
   href,
   label,
+  name,
   iconOnly = false,
-}: ExternalLinkProps): JSX.Element => (
-  <Link
-    href={href}
-    target="_blank"
-    rel="noopener noreferrer"
-    variant="caption"
-    aria-label={iconOnly ? label : undefined}
-    title={iconOnly ? label : undefined}
-    sx={(theme) => ({
-      display: "inline-flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 0.5,
-      flexShrink: 0,
-      minHeight: 32,
-      minWidth: iconOnly ? 32 : undefined,
-      paddingInline: iconOnly ? 0 : 1,
-      marginInline: iconOnly ? 0 : -1,
-      borderRadius: `${theme.wc.radius.sm}px`,
-      color: theme.palette.primary.light,
-      fontWeight: 500,
-      whiteSpace: "nowrap",
-      "& svg": { fontSize: 16 },
-    })}
-  >
-    {iconOnly ? null : label}
-    <LaunchRounded fontSize="inherit" aria-hidden="true" />
-  </Link>
-);
+}: ExternalLinkProps): JSX.Element => {
+  const accessibleName = `${label}: ${name}`;
+
+  return (
+    <Link
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      variant="caption"
+      aria-label={accessibleName}
+      title={iconOnly ? accessibleName : undefined}
+      sx={(theme) => ({
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 0.5,
+        flexShrink: 0,
+        minHeight: 32,
+        minWidth: iconOnly ? 32 : undefined,
+        paddingInline: iconOnly ? 0 : 1,
+        marginInline: iconOnly ? 0 : -1,
+        borderRadius: `${theme.wc.radius.sm}px`,
+        color: theme.palette.primary.light,
+        fontWeight: 500,
+        whiteSpace: "nowrap",
+        "& svg": { fontSize: 16 },
+        ...touchHitArea(theme),
+      })}
+    >
+      {iconOnly ? null : label}
+      <LaunchRounded fontSize="inherit" aria-hidden="true" />
+    </Link>
+  );
+};
 
 type NameProps = {
   name: string;
@@ -241,15 +248,17 @@ const MetaLine = ({ text }: MetaLineProps): JSX.Element | null =>
 type TagChipProps = {
   label?: string;
   tone: ResultCardTone;
+  /** A status colour renders filled, like the desktop table's status chip. */
+  color?: ResultCardTagColor;
 };
 
-const TagChip = ({ label, tone }: TagChipProps): JSX.Element | null =>
+const TagChip = ({ label, tone, color }: TagChipProps): JSX.Element | null =>
   label ? (
     <Chip
       label={label}
       size="small"
-      color={tone === "secondary" ? "secondary" : "default"}
-      variant={tone === "secondary" ? "outlined" : "filled"}
+      color={color ?? (tone === "secondary" ? "secondary" : "default")}
+      variant={!color && tone === "secondary" ? "outlined" : "filled"}
       sx={{ flexShrink: 0, maxWidth: "100%" }}
     />
   ) : null;
@@ -288,7 +297,12 @@ const LoadingCard = ({
       {layout === "tile" ? (
         <Skeleton
           variant="rectangular"
-          sx={{ height: mediaHeight, width: "100%", borderRadius: "0" }}
+          sx={{
+            flex: "1 1 auto",
+            minHeight: mediaHeight,
+            width: "100%",
+            borderRadius: "0",
+          }}
         />
       ) : (
         <Skeleton
@@ -304,7 +318,8 @@ const LoadingCard = ({
       )}
       <Box
         sx={{
-          flex: 1,
+          // Tile skeletons give spare height to the artwork, like the card.
+          flex: layout === "tile" ? "0 0 auto" : 1,
           minWidth: 0,
           padding: layout === "tile" ? "12px 16px" : 0,
           display: "flex",
@@ -389,6 +404,7 @@ const ResultCard = ({
   result,
   layout = "auto",
   tone = "primary",
+  tagColor,
   onSelect,
   mediaHeight = DEFAULT_MEDIA_HEIGHT,
   width,
@@ -417,15 +433,18 @@ const ResultCard = ({
   const metaText = firstText(result.subtitle, result.summary, result.details);
   const typeLabel = firstText(result.typeLabel);
   const tag = firstText(result.tag);
-  const structuredMeta = result.meta
-    ?.map((entry) => joinMeta(entry.label, entry.value))
-    .filter((entry): entry is string => Boolean(entry))
-    .join(" · ");
-  const rowMeta = joinMeta(
-    metaText ?? structuredMeta,
-    typeLabel !== tag ? typeLabel : undefined,
+  // `firstText` turns an empty `meta: []` into undefined so the `??` chain
+  // still falls through to `typeLabel`.
+  const structuredMeta = firstText(
+    result.meta
+      ?.map((entry) => joinMeta(entry.label, entry.value))
+      .filter((entry): entry is string => Boolean(entry))
+      .join(" · "),
   );
-  const compactMeta = metaText ?? structuredMeta ?? typeLabel;
+  // The type label ("Armor", "Spell") is a fallback only: subtitles already
+  // carry the class, and the search tabs / explorer title name the type, so
+  // appending it produced "Plate · Armor" and "Spell · Spell".
+  const metaLine = metaText ?? structuredMeta ?? typeLabel;
 
   const handleActivate = (): void => {
     onSelect?.(result);
@@ -501,9 +520,26 @@ const ResultCard = ({
             sx={{
               flex: 1,
               minWidth: 0,
-              display: "flex",
+              display: "grid",
+              // The tag chip sits right of the text from `sm`; on phones a
+              // 96px chip beside a 56px icon left the name ~70px, so it
+              // drops under the meta line instead.
+              gridTemplateColumns: tag
+                ? {
+                    xs: "auto minmax(0, 1fr)",
+                    sm: "auto minmax(0, 1fr) auto",
+                  }
+                : "auto minmax(0, 1fr)",
+              gridTemplateAreas: tag
+                ? {
+                    xs: '"media text" "media chip"',
+                    sm: '"media text chip"',
+                  }
+                : '"media text"',
               alignItems: "center",
-              gap: 1.5,
+              alignContent: "center",
+              columnGap: 1.5,
+              rowGap: 0.5,
               // 16px from the edge whether the accent edge is 3px or 1px.
               paddingLeft: quality ? "13px" : "15px",
               paddingRight: external ? 0.5 : 2,
@@ -514,20 +550,37 @@ const ResultCard = ({
               alt=""
               size={56}
               fallbackLabel={result.name}
+              sx={{ gridArea: "media" }}
             />
             <Box
               sx={{
-                flex: 1,
+                gridArea: "text",
                 minWidth: 0,
                 display: "flex",
                 flexDirection: "column",
+                // With no meta line (spell search hits carry no description)
+                // the name alone sits centred beside the icon; MetaLine
+                // renders nothing rather than an empty caption.
+                justifyContent: "center",
                 gap: 0.25,
               }}
             >
               <Name name={result.name} lines={1} quality={quality} />
-              <MetaLine text={rowMeta} />
+              <MetaLine text={metaLine} />
             </Box>
-            <TagChip label={tag} tone={tone} />
+            {tag ? (
+              <Box
+                sx={{
+                  gridArea: "chip",
+                  minWidth: 0,
+                  maxWidth: "100%",
+                  display: "flex",
+                  justifySelf: { xs: "start", sm: "end" },
+                }}
+              >
+                <TagChip label={tag} tone={tone} color={tagColor} />
+              </Box>
+            ) : null}
           </Box>
         ) : null}
 
@@ -558,24 +611,40 @@ const ResultCard = ({
               }}
             >
               <Name name={result.name} lines={2} quality={quality} />
-              <MetaLine text={compactMeta} />
+              <MetaLine text={metaLine} />
             </Box>
           </Box>
         ) : null}
 
         {isTile ? (
           <>
-            <Box sx={{ height: mediaHeight, flexShrink: 0, width: "100%" }}>
+            {/*
+              The cell height is fixed (getResultCardHeight), so whatever the
+              text and footer do not use goes to the artwork rather than to a
+              blank band above the footer: a one-line name with no chip row
+              (mounts) left ~40px empty between the meta line and the link.
+            */}
+            <Box
+              sx={{
+                flex: "1 1 auto",
+                minHeight: mediaHeight,
+                minWidth: 0,
+                width: "100%",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
               <MediaTile
                 src={result.mediaUrl}
                 alt=""
                 size="fill"
                 fallbackLabel={result.name}
+                sx={{ flex: 1, minHeight: 0 }}
               />
             </Box>
             <Box
               sx={{
-                flex: 1,
+                flex: "0 0 auto",
                 minWidth: 0,
                 display: "flex",
                 flexDirection: "column",
@@ -600,7 +669,12 @@ const ResultCard = ({
               paddingRight: 1,
             }}
           >
-            <ExternalLink href={external.href} label={external.label} iconOnly />
+            <ExternalLink
+              href={external.href}
+              label={external.label}
+              name={result.name}
+              iconOnly
+            />
           </Box>
         ) : null
       ) : (
@@ -624,7 +698,7 @@ const ResultCard = ({
               flex: 1,
             }}
           >
-            <TagChip label={tag} tone={tone} />
+            <TagChip label={tag} tone={tone} color={tagColor} />
             {isTile && typeLabel && typeLabel !== tag ? (
               <Typography
                 variant="caption"
@@ -636,7 +710,14 @@ const ResultCard = ({
             ) : null}
           </Box>
           {external ? (
-            <ExternalLink href={external.href} label={external.label} />
+            // Compact cells (163px at two columns) cannot fit the text label
+            // beside the tag chip; the icon keeps the chip readable.
+            <ExternalLink
+              href={external.href}
+              label={external.label}
+              name={result.name}
+              iconOnly={!isTile}
+            />
           ) : null}
         </Box>
       )}

@@ -3,8 +3,8 @@ import type { SxProps, Theme } from "@mui/material/styles";
 import type { ReactNode } from "react";
 import { Link as RouterLink } from "react-router-dom";
 
-import { toSxArray } from "@/components/common/StateBlocks";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+import { toSxArray } from "@/lib/sx";
 
 export type PageHeaderBreadcrumb = {
   label: string;
@@ -108,7 +108,11 @@ const PageHeader = ({
         </Breadcrumbs>
       ) : null}
 
-      <Stack direction="row" spacing={2} alignItems="flex-start">
+      {/*
+        `useFlexGap`: the icon tile is `display: none` below md, and a CSS gap
+        (unlike Stack's margin spacing) leaves no 16px indent behind it.
+      */}
+      <Stack direction="row" spacing={2} alignItems="flex-start" useFlexGap>
         {icon ? (
           <Box
             aria-hidden="true"

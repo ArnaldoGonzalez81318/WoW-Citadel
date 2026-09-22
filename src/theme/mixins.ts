@@ -103,6 +103,51 @@ export const visuallyHidden: VisuallyHiddenStyles = {
   width: "1px",
 };
 
+export const COARSE_POINTER = "@media (pointer: coarse)";
+
+export type TouchHitAreaStyles = {
+  [COARSE_POINTER]: {
+    position: "relative";
+    "&::after": {
+      content: '""';
+      position: "absolute";
+      top: "50%";
+      left: "50%";
+      transform: "translate(-50%, -50%)";
+      width: string;
+      height: string;
+      minWidth: number;
+      minHeight: number;
+      borderRadius: "inherit";
+    };
+  };
+};
+
+/**
+ * Enlarges the tap target of a small control (28px chip, 32px icon link) to
+ * `theme.wc.layout.touchTarget` on coarse pointers without changing its
+ * visible size: an invisible pseudo-element centred on the control extends
+ * its hit-testing box. Only applied when a pointer is coarse, so mouse users
+ * keep the compact layout.
+ */
+export const touchHitArea = (theme: Theme): TouchHitAreaStyles => ({
+  [COARSE_POINTER]: {
+    position: "relative",
+    "&::after": {
+      content: '""',
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      width: "100%",
+      height: "100%",
+      minWidth: theme.wc.layout.touchTarget,
+      minHeight: theme.wc.layout.touchTarget,
+      borderRadius: "inherit",
+    },
+  },
+});
+
 /** Item-quality colour for a WoW quality key; `text.primary` when unknown. */
 export const qualityColor = (
   theme: Theme,
@@ -120,6 +165,7 @@ export const mixins = {
   truncate,
   surface,
   visuallyHidden,
+  touchHitArea,
 } as const;
 
 export type Mixins = typeof mixins;
