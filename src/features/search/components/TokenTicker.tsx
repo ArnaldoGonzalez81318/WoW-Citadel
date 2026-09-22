@@ -11,7 +11,6 @@ import {
   Typography,
   alpha,
 } from "@mui/material";
-import { useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 
 import GoldAmount from "@/components/common/GoldAmount";
@@ -20,6 +19,7 @@ import {
   LiveStatus,
   LoadingSkeleton,
 } from "@/components/common/StateBlocks";
+import { useNow } from "@/features/search/hooks/useNow";
 import {
   TOKEN_REFRESH_MINUTES,
   useWowTokenPrice,
@@ -39,22 +39,13 @@ export interface TokenTickerProps {
 }
 
 const WOW_TOKEN_PATH = "/category/wow-token";
-/** Re-render cadence for "Updated N min ago" (no refetch involved). */
-const CLOCK_TICK_MS = 30_000;
 /** Blizzard publishes roughly every 20 minutes; past this the price is suspect. */
 const STALE_AFTER_MS = 30 * 60_000;
-
-/** Wall-clock `now`, ticked every 30s so relative times keep advancing. */
-const useNow = (): number => {
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);
-    return () => window.clearInterval(id);
-  }, []);
-
-  return now;
-};
+/**
+ * Height of the loaded body (price line + 12px gap + one chip row), used for
+ * both the skeleton and the body's minHeight so the card never shifts.
+ */
+const TOKEN_BODY_HEIGHT = { compact: 72, full: 76 } as const;
 
 /**
  * The live regional WoW Token price: whole gold via GoldAmount, Blizzard's
@@ -77,7 +68,7 @@ const TokenTicker = ({
       return (
         <LoadingSkeleton
           variant="block"
-          height={compact ? 96 : 140}
+          height={compact ? TOKEN_BODY_HEIGHT.compact : TOKEN_BODY_HEIGHT.full}
           label="Loading WoW Token price"
         />
       );
@@ -99,7 +90,13 @@ const TokenTicker = ({
     const iso = data.lastUpdated.toISOString();
 
     return (
-      <Stack spacing={1.5} sx={{ minWidth: 0 }}>
+      <Stack
+        spacing={1.5}
+        sx={{
+          minWidth: 0,
+          minHeight: compact ? TOKEN_BODY_HEIGHT.compact : TOKEN_BODY_HEIGHT.full,
+        }}
+      >
         <LiveStatus
           component="p"
           busy={isFetching}
@@ -125,7 +122,7 @@ const TokenTicker = ({
           flexWrap="wrap"
           alignItems="center"
         >
-          <Tooltip title={data.lastUpdated.toLocaleString()}>
+          <Tooltip title={data.lastUpdated.toLocaleString()} describeChild>
             <Typography
               variant="body2"
               color="text.secondary"

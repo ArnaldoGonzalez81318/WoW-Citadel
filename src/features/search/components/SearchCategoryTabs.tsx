@@ -32,7 +32,8 @@ const TabBadge = ({ state }: { state: SearchCategoryState }): JSX.Element => {
     );
   }
 
-  if (state.isLoading) {
+  // Also pending: a new key whose placeholder is an empty previous page.
+  if (state.isLoading || (state.isPlaceholderData && state.data.length === 0)) {
     return (
       <CircularProgress
         size={12}

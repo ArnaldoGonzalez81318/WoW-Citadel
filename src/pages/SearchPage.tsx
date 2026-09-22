@@ -1,9 +1,8 @@
-import CancelRounded from "@mui/icons-material/CancelRounded";
 import SearchRounded from "@mui/icons-material/SearchRounded";
 import { Chip, Stack } from "@mui/material";
-import { useEffect, useMemo, useRef } from "react";
-import type { SyntheticEvent } from "react";
-import { Link as RouterLink } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
+import type { To } from "react-router-dom";
 
 import {
   ExplorerFilterBar,
@@ -17,10 +16,15 @@ import {
   SEARCH_CATEGORIES,
   findSearchCategory,
 } from "@/features/search/categories";
+import RecentSearchChips from "@/features/search/components/RecentSearchChips";
 import SearchCategoryTabs from "@/features/search/components/SearchCategoryTabs";
 import SearchResultGrid from "@/features/search/components/SearchResultGrid";
-import { searchUrl, useSearchState } from "@/features/search/context/SearchContext";
-import { useBlizzardSearch } from "@/features/search/hooks/useBlizzardSearch";
+import { searchUrl } from "@/features/search/config/searchRoutes";
+import { useSearchState } from "@/features/search/context/SearchContext";
+import {
+  SEARCH_DEBOUNCE_MS,
+  useBlizzardSearch,
+} from "@/features/search/hooks/useBlizzardSearch";
 import type { SearchCategoryState } from "@/features/search/hooks/useBlizzardSearch";
 import { SEARCH_PAGE_SIZE } from "@/features/search/services/searchService";
 import type { SearchCategoryId } from "@/features/search/types";
@@ -39,7 +43,12 @@ export interface SearchPageProps {
   hideHeader?: boolean;
 }
 
-const PARAM_DEFAULTS = { cat: DEFAULT_SEARCH_CATEGORY, page: "" } as const;
+/** `cat` is canonical; `category` is accepted as an alias for inbound links. */
+const PARAM_DEFAULTS: Record<"cat" | "category" | "page", string> = {
+  cat: DEFAULT_SEARCH_CATEGORY,
+  category: "",
+  page: "",
+};
 
 const parsePage = (raw: string): number => {
   const parsed = Number.parseInt(raw, 10);
@@ -60,16 +69,27 @@ const resolveCategoryId = (
   return categoryIds?.[0] ?? DEFAULT_SEARCH_CATEGORY;
 };
 
+type SummaryFlags = {
+  /** One character typed: nothing was searched. */
+  tooShort: boolean;
+  /** Every category failed; the page shows one ErrorState. */
+  allFailed: boolean;
+};
+
 /** "Showing 1–24 of 1,204 items" / "Page 2 of 34 · items" / "All 12 items loaded". */
 const summarize = (
   state: SearchCategoryState | undefined,
   query: string,
+  { tooShort, allFailed }: SummaryFlags,
 ): string => {
-  if (!state || !query) {
+  if (!state || !query || tooShort) {
     return "";
   }
-  if (state.isLoading) {
+  if (state.isLoading || (state.isPlaceholderData && state.data.length === 0)) {
     return `Searching ${state.category.plural}…`;
+  }
+  if (allFailed) {
+    return "Couldn't load results";
   }
   if (state.isError) {
     return `Couldn't load ${state.category.plural}`;
@@ -95,6 +115,12 @@ const summarize = (
 
 const EXAMPLE_TERMS = SEARCH_CATEGORIES.flatMap((category) => category.examples);
 
+/** "Shadowmourne, Chaos Bolt or Onyxia" */
+const joinExamples = (terms: string[]): string =>
+  terms.length <= 1
+    ? terms.join("")
+    : `${terms.slice(0, -1).join(", ")} or ${terms[terms.length - 1]}`;
+
 /**
  * `/search?q=…&cat=…&page=…`: the URL is the source of truth, so the header
  * search, back/forward and shared links all land on the same results.
@@ -111,15 +137,37 @@ const SearchPage = ({
     removeRecentSearch,
     pushRecentSearch,
   } = useSearchState();
+  const { pathname } = useLocation();
   const [params, setParams] = useSearchParamsRecord(PARAM_DEFAULTS);
 
-  const cat = resolveCategoryId(params.cat, categoryIds);
+  const rawCat =
+    params.cat === DEFAULT_SEARCH_CATEGORY && params.category
+      ? params.category
+      : params.cat;
+  const cat = resolveCategoryId(rawCat, categoryIds);
   const page = parsePage(params.page);
   const singleCategory = Boolean(categoryIds && categoryIds.length === 1);
+  const singleCategoryConfig = singleCategory
+    ? findSearchCategory(categoryIds?.[0])
+    : undefined;
+
+  // The field keeps a local draft and commits through its own debounce, so
+  // the URL (and everything that re-renders on it) changes once per settled
+  // term instead of once per keystroke; the hook then needs no second debounce.
+  const [draft, setDraft] = useState(query);
+  const lastQueryRef = useRef(query);
+  useEffect(() => {
+    if (query !== lastQueryRef.current) {
+      // URL navigation (header search, back/forward, a chip): adopt it.
+      lastQueryRef.current = query;
+      setDraft(query);
+    }
+  }, [query]);
 
   const search = useBlizzardSearch(query, {
     categoryIds,
     pages: { [cat]: page },
+    debounceMs: 0,
   });
   const { categoryStates } = search;
 
@@ -127,62 +175,94 @@ const SearchPage = ({
     categoryStates.find((state) => state.category.id === cat) ??
     categoryStates[0];
 
-  // A new query starts at page 1 (a reload with q + page keeps both).
-  const lastQueryRef = useRef<string | null>(null);
+  // Clamp a stale page once the page count is known (Blizzard reports
+  // pageCount 0 for an empty search, so page 1 is never rewritten).
   useEffect(() => {
-    const trimmed = query.trim();
-    if (lastQueryRef.current === null) {
-      lastQueryRef.current = trimmed;
+    if (!activeState || page <= 1) {
       return;
     }
-    if (lastQueryRef.current !== trimmed) {
-      lastQueryRef.current = trimmed;
-      if (page !== 1) {
-        setParams({ page: null }, { replace: true });
-      }
-    }
-  }, [query, page, setParams]);
-
-  // Clamp a stale page once the page count is known.
-  useEffect(() => {
+    const maxPage = Math.max(1, activeState.pageCount);
     if (
-      activeState &&
       !activeState.isLoading &&
       !activeState.isError &&
       !activeState.isPlaceholderData &&
       activeState.data.length === 0 &&
-      page > activeState.pageCount
+      page > maxPage
     ) {
       setParams(
-        { page: activeState.pageCount > 1 ? String(activeState.pageCount) : null },
+        { page: maxPage > 1 ? String(maxPage) : null },
         { replace: true },
       );
     }
   }, [activeState, page, setParams]);
 
-  // Record settled, successful searches (the debounce already throttles this).
+  // Record settled, successful searches: never from placeholder data, and
+  // never while a request for the current term is still in flight.
+  const hasPlaceholder = categoryStates.some((state) => state.isPlaceholderData);
   useEffect(() => {
     if (
       search.query.length >= MIN_QUERY_LENGTH &&
       !search.isAnyLoading &&
+      !search.isFetching &&
+      !hasPlaceholder &&
       search.hasAnyResults
     ) {
       pushRecentSearch(search.query);
     }
-  }, [search.query, search.isAnyLoading, search.hasAnyResults, pushRecentSearch]);
+  }, [
+    search.query,
+    search.isAnyLoading,
+    search.isFetching,
+    hasPlaceholder,
+    search.hasAnyResults,
+    pushRecentSearch,
+  ]);
 
   const summary = useMemo(
-    () => summarize(activeState, search.query),
-    [activeState, search.query],
+    () =>
+      summarize(activeState, search.query, {
+        tooShort: search.tooShort,
+        allFailed: search.isAllError && !search.isAnyLoading,
+      }),
+    [
+      activeState,
+      search.query,
+      search.tooShort,
+      search.isAllError,
+      search.isAnyLoading,
+    ],
   );
 
   const handleCategoryChange = (id: SearchCategoryId): void => {
-    setParams({ cat: id === DEFAULT_SEARCH_CATEGORY ? null : id, page: null });
+    setParams({
+      cat: id === DEFAULT_SEARCH_CATEGORY ? null : id,
+      category: null,
+      page: null,
+    });
   };
 
   const handlePageChange = (next: number): void => {
     setParams({ page: next === 1 ? null : String(next) });
   };
+
+  const handleClear = (): void => {
+    setDraft("");
+    setQuery("");
+  };
+
+  // A single-category page (creatures) searches in place; the global page
+  // links to /search.
+  const buildTermTo = useCallback(
+    (term: string): To =>
+      singleCategory
+        ? { pathname, search: `?q=${encodeURIComponent(term)}` }
+        : searchUrl(term),
+    [pathname, singleCategory],
+  );
+  const exampleTerms = singleCategoryConfig?.examples ?? EXAMPLE_TERMS;
+  const exampleCopy = singleCategoryConfig
+    ? `Try ${joinExamples(singleCategoryConfig.examples)}.`
+    : "Try Shadowmourne, Chaos Bolt or Onyxia.";
 
   const renderBody = (): JSX.Element => {
     if (!search.query) {
@@ -191,46 +271,21 @@ const SearchPage = ({
           <EmptyState
             icon={<SearchRounded />}
             title="Start with a name"
-            description="Try Shadowmourne, Chaos Bolt or Onyxia."
-            action={
-              <Stack
-                direction="row"
-                spacing={1}
-                useFlexGap
-                flexWrap="wrap"
-                justifyContent="center"
-              >
-                {EXAMPLE_TERMS.map((term) => (
-                  <Chip
-                    key={term}
-                    component={RouterLink}
-                    to={searchUrl(term)}
-                    label={term}
-                    clickable
-                  />
-                ))}
-              </Stack>
-            }
+            description={exampleCopy}
+          />
+          <RecentSearchChips
+            terms={exampleTerms}
+            buildTo={buildTermTo}
+            label="Example searches"
           />
           {recentSearches.length > 0 ? (
             <SectionCard title="Recent searches" titleAs="h2" padding="compact">
-              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                {recentSearches.map((term) => (
-                  <Chip
-                    key={term}
-                    component={RouterLink}
-                    to={searchUrl(term)}
-                    label={term}
-                    clickable
-                    onDelete={(event: SyntheticEvent) => {
-                      // The chip is a link; removing must not follow it.
-                      event.preventDefault();
-                      removeRecentSearch(term);
-                    }}
-                    deleteIcon={<CancelRounded titleAccess={`Remove ${term}`} />}
-                  />
-                ))}
-              </Stack>
+              <RecentSearchChips
+                terms={recentSearches}
+                buildTo={buildTermTo}
+                onRemove={removeRecentSearch}
+                label="Recent searches"
+              />
             </SectionCard>
           ) : null}
         </Stack>
@@ -276,7 +331,9 @@ const SearchPage = ({
     );
   };
 
-  const title = search.query
+  // A too-short query searched nothing, so the header and tab title stay neutral.
+  const hasResultsQuery = Boolean(search.query) && !search.tooShort;
+  const title = hasResultsQuery
     ? `Results for "${search.query}"`
     : "Search Azeroth";
 
@@ -287,7 +344,7 @@ const SearchPage = ({
           eyebrow="Search"
           title={title}
           description="Items, spells, mounts and creatures from the Blizzard game-data API."
-          documentTitle={search.query ? `${search.query} - Search` : "Search"}
+          documentTitle={hasResultsQuery ? `${search.query} - Search` : "Search"}
           icon={<SearchRounded />}
           meta={
             <>
@@ -309,15 +366,17 @@ const SearchPage = ({
         progress={search.isFetching && !search.isAnyLoading}
       >
         <SearchField
-          value={query}
-          onChange={setQuery}
+          value={draft}
+          onChange={setDraft}
+          onDebouncedChange={setQuery}
+          debounceMs={SEARCH_DEBOUNCE_MS}
           onSubmit={submitQuery}
-          onClear={() => setQuery("")}
+          onClear={handleClear}
           label="Search query"
           placeholder={
-            singleCategory && activeState
-              ? activeState.category.placeholder
-              : "Search items, spells, mounts, creatures"
+            singleCategoryConfig
+              ? singleCategoryConfig.placeholder
+              : "Search by name"
           }
           autoFocus={false}
           minLength={MIN_QUERY_LENGTH}

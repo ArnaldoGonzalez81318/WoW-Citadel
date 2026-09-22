@@ -1,14 +1,14 @@
-import CancelRounded from "@mui/icons-material/CancelRounded";
 import SearchRounded from "@mui/icons-material/SearchRounded";
-import { Box, Button, Chip, Paper, Stack, Typography } from "@mui/material";
+import { Box, Button, Paper, Stack, Typography } from "@mui/material";
 import { useState } from "react";
-import type { FormEvent, SyntheticEvent } from "react";
-import { Link as RouterLink } from "react-router-dom";
+import type { FormEvent } from "react";
 
 import { SearchField } from "@/components/common/ExplorerFilterBar";
 import PageHeader from "@/components/common/PageHeader";
 import { SEARCH_CATEGORIES } from "@/features/search/categories";
-import { searchUrl, useSearchState } from "@/features/search/context/SearchContext";
+import RecentSearchChips from "@/features/search/components/RecentSearchChips";
+import { searchUrl } from "@/features/search/config/searchRoutes";
+import { useSearchState } from "@/features/search/context/SearchContext";
 
 const EXAMPLE_TERMS = SEARCH_CATEGORIES.flatMap((category) => category.examples).slice(
   0,
@@ -16,12 +16,15 @@ const EXAMPLE_TERMS = SEARCH_CATEGORIES.flatMap((category) => category.examples)
 );
 
 type ChipRowProps = {
+  /** Visible eyebrow ("Try"). */
   label: string;
+  /** Accessible name of the chip list ("Example searches"). */
+  listLabel: string;
   terms: string[];
   onRemove?: (term: string) => void;
 };
 
-const ChipRow = ({ label, terms, onRemove }: ChipRowProps): JSX.Element => (
+const ChipRow = ({ label, listLabel, terms, onRemove }: ChipRowProps): JSX.Element => (
   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
     <Typography
       variant="overline"
@@ -31,33 +34,19 @@ const ChipRow = ({ label, terms, onRemove }: ChipRowProps): JSX.Element => (
     >
       {label}
     </Typography>
-    {terms.map((term) => (
-      <Chip
-        key={term}
-        component={RouterLink}
-        to={searchUrl(term)}
-        label={term}
-        clickable
-        onDelete={
-          onRemove
-            ? (event: SyntheticEvent) => {
-                // The chip is a link; removing must not follow it.
-                event.preventDefault();
-                onRemove(term);
-              }
-            : undefined
-        }
-        deleteIcon={
-          onRemove ? <CancelRounded titleAccess={`Remove ${term}`} /> : undefined
-        }
-      />
-    ))}
+    <RecentSearchChips
+      terms={terms}
+      buildTo={searchUrl}
+      onRemove={onRemove}
+      label={listLabel}
+    />
   </Stack>
 );
 
 /**
  * Home hero: the page's h1, one search form and a single quick-search row
- * (examples plus recent searches). Every chip is a real link to `/search`.
+ * (examples plus recent searches). Every chip is a real link to `/search`;
+ * removing a recent term is a sibling button, never nested in the link.
  */
 const HomeHero = (): JSX.Element => {
   const { submitQuery, recentSearches, removeRecentSearch } = useSearchState();
@@ -98,7 +87,7 @@ const HomeHero = (): JSX.Element => {
         >
           <SearchField
             label="Search Azeroth"
-            placeholder="Search items, spells, mounts, creatures"
+            placeholder="Search Azeroth by name"
             value={local}
             onChange={setLocal}
             onSubmit={submitQuery}
@@ -122,10 +111,11 @@ const HomeHero = (): JSX.Element => {
         </Box>
 
         <Stack spacing={1.5}>
-          <ChipRow label="Try" terms={EXAMPLE_TERMS} />
+          <ChipRow label="Try" listLabel="Example searches" terms={EXAMPLE_TERMS} />
           {recentSearches.length > 0 ? (
             <ChipRow
               label="Recent"
+              listLabel="Recent searches"
               terms={recentSearches}
               onRemove={removeRecentSearch}
             />

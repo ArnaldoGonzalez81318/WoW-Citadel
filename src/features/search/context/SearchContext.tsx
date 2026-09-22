@@ -2,26 +2,25 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
 } from "react";
 import type { PropsWithChildren } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
+import {
+  SEARCH_RESULTS_PATH,
+  isSearchRoutePath,
+  searchUrl,
+} from "@/features/search/config/searchRoutes";
 import { useRecentSearches } from "@/features/search/hooks/useRecentSearches";
-import useDebouncedValue from "@/hooks/useDebouncedValue";
-import { useSearchParamState } from "@/hooks/useSearchParamState";
+import { useSearchParamsRecord } from "@/hooks/useSearchParamState";
 
-/** Routes that render search results and therefore own `?q=` themselves. */
-export const SEARCH_ROUTES = ["/search", "/category/creatures"] as const;
-
-const SEARCH_RESULTS_PATH = "/search";
-const MIN_QUERY_LENGTH = 2;
-const DRAFT_DEBOUNCE_MS = 350;
-
-export const searchUrl = (term: string): string =>
-  `${SEARCH_RESULTS_PATH}?q=${encodeURIComponent(term)}`;
+/**
+ * `q` and `page` are written together: a new query always starts on page 1,
+ * and doing it in one navigation keeps history entries intact on Back/Forward.
+ */
+const URL_DEFAULTS: Record<"q" | "page", string> = { q: "", page: "" };
 
 export interface SearchState {
   /** What the search inputs show: the URL `q` on a search route, else the header draft. */
@@ -42,15 +41,21 @@ const SearchContext = createContext<SearchState | undefined>(undefined);
 
 /**
  * Global search state. Mounted under the router (RootLayout), so on a search
- * route the URL is the source of truth; elsewhere typing in the header
- * builds a draft that lands on `/search?q=` once it is long enough.
+ * route the URL is the source of truth; elsewhere `query` is a plain draft.
+ *
+ * Typing never navigates by itself: the header field is a combobox whose
+ * suggestions cover discovery, and only Enter, the search button or a
+ * chosen suggestion (`submitQuery`) lands on `/search?q=`. Moving the URL
+ * on a debounce would fight the open listbox and rewrite history while the
+ * user is still typing.
  */
 export const SearchProvider = ({
   children,
 }: PropsWithChildren): JSX.Element => {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const [urlQuery, setUrlQuery] = useSearchParamState("q");
+  const [urlParams, setUrlParams] = useSearchParamsRecord(URL_DEFAULTS);
+  const urlQuery = urlParams.q;
   const {
     recent: recentSearches,
     push: pushRecent,
@@ -58,35 +63,22 @@ export const SearchProvider = ({
     clear: clearRecentSearches,
   } = useRecentSearches();
 
-  const isSearchRoute = (SEARCH_ROUTES as readonly string[]).includes(pathname);
+  const isSearchRoute = isSearchRoutePath(pathname);
   const [draft, setDraft] = useState("");
-  const debouncedDraft = useDebouncedValue(draft, DRAFT_DEBOUNCE_MS);
 
   const query = isSearchRoute ? urlQuery : draft;
 
   const setQuery = useCallback(
     (value: string) => {
       if (isSearchRoute) {
-        setUrlQuery(value || null, { replace: true });
+        // Editing the query resets the page in the same navigation.
+        setUrlParams({ q: value || null, page: null }, { replace: true });
       } else {
         setDraft(value);
       }
     },
-    [isSearchRoute, setUrlQuery],
+    [isSearchRoute, setUrlParams],
   );
-
-  // Typing in the header anywhere else lands on the results page.
-  useEffect(() => {
-    if (isSearchRoute) {
-      return;
-    }
-    const term = debouncedDraft.trim();
-    if (term.length < MIN_QUERY_LENGTH) {
-      return;
-    }
-    navigate(searchUrl(term));
-    setDraft("");
-  }, [debouncedDraft, isSearchRoute, navigate]);
 
   const submitQuery = useCallback(
     (value: string) => {
@@ -98,23 +90,27 @@ export const SearchProvider = ({
 
       pushRecent(term);
 
+      // A submitted term starts the results over, so it lands at the top
+      // like a fresh navigation (filters refining a page keep their scroll).
+      const startOver = { preventScrollReset: false };
+
       if (pathname === SEARCH_RESULTS_PATH) {
         if (urlQuery.trim() !== term) {
-          setUrlQuery(term);
+          setUrlParams({ q: term, page: null }, startOver);
         }
         return;
       }
 
       if (isSearchRoute) {
         // A category search page (creatures) keeps its own grid; never redirect it.
-        setUrlQuery(term);
+        setUrlParams({ q: term, page: null }, startOver);
         return;
       }
 
       setDraft("");
       navigate(searchUrl(term));
     },
-    [isSearchRoute, navigate, pathname, pushRecent, setQuery, setUrlQuery, urlQuery],
+    [isSearchRoute, navigate, pathname, pushRecent, setQuery, setUrlParams, urlQuery],
   );
 
   const clearQuery = useCallback(() => setQuery(""), [setQuery]);

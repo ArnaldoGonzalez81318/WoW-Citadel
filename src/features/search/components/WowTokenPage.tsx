@@ -1,19 +1,19 @@
 import { Box, Button, Chip, Stack, Typography } from "@mui/material";
-import { useState } from "react";
 
 import GoldAmount from "@/components/common/GoldAmount";
 import SectionCard from "@/components/common/SectionCard";
 import { EmptyState } from "@/components/common/StateBlocks";
 import TokenSparkline from "@/features/search/components/TokenSparkline";
 import TokenTicker from "@/features/search/components/TokenTicker";
+import { useNow } from "@/features/search/hooks/useNow";
 import { useWowTokenHistory } from "@/features/search/hooks/useWowTokenHistory";
 import type { TokenHistoryPoint } from "@/features/search/hooks/useWowTokenHistory";
 import {
   TOKEN_REFRESH_MINUTES,
   useWowTokenPrice,
 } from "@/features/search/hooks/useWowTokenPrice";
-import { formatCopper, formatNumber, formatRelativeTime } from "@/lib/format";
-import { tokens } from "@/theme";
+import { formatNumber, formatRelativeTime } from "@/lib/format";
+import { tokens, visuallyHidden } from "@/theme";
 
 const SECTION_GAP = tokens.wc.layout.sectionGap;
 const MIN_SAMPLES = 2;
@@ -43,19 +43,18 @@ type StatChipProps = {
   signed?: boolean;
 };
 
-/** "High 287,863g" as a chip; the change is signed and coloured. */
+/**
+ * "High 287,863g" as a chip. The change is signed: the direction is spoken
+ * through hidden text ("up" / "down") and shown by the glyph, never by colour
+ * alone; the Chip itself carries no aria-label (it renders a generic div).
+ */
 const StatChip = ({ label, copper, signed = false }: StatChipProps): JSX.Element => {
   const direction = copper > 0 ? "up" : copper < 0 ? "down" : "flat";
-  const spoken = `${label} ${
-    signed && direction !== "flat"
-      ? `${direction} ${formatCopper(Math.abs(copper), { style: "long" })}`
-      : formatCopper(Math.abs(copper), { style: "long" })
-  }`;
+  const showSign = signed && direction !== "flat";
 
   return (
     <Chip
       variant="outlined"
-      aria-label={spoken}
       label={
         <Box
           component="span"
@@ -64,20 +63,25 @@ const StatChip = ({ label, copper, signed = false }: StatChipProps): JSX.Element
           <Typography component="span" variant="caption" color="text.secondary">
             {label}
           </Typography>
-          {signed && direction !== "flat" ? (
-            <Box
-              component="span"
-              aria-hidden="true"
-              sx={(theme) => ({
-                fontWeight: 700,
-                color:
-                  direction === "up"
-                    ? theme.palette.success.main
-                    : theme.palette.error.main,
-              })}
-            >
-              {direction === "up" ? "+" : "−"}
-            </Box>
+          {showSign ? (
+            <>
+              <Box component="span" sx={visuallyHidden}>
+                {direction}
+              </Box>
+              <Box
+                component="span"
+                aria-hidden="true"
+                sx={(theme) => ({
+                  fontWeight: 700,
+                  color:
+                    direction === "up"
+                      ? theme.palette.success.main
+                      : theme.palette.error.main,
+                })}
+              >
+                {direction === "up" ? "+" : "−"}
+              </Box>
+            </>
           ) : null}
           <GoldAmount copper={Math.abs(copper)} size="small" />
         </Box>
@@ -94,7 +98,8 @@ const StatChip = ({ label, copper, signed = false }: StatChipProps): JSX.Element
 const WowTokenPage = (): JSX.Element => {
   const { data } = useWowTokenPrice();
   const { points, clear } = useWowTokenHistory(data);
-  const [now] = useState(() => Date.now());
+  // Same 30s clock as the ticker, so "since … ago" keeps advancing.
+  const now = useNow();
 
   const hasHistory = points.length >= MIN_SAMPLES;
   const stats = hasHistory ? summarizeHistory(points) : undefined;

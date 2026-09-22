@@ -12,13 +12,18 @@ import {
   ErrorState,
   LoadingSkeleton,
 } from "@/components/common/StateBlocks";
-import { fetchItemMediaUrl } from "@/features/items/services/itemService";
+import {
+  fetchItemMediaUrl,
+  itemKeys,
+} from "@/features/items/services/itemService";
 import type { SearchCategoryState } from "@/features/search/hooks/useBlizzardSearch";
 import { SEARCH_PAGE_SIZE } from "@/features/search/services/searchService";
 import type { SearchResult } from "@/features/search/types";
-import { fetchSpellIcon } from "@/features/spells/services/spellService";
+import {
+  fetchSpellIcon,
+  spellKeys,
+} from "@/features/spells/services/spellService";
 import useIdlePrefetchWindow from "@/hooks/useIdlePrefetchWindow";
-import { env } from "@/lib/env";
 
 export type SearchResultGridLayout = "row" | "tile";
 
@@ -34,16 +39,23 @@ export interface SearchResultGridProps {
 const MEDIA_GC_TIME_MS = 24 * 60 * 60_000;
 const MEDIA_INITIAL_COUNT = 6;
 const MEDIA_BATCH_SIZE = 6;
+const GRID_GAP_PX = 16;
 
 const needsMedia = (result: SearchResult): boolean =>
   !result.mediaUrl && (result.kind === "item" || result.kind === "spell");
 
-type MediaMap = Map<number, string | undefined>;
+/**
+ * Module-level so react-query only re-runs it when a result changes, and a
+ * plain array so `replaceEqualDeep` keeps the previous identity (a Map is
+ * never structurally shared), which lets `enrichedData` memoise.
+ */
+const combineMedia = <T,>(results: UseQueryResult<T>[]): (T | undefined)[] =>
+  results.map((result) => result.data);
 
 /**
  * One category's results as row cards, with the media fan-out staggered
- * through the idle window and shared with the explorers' caches
- * (`["item-media", id, region]` / `["spell-media-card", id, region]`).
+ * through the idle window and keyed exactly like the explorers
+ * (`itemKeys.media(id)` / `spellKeys.icon(id)`) so both share one cache.
  */
 const SearchResultGrid = ({
   state,
@@ -64,46 +76,50 @@ const SearchResultGrid = ({
     resetKey: `${category.id}:${query}:${page}`,
   });
 
-  const mediaById = useQueries({
+  const mediaUrls = useQueries({
     queries: mediaTargets.map((result, index) => ({
       queryKey:
         result.kind === "item"
-          ? (["item-media", result.id, env.region] as const)
-          : (["spell-media-card", result.id, env.region] as const),
-      queryFn: () =>
+          ? itemKeys.media(result.id)
+          : spellKeys.icon(result.id),
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
         result.kind === "item"
-          ? fetchItemMediaUrl(result.id)
-          : fetchSpellIcon(result.id),
+          ? fetchItemMediaUrl(result.id, signal)
+          : fetchSpellIcon(result.id, signal),
       enabled: index < active,
       retry: false,
       staleTime: Infinity,
       gcTime: MEDIA_GC_TIME_MS,
     })),
-    combine: (results: UseQueryResult<string | undefined>[]): MediaMap =>
-      new Map(
-        results.map((result, index) => [mediaTargets[index].id, result.data]),
-      ),
+    combine: combineMedia,
   });
 
-  const enrichedData = useMemo(
-    () =>
-      data.map((result) => {
-        if (result.mediaUrl) {
-          return result;
-        }
-        const mediaUrl = mediaById.get(result.id);
-        return mediaUrl ? { ...result, mediaUrl } : result;
-      }),
-    [data, mediaById],
-  );
+  const enrichedData = useMemo(() => {
+    const byId = new Map(
+      mediaTargets.map((target, index) => [target.id, mediaUrls[index]] as const),
+    );
+    return data.map((result) => {
+      if (result.mediaUrl) {
+        return result;
+      }
+      const mediaUrl = byId.get(result.id);
+      return mediaUrl ? { ...result, mediaUrl } : result;
+    });
+  }, [data, mediaTargets, mediaUrls]);
 
-  if (isLoading && data.length === 0) {
+  // A first load, or a new key whose placeholder is an empty previous page:
+  // never show "No matches" for a query that is still in flight.
+  const isPending =
+    isLoading || (state.isPlaceholderData && data.length === 0);
+
+  if (isPending) {
     return (
       <LoadingSkeleton
-        variant="rows"
+        variant="grid"
         columns={GRID_PRESETS.rows}
         itemHeight={getResultCardHeight(layout)}
         count={SEARCH_PAGE_SIZE}
+        gap={GRID_GAP_PX}
         label={`Loading ${category.plural}`}
       />
     );

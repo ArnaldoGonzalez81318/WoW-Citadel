@@ -73,7 +73,9 @@ const combineSearch = (
     return {
       category,
       data: result.data?.results ?? [],
-      page: result.data?.page ?? pages?.[category.id] ?? 1,
+      // The requested page is known synchronously; with keepPreviousData the
+      // payload's page is the previous one until the fetch resolves.
+      page: pages?.[category.id] ?? result.data?.page ?? 1,
       pageCount: result.data?.pageCount ?? 1,
       total: result.data?.total,
       isLoading: result.isLoading,
