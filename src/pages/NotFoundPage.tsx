@@ -1,9 +1,8 @@
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
 import SearchOffRoundedIcon from "@mui/icons-material/SearchOffRounded";
-import { Button, Chip, Stack, Typography } from "@mui/material";
+import { Box, Button, Chip, Stack, Typography } from "@mui/material";
 import { useState } from "react";
-import type { FormEvent } from "react";
 import { Link as RouterLink, useLocation, useNavigate } from "react-router-dom";
 
 import { SearchField } from "@/components/common/ExplorerFilterBar";
@@ -33,11 +32,6 @@ const NotFoundPage = ({ suggestions = [] }: NotFoundPageProps): JSX.Element => {
     if (trimmed.length >= MIN_QUERY_LENGTH) {
       navigate(`/search?q=${encodeURIComponent(trimmed)}`);
     }
-  };
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
-    submit(query);
   };
 
   const goBack = (): void => {
@@ -75,7 +69,12 @@ const NotFoundPage = ({ suggestions = [] }: NotFoundPageProps): JSX.Element => {
 
       <SectionCard padding="default">
         <Stack spacing={3}>
-          <form onSubmit={handleSubmit} role="search">
+          {/*
+           * SearchField handles Enter itself (preventDefault + onSubmit), so
+           * there is no form submission path; a plain Box avoids a second,
+           * unlabelled role="search" landmark next to the header's.
+           */}
+          <Box>
             <SearchField
               id="not-found-search"
               label="Search items, spells, mounts and creatures"
@@ -85,11 +84,20 @@ const NotFoundPage = ({ suggestions = [] }: NotFoundPageProps): JSX.Element => {
               onSubmit={submit}
               onClear={() => setQuery("")}
             />
-          </form>
+          </Box>
 
           {suggestions.length > 0 ? (
-            <Stack spacing={1}>
-              <Typography variant="overline" component="p" sx={{ margin: 0 }}>
+            <Stack
+              component="nav"
+              aria-labelledby="not-found-suggestions"
+              spacing={1}
+            >
+              <Typography
+                id="not-found-suggestions"
+                variant="overline"
+                component="p"
+                sx={{ margin: 0 }}
+              >
                 Did you mean
               </Typography>
               <Stack direction="row" flexWrap="wrap" useFlexGap sx={{ gap: 1 }}>

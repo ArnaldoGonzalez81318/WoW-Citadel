@@ -6,10 +6,7 @@ import { Link as RouterLink } from "react-router-dom";
 import PageHeader from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/StateBlocks";
 import ApiFamilyGallery from "@/features/apiExplorer/components/ApiFamilyGallery";
-import {
-  DATASET_FAMILY_SLUGS,
-  getApiFamilyConfigBySlug,
-} from "@/features/apiExplorer/config/apiCatalog";
+import { getApiFamilyConfigBySlug } from "@/features/apiExplorer/config/apiCatalog";
 import type { ApiFamilyConfig } from "@/features/apiExplorer/types";
 import type { FamilyFallbackProps } from "@/pages/categoryRegistry";
 
@@ -47,7 +44,7 @@ const resolvePresentation = (
   }
   // "page" means a dedicated explorer exists; reaching this module means the
   // registry had no entry, so the family gallery is the best available view.
-  return DATASET_FAMILY_SLUGS.has(slug) ? "dataset" : "family";
+  return "family";
 };
 
 const CategoryFamilyFallback = ({

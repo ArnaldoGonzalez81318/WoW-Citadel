@@ -31,7 +31,9 @@ import { env } from "@/lib/env";
 import { formatNumber } from "@/lib/format";
 import { lineClamp } from "@/theme";
 
-export const API_EXPLORER_PATH = "/api-explorer";
+// Not exported: a page module must export only components so Vite's React
+// Fast Refresh can patch it in place instead of reloading the page.
+const API_EXPLORER_PATH = "/api-explorer";
 
 const BLIZZARD_DOCS_URL =
   "https://develop.battle.net/documentation/world-of-warcraft/game-data-apis";
