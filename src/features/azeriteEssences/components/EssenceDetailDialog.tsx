@@ -8,8 +8,30 @@ import type {
 import EssencePowerTable from "@/features/azeriteEssences/components/EssencePowerTable";
 import type {
   AzeriteEssenceCardData,
+  AzeriteEssenceDetail,
   AzeriteEssenceSummary,
 } from "@/features/azeriteEssences/types";
+
+/**
+ * Blizzard names specializations without their class, so "Frost" appears
+ * once for mages and once for death knights. Repeats are collapsed with a
+ * count ("Frost (2)") rather than listed twice.
+ */
+const describeSpecializations = (
+  specs: AzeriteEssenceDetail["allowedSpecializations"],
+): string => {
+  const counts = new Map<string, number>();
+  specs.forEach((spec) => {
+    counts.set(spec.name, (counts.get(spec.name) ?? 0) + 1);
+  });
+
+  const names = [...counts.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, count]) => (count > 1 ? `${name} (${count})` : name))
+    .join(", ");
+
+  return `${specs.length} specializations: ${names}`;
+};
 
 export type EssenceDetailDialogProps = {
   open: boolean;
@@ -47,7 +69,7 @@ const EssenceDetailDialog = ({
       {
         label: "Specializations",
         value: specs.length
-          ? specs.map((spec) => spec.name).join(", ")
+          ? describeSpecializations(specs)
           : "All specializations",
       },
       { label: "Ranks", value: detail.powers.length },

@@ -92,4 +92,6 @@ export type AchievementGalleryPage = {
   items: AchievementGalleryItem[];
   /** Achievements on this page that failed to load (404s are skipped, not counted). */
   failedCount: number;
+  /** The refs behind `failedCount`, so a retry can target only them. */
+  failedRefs: AchievementSummary[];
 };

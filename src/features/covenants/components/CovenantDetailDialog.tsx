@@ -70,6 +70,10 @@ const SpellName = ({ ability, variant }: SpellNameProps): JSX.Element => {
   );
 };
 
+/** Blizzard's tooltip string already ends in "cooldown" ("5 min cooldown"). */
+const stripCooldownWord = (cooldown: string): string =>
+  cooldown.replace(/\s*cooldown\s*$/i, "").trim() || cooldown;
+
 const tooltipChips = (
   ability: CovenantAbility,
 ): Array<{ key: string; label: string }> => {
@@ -81,7 +85,10 @@ const tooltipChips = (
   return [
     tooltip.castTime ? { key: "cast", label: `Cast: ${tooltip.castTime}` } : null,
     tooltip.cooldown
-      ? { key: "cooldown", label: `Cooldown: ${tooltip.cooldown}` }
+      ? {
+          key: "cooldown",
+          label: `Cooldown: ${stripCooldownWord(tooltip.cooldown)}`,
+        }
       : null,
     tooltip.range ? { key: "range", label: `Range: ${tooltip.range}` } : null,
   ].filter((chip): chip is { key: string; label: string } => chip !== null);

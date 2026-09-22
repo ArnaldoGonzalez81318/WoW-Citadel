@@ -63,8 +63,8 @@ const cardSx = (theme: Theme) => ({
 });
 
 /**
- * One covenant in the four-card grid: icon, name, signature ability, a
- * three-line description and fact chips. The whole card opens the dialog.
+ * One covenant in the grid: icon, name, signature ability, a three-line
+ * description and fact chips. The whole card opens the dialog.
  */
 const CovenantCard = ({
   summary,
@@ -104,10 +104,12 @@ const CovenantCard = ({
               loading={loading}
             />
             <Box sx={{ minWidth: 0, flex: 1 }}>
+              {/* A heading may not sit inside the action area's <button>;
+                  the button's aria-label names the card instead. */}
               <Typography
                 variant="h5"
-                component="h2"
-                sx={{ ...mixins.truncate, margin: 0 }}
+                component="span"
+                sx={{ ...mixins.truncate, display: "block", margin: 0 }}
               >
                 {summary.name}
               </Typography>
@@ -155,10 +157,12 @@ const CovenantCard = ({
                 gap={1}
                 sx={{ marginTop: "auto" }}
               >
-                <Chip
-                  size="small"
-                  label={`${detail.classAbilities.length} class abilities`}
-                />
+                {detail.classAbilities.length > 0 ? (
+                  <Chip
+                    size="small"
+                    label={`${detail.classAbilities.length} class abilities`}
+                  />
+                ) : null}
                 {renownMax > 0 ? (
                   <Chip size="small" label={`Renown ${renownMax}`} />
                 ) : null}

@@ -26,8 +26,13 @@ export type CovenantPageProps = {
 const ONE_HOUR = 3_600_000;
 const CARD_HEIGHT = 232;
 
-/** Four fixed items: the rows preset would orphan one card at xl. */
-const COLS: GridColumns = { xs: 1, sm: 2, lg: 4 };
+/**
+ * Blizzard's index lists six entries (the Shadowlands four plus later renown
+ * factions): three columns give two even rows on md+ with no orphan, and the
+ * skeleton mirrors that count so the grid does not reflow when data lands.
+ */
+const EXPECTED_COVENANT_COUNT = 6;
+const COLS: GridColumns = { xs: 1, sm: 2, md: 3 };
 
 const CovenantPage = ({
   eyebrow = "World & Factions",
@@ -97,10 +102,10 @@ const CovenantPage = ({
           variant="grid"
           columns={COLS}
           itemHeight={CARD_HEIGHT}
-          count={4}
+          count={EXPECTED_COVENANT_COUNT}
           label="Loading covenants"
         />
-      ) : indexQuery.isError ? (
+      ) : indexQuery.isError && !indexQuery.data ? (
         <ErrorState
           error={indexQuery.error}
           context="covenants"

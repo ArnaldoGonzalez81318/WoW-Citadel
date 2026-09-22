@@ -133,6 +133,11 @@ const iconOf = (media: AchievementMedia | undefined): string | undefined =>
 export type AchievementGalleryOptions = {
   /** Show each card's subcategory (when browsing a root category). */
   showCategory?: boolean;
+  /**
+   * The category being browsed; a card's category is only worth showing when
+   * it differs from it (the root's own achievements all carry the root).
+   */
+  browsedCategoryId?: number;
 };
 
 type LoadedAchievement = {
@@ -147,8 +152,17 @@ const toGalleryItem = (
   const name = detail.name?.trim() || `Achievement #${detail.id}`;
   const points = typeof detail.points === "number" ? detail.points : undefined;
   const rewardText = detail.reward ?? detail.reward_item?.name;
+  const categoryName =
+    options.showCategory &&
+    detail.category &&
+    detail.category.id !== options.browsedCategoryId
+      ? detail.category.name
+      : undefined;
+  // ResultCard's row layout shows one meta line (subtitle > summary >
+  // details), so every fact the card must carry lives in `summary`.
   const summary =
     [
+      categoryName,
       points !== undefined ? `${points} pts` : undefined,
       rewardText ? `Reward: ${rewardText}` : undefined,
     ]
@@ -174,7 +188,6 @@ const toGalleryItem = (
     kind: "achievement",
     summary,
     details: cleanMarkup(detail.description) || undefined,
-    subtitle: options.showCategory ? detail.category?.name : undefined,
     tag: detail.is_account_wide ? "Account-wide" : undefined,
     typeLabel: "Achievement",
     mediaUrl,
@@ -191,11 +204,20 @@ const displayOrderOf = (detail: Achievement): number =>
     ? detail.display_order
     : Number.POSITIVE_INFINITY;
 
+/** In-game order; stable for items without a `display_order`. */
+export const sortGalleryItems = (
+  items: AchievementGalleryItem[],
+): AchievementGalleryItem[] =>
+  [...items].sort(
+    (left, right) =>
+      displayOrderOf(left.achievement) - displayOrderOf(right.achievement),
+  );
+
 /**
  * One page of a category's achievements. The caller passes the category's
  * ref list (fetched once); each ref costs detail + media in parallel, with at
- * most six achievements in flight. Failures are counted, never fatal, unless
- * every ref on the page failed.
+ * most six achievements in flight. Failures are collected (`failedRefs`),
+ * never fatal, unless every ref on the page failed.
  */
 export const fetchAchievementGalleryPage = async (
   refs: AchievementSummary[],
@@ -234,14 +256,19 @@ export const fetchAchievementGalleryPage = async (
 
   const fulfilled: LoadedAchievement[] = [];
   const rejected: unknown[] = [];
+  const failedRefs: AchievementSummary[] = [];
 
-  settled.forEach((entry) => {
+  settled.forEach((entry, index) => {
     if (entry.status === "fulfilled") {
       if (entry.value) {
         fulfilled.push(entry.value);
       }
     } else {
       rejected.push(entry.reason);
+      const ref = pageRefs[index];
+      if (ref) {
+        failedRefs.push(ref);
+      }
     }
   });
 
@@ -249,14 +276,15 @@ export const fetchAchievementGalleryPage = async (
     throw rejected[0];
   }
 
-  const items = fulfilled
-    .sort((left, right) => displayOrderOf(left.detail) - displayOrderOf(right.detail))
-    .map((entry) => toGalleryItem(entry, options));
+  const items = sortGalleryItems(
+    fulfilled.map((entry) => toGalleryItem(entry, options)),
+  );
 
   return {
     page: normalizedPage,
     pageCount,
     items,
-    failedCount: rejected.length,
+    failedCount: failedRefs.length,
+    failedRefs,
   };
 };

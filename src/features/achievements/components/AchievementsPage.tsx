@@ -1,6 +1,6 @@
 import EmojiEventsRoundedIcon from "@mui/icons-material/EmojiEventsRounded";
 import { Alert, Box, Button, Chip, Stack } from "@mui/material";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { GRID_PRESETS } from "@/components/common/gridColumns";
 import PageHeader from "@/components/common/PageHeader";
@@ -23,6 +23,7 @@ import type {
   AchievementCategorySummary,
   AchievementGalleryItem,
 } from "@/features/achievements/types";
+import type { SearchResult } from "@/features/search/types";
 import useInfiniteScrollTrigger from "@/hooks/useInfiniteScrollTrigger";
 import { useSearchParamState } from "@/hooks/useSearchParamState";
 import { env } from "@/lib/env";
@@ -31,6 +32,12 @@ import { formatNumber } from "@/lib/format";
 const PAGE_SIZE = 18;
 const ROW_HEIGHT = getResultCardHeight("row");
 const GRID_GAP = 16;
+/**
+ * One page is 6-9 rows tall; a tighter lead-in than the 900px default keeps
+ * page 2 behind a scroll. The top margin stays wide so a jump past the
+ * sentinel (End key, a fling into the footer) still counts as reaching it.
+ */
+const SCROLL_ROOT_MARGIN = "900px 0px 300px 0px";
 const EMPTY_CATEGORIES: AchievementCategorySummary[] = [];
 
 const AchievementsPage = (): JSX.Element => {
@@ -57,6 +64,7 @@ const AchievementsPage = (): JSX.Element => {
     galleryQuery,
     items,
     failedCount,
+    retryFailed,
     loadMore,
   } = useAchievementGallery(selectedCategoryId, PAGE_SIZE);
 
@@ -72,6 +80,19 @@ const AchievementsPage = (): JSX.Element => {
       setCategoryParam(String(id));
     }
   };
+
+  // A stable handler keeps memoised cards from re-rendering on every scroll
+  // range change; the card hands back its `result`, looked up by id.
+  const itemById = useMemo(
+    () => new Map(items.map((item) => [item.achievement.id, item])),
+    [items],
+  );
+  const openItem = useCallback(
+    (result: SearchResult): void => {
+      setSelected(itemById.get(result.id) ?? null);
+    },
+    [itemById],
+  );
 
   const hasGalleryData = Boolean(galleryQuery.data);
   const isLoading =
@@ -90,10 +111,15 @@ const AchievementsPage = (): JSX.Element => {
     hasMore: galleryQuery.hasNextPage,
     isLoading: galleryQuery.isFetchingNextPage,
     onLoadMore: loadMore,
+    rootMargin: SCROLL_ROOT_MARGIN,
   });
 
+  const sectionTitle = selectedName ?? "Achievements";
+  const sectionDescription =
+    parent && selectedName ? `${parent.name} › ${selectedName}` : undefined;
+
   const renderBody = (): JSX.Element => {
-    if (indexQuery.isError) {
+    if (indexQuery.isError && !indexQuery.data) {
       return (
         <ErrorState
           error={indexQuery.error}
@@ -103,7 +129,9 @@ const AchievementsPage = (): JSX.Element => {
       );
     }
 
-    if (categoryQuery.isError) {
+    // Page-level errors only when there is nothing to show: a failed
+    // refetch or next page keeps the loaded grid (handled below it).
+    if (categoryQuery.isError && !categoryQuery.data) {
       return (
         <ErrorState
           error={categoryQuery.error}
@@ -113,7 +141,7 @@ const AchievementsPage = (): JSX.Element => {
       );
     }
 
-    if (galleryQuery.isError) {
+    if (galleryQuery.isError && !hasGalleryData) {
       return (
         <ErrorState
           error={galleryQuery.error}
@@ -124,15 +152,23 @@ const AchievementsPage = (): JSX.Element => {
     }
 
     if (isLoading) {
+      // Same shell as the loaded grid so the swap does not shift the cells.
       return (
-        <LoadingSkeleton
-          variant="grid"
-          columns={GRID_PRESETS.rows}
-          itemHeight={ROW_HEIGHT}
-          count={PAGE_SIZE}
-          gap={GRID_GAP}
-          label="Loading achievements"
-        />
+        <SectionCard
+          title={sectionTitle}
+          titleAs="h2"
+          description={sectionDescription}
+          padding="compact"
+        >
+          <LoadingSkeleton
+            variant="grid"
+            columns={GRID_PRESETS.rows}
+            itemHeight={ROW_HEIGHT}
+            count={PAGE_SIZE}
+            gap={GRID_GAP}
+            label="Loading achievements"
+          />
+        </SectionCard>
       );
     }
 
@@ -154,9 +190,10 @@ const AchievementsPage = (): JSX.Element => {
               <Button
                 color="inherit"
                 size="small"
-                onClick={() => void galleryQuery.refetch()}
+                disabled={retryFailed.isPending}
+                onClick={() => retryFailed.mutate()}
               >
-                Retry
+                {retryFailed.isPending ? "Retrying…" : "Retry"}
               </Button>
             }
           >
@@ -167,11 +204,9 @@ const AchievementsPage = (): JSX.Element => {
         ) : null}
 
         <SectionCard
-          title={selectedName ?? "Achievements"}
+          title={sectionTitle}
           titleAs="h2"
-          description={
-            parent && selectedName ? `${parent.name} › ${selectedName}` : undefined
-          }
+          description={sectionDescription}
           padding="compact"
         >
           <VirtualizedCardGrid
@@ -185,25 +220,43 @@ const AchievementsPage = (): JSX.Element => {
               <ResultCard
                 result={item.result}
                 layout="row"
-                onSelect={() => setSelected(item)}
+                onSelect={openItem}
               />
             )}
           />
         </SectionCard>
 
         <Stack spacing={1} alignItems="center">
-          <LiveStatus busy={galleryQuery.isFetchingNextPage}>
-            {galleryQuery.isFetchingNextPage
-              ? "Loading more achievements"
-              : galleryQuery.hasNextPage
-                ? `${formatNumber(items.length)} of ${formatNumber(refs.length)} achievements loaded`
-                : `All ${formatNumber(items.length)} achievements loaded`}
-          </LiveStatus>
+          {galleryQuery.isError ? (
+            <ErrorState
+              compact
+              error={galleryQuery.error}
+              context={
+                galleryQuery.isFetchNextPageError
+                  ? "more achievements"
+                  : "achievements"
+              }
+              onRetry={() =>
+                void (galleryQuery.isFetchNextPageError
+                  ? galleryQuery.fetchNextPage()
+                  : galleryQuery.refetch())
+              }
+              sx={{ width: "100%" }}
+            />
+          ) : (
+            <LiveStatus busy={galleryQuery.isFetchingNextPage}>
+              {galleryQuery.isFetchingNextPage
+                ? "Loading more achievements"
+                : galleryQuery.hasNextPage
+                  ? `${formatNumber(items.length)} of ${formatNumber(refs.length)} achievements loaded`
+                  : `All ${formatNumber(items.length)} achievements loaded`}
+            </LiveStatus>
+          )}
           {galleryQuery.hasNextPage ? (
             <Box
               ref={infiniteScrollRef}
               aria-hidden="true"
-              sx={{ width: "100%", height: 1 }}
+              sx={{ width: "100%", height: "1px", flexShrink: 0 }}
             />
           ) : null}
         </Stack>
