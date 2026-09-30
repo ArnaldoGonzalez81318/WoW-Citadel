@@ -78,6 +78,9 @@ web_modules/
 .env.test.local
 .env.production.local
 .env.local
+# Any other Vite env file (.env.development, .env.staging.local, ...) may hold secrets too
+.env.*
+!.env.example
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -106,6 +109,14 @@ dist
 
 # Serverless directories
 .serverless/
+
+# Netlify CLI local state (linked site id, function builds) and the Deno
+# lockfile its edge-functions bootstrap writes to the project root
+.netlify/
+/deno.lock
+
+# macOS Finder metadata
+.DS_Store
 
 # FuseBox cache
 .fusebox/
