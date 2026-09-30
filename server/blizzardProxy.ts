@@ -63,6 +63,9 @@ const DEFAULT_RATE_LIMIT_PER_MINUTE = 600
 const DEFAULT_TOKEN_TTL_SECONDS = 3600
 const TOKEN_ATTEMPTS = 2
 const TOKEN_RETRY_DELAY_MS = 300
+// A token younger than this that Blizzard rejects points at the credentials,
+// not at an early revocation, so it is not refreshed again (bounds POST /token).
+const TOKEN_REFRESH_COOLDOWN_MS = 60_000
 
 const ALLOWED_PATH = /^\/data\/wow\/[A-Za-z0-9._~-]+(\/[A-Za-z0-9._~-]+)*$/
 const ALLOWED_QUERY_KEY =
@@ -85,6 +88,7 @@ const NO_STORE: Record<string, string> = { "cache-control": "no-store" }
 // dev process reuses one token across requests.
 let cachedAccessToken = ""
 let tokenExpiresAt = 0
+let tokenIssuedAt = 0
 let cachedTokenKey = ""
 let pendingTokenRequest: Promise<string> | null = null
 let pendingTokenKey = ""
@@ -101,6 +105,35 @@ export class BlizzardProxyConfigurationError extends Error {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Blizzard answers in well under a second; give up on a hung connection long
+// before Netlify's 60 s function limit. For data calls only the wait for
+// response headers is bounded, so a long auction stream is not cut off. One
+// hung call fails well inside the browser's 30 s client timeout; a hung token
+// attempt plus its retry and the data call can reach about 30 s (about 40 s
+// with the 401 token refresh), so the browser may give up first.
+const UPSTREAM_HEADERS_TIMEOUT_MS = 10_000
+const UPSTREAM_TIMEOUT_MESSAGE = "The Blizzard API did not respond in time."
+
+const fetchWithTimeout = async (url: string, init: RequestInit, signal?: AbortSignal): Promise<Response> => {
+  const controller = new AbortController()
+  if (signal?.aborted) {
+    controller.abort(signal.reason)
+  } else {
+    // Stays attached for the body's lifetime so a client disconnect mid-stream still cancels upstream.
+    signal?.addEventListener("abort", () => controller.abort(signal.reason), { once: true })
+  }
+  const timer = setTimeout(
+    () => controller.abort(new Error(UPSTREAM_TIMEOUT_MESSAGE)),
+    UPSTREAM_HEADERS_TIMEOUT_MS
+  )
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 const jsonResponse = (
   status: number,
@@ -200,6 +233,15 @@ const requestAccessToken = async (config: BlizzardServerConfig, tokenKey: string
   for (let attempt = 1; attempt <= TOKEN_ATTEMPTS; attempt += 1) {
     const canRetry = attempt < TOKEN_ATTEMPTS
     let response: Response
+    let body: string
+    // The token body is tiny, so this deadline also covers reading it: a
+    // stalled body would otherwise hold pendingTokenRequest, which every
+    // request on this instance shares.
+    const controller = new AbortController()
+    const timer = setTimeout(
+      () => controller.abort(new Error(UPSTREAM_TIMEOUT_MESSAGE)),
+      UPSTREAM_HEADERS_TIMEOUT_MS
+    )
 
     try {
       response = await fetch(`${config.oauthBaseUrl}/token`, {
@@ -209,13 +251,17 @@ const requestAccessToken = async (config: BlizzardServerConfig, tokenKey: string
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({ grant_type: "client_credentials" }).toString(),
+        signal: controller.signal,
       })
+      body = await response.text()
     } catch (error) {
       if (canRetry) {
         await sleep(TOKEN_RETRY_DELAY_MS)
         continue
       }
       throw error
+    } finally {
+      clearTimeout(timer)
     }
 
     if (!response.ok) {
@@ -224,23 +270,46 @@ const requestAccessToken = async (config: BlizzardServerConfig, tokenKey: string
         continue
       }
 
-      const body = await response.text()
       throw new Error(
         `Unable to acquire a Blizzard access token (${response.status}). ${body || "Check the server credentials."}`
       )
     }
 
-    const data = (await response.json()) as TokenResponse
+    const data = JSON.parse(body) as Partial<TokenResponse>
+    if (typeof data.access_token !== "string" || !data.access_token) {
+      throw new Error("Blizzard's token response did not include an access token.")
+    }
     const ttlSeconds = Math.max((data.expires_in ?? DEFAULT_TOKEN_TTL_SECONDS) - 60, 60)
 
     cachedAccessToken = data.access_token
     cachedTokenKey = tokenKey
-    tokenExpiresAt = Date.now() + ttlSeconds * 1000
+    tokenIssuedAt = Date.now()
+    tokenExpiresAt = tokenIssuedAt + ttlSeconds * 1000
 
     return cachedAccessToken
   }
 
   throw new Error("Unable to acquire a Blizzard access token.")
+}
+
+/**
+ * Called when Blizzard rejects `token` with a 401. Drops it so the next
+ * fetchAccessToken() requests a new one, and returns whether a retry is worth
+ * making: true when the token was already replaced by a concurrent request or
+ * was dropped here, false when it is too new to be a revoked token.
+ */
+const invalidateAccessToken = (token: string): boolean => {
+  if (cachedAccessToken !== token) {
+    return true
+  }
+
+  if (Date.now() - tokenIssuedAt < TOKEN_REFRESH_COOLDOWN_MS) {
+    return false
+  }
+
+  cachedAccessToken = ""
+  tokenExpiresAt = 0
+  return true
 }
 
 const fetchAccessToken = async (config: BlizzardServerConfig): Promise<string> => {
@@ -282,12 +351,14 @@ const pruneRateLimitBuckets = (now: number): void => {
 
 /** Returns seconds until the window resets when the client is over the limit, otherwise null. */
 const checkRateLimit = (clientIp: string | undefined, limit: number): number | null => {
-  if (limit <= 0) {
+  // Without a client address there is no fair key: one shared bucket would
+  // throttle every visitor together, so fail open instead.
+  if (limit <= 0 || !clientIp) {
     return null
   }
 
   const now = Date.now()
-  const key = clientIp || "anonymous"
+  const key = clientIp
   const bucket = rateLimitBuckets.get(key)
 
   if (!bucket || now - bucket.windowStart >= RATE_LIMIT_WINDOW_MS) {
@@ -350,12 +421,12 @@ const sanitizeQuery = (search: string): QueryValidation => {
 
 const LONG_CACHE: Record<string, string> = {
   "cache-control": "public, max-age=86400, stale-while-revalidate=604800",
-  "netlify-cdn-cache-control": "public, s-maxage=604800, durable",
+  "netlify-cdn-cache-control": "public, s-maxage=604800, stale-while-revalidate=604800, durable",
 }
 
 const MEDIUM_CACHE: Record<string, string> = {
   "cache-control": "public, max-age=3600, stale-while-revalidate=86400",
-  "netlify-cdn-cache-control": "public, s-maxage=86400",
+  "netlify-cdn-cache-control": "public, s-maxage=86400, stale-while-revalidate=86400, durable",
 }
 
 const SHORT_CACHE: Record<string, string> = {
@@ -442,10 +513,7 @@ export const proxyBlizzardRequest = async ({
   }
   url.search = params.toString()
 
-  const token = await fetchAccessToken(config)
-
   const upstreamHeaders: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
     Accept: "application/json",
   }
 
@@ -459,18 +527,33 @@ export const proxyBlizzardRequest = async ({
     upstreamHeaders["If-Modified-Since"] = ifModifiedSince
   }
 
-  const upstreamResponse = await fetch(url.toString(), {
-    method: normalizedMethod,
-    headers: upstreamHeaders,
-    signal,
-  })
+  const requestUpstream = (token: string): Promise<Response> =>
+    fetchWithTimeout(
+      url.toString(),
+      { method: normalizedMethod, headers: { ...upstreamHeaders, Authorization: `Bearer ${token}` } },
+      signal
+    )
+
+  const token = await fetchAccessToken(config)
+  let upstreamResponse = await requestUpstream(token)
+
+  if (upstreamResponse.status === 401 && invalidateAccessToken(token)) {
+    // Blizzard revoked the cached token before its expiry: retry once with a
+    // new one instead of serving 401s until the warm instance recycles.
+    await upstreamResponse.body?.cancel().catch(() => undefined)
+    upstreamResponse = await requestUpstream(await fetchAccessToken(config))
+  }
 
   const etag = upstreamResponse.headers.get("etag")
   const lastModified = upstreamResponse.headers.get("last-modified")
+  // The game-data API only answers JSON; a gateway's HTML error page must not
+  // render on this site's origin (or be cached by the CDN as HTML).
+  const upstreamType = upstreamResponse.headers.get("content-type") || JSON_CONTENT_TYPE
+  const contentType = /json/i.test(upstreamType) ? upstreamType : "text/plain; charset=utf-8"
 
   const headers: Record<string, string> = {
     ...cachePolicy(normalizedPath, params, upstreamResponse.status),
-    "content-type": upstreamResponse.headers.get("content-type") || JSON_CONTENT_TYPE,
+    "content-type": contentType,
     ...(etag ? { etag } : {}),
     ...(lastModified ? { "last-modified": lastModified } : {}),
   }
@@ -500,6 +583,13 @@ export const proxyBlizzardRequest = async ({
 }
 
 export const toProxyErrorResponse = (error: unknown): BlizzardProxyResponse => {
+  // Shows up in the Netlify function log and the Vite terminal (missing BNET_*
+  // credentials, a rejected token, a timeout). A client disconnect is not worth
+  // logging. None of these messages contain the client secret.
+  if (!(error instanceof Error && error.name === "AbortError")) {
+    console.error("[blizzard-proxy]", error)
+  }
+
   const message =
     error instanceof Error
       ? error.message
