@@ -158,8 +158,8 @@ const AuctionFilters = ({
       return undefined;
     }
     if (query.isFetching) {
-      // The proxy buffers Blizzard's whole dump before replying, so no bytes
-      // arrive until it finishes; "0 KB" would read as a stall.
+      // No bytes arrive until the proxy has a token and Blizzard's response
+      // headers; "0 KB" would read as a stall.
       return progress.bytesRead > 0
         ? `Downloading snapshot - ${formatBytes(progress.bytesRead)}, ${formatNumber(
             progress.scannedListings,
