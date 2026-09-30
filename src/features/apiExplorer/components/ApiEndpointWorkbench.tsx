@@ -42,7 +42,7 @@ import { formatNumber } from "@/lib/format";
 
 export type ApiEndpointWorkbenchProps = {
   family: ApiFamilyConfig;
-  /** Endpoint expanded when the URL has no `endpoint` param (first by default). */
+  /** Endpoint expanded when the URL has no `endpoint` param (first by default; none for auction-house). */
   initialEndpointId?: string;
 };
 
@@ -356,7 +356,12 @@ const ApiEndpointWorkbench = ({
   });
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const defaultEndpointId = initialEndpointId ?? family.endpoints[0]?.id ?? "";
+  // Auction dumps are multi-megabyte (a connected realm's is several MB and
+  // commodities can exceed Netlify's 20 MB streamed-response cap), so that
+  // family opens with every panel collapsed instead of downloading one unasked.
+  const defaultEndpointId =
+    initialEndpointId ??
+    (family.slug === "auction-house" ? "" : (family.endpoints[0]?.id ?? ""));
   const urlEndpointId = searchParams.get(ENDPOINT_PARAM) ?? "";
   // Lets the user collapse the default panel without writing a sentinel to the URL.
   const [defaultDismissed, setDefaultDismissed] = useState(false);
