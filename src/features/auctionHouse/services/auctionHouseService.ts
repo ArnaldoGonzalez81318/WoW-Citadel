@@ -4,9 +4,8 @@
  * DOCUMENTED DECISION (F017): Blizzard's regional commodities dump is 10-40 MB
  * of JSON and a connected-realm dump is several MB. The right fix is a
  * server-side `/_derived/` aggregation inside `proxyBlizzardRequest`
- * (server/blizzardProxy.ts) with a Netlify function timeout of 26 s and CDN
- * cache headers; those files are outside this package's ownership, so that
- * route is deferred to a server follow-up.
+ * (server/blizzardProxy.ts) with CDN cache headers; that route is deferred
+ * to a server follow-up.
  *
  * Until it lands the client stream-parses a *bounded* slice of the dump:
  * the body is read with `ReadableStream` + `TextDecoder`, each listing object
@@ -15,12 +14,18 @@
  * is `complete`). The whole payload is never held in memory and the main
  * thread never `JSON.parse`s tens of megabytes at once.
  *
- * In production the Netlify proxy still buffers the upstream body and caps
- * synchronous responses at 6 MB, so a 502 is possible there until the server
- * follow-up ships; non-OK responses throw `BlizzardRequestError` so the page
- * shows an `ErrorState` with a Retry button.
+ * In production the Netlify function (Functions 2.0) streams the upstream
+ * body instead of buffering it, so the 6 MB buffered-response limit does not
+ * apply; Netlify caps streamed responses at 20 MB and 60 s, which is why
+ * `AUCTION_DUMP_BYTE_CAP` must stay well below 20 MB. Non-OK responses throw
+ * `BlizzardRequestError` so the page shows an `ErrorState` with a Retry button.
  */
-import { BlizzardRequestError, blizzardClient } from "@/lib/blizzardClient";
+import {
+  BlizzardRequestError,
+  PROXY_RATE_LIMIT_HEADER,
+  blizzardClient,
+  parseRetryAfter,
+} from "@/lib/blizzardClient";
 import { localized, namespace, optional404 } from "@/lib/blizzardHelpers";
 import type { LocalizedString } from "@/lib/blizzardHelpers";
 import {
@@ -279,6 +284,18 @@ export const parseAuctionStream = async (
   return { listings, scannedListings, bytesRead, complete };
 };
 
+/** Transport failure, typed like `blizzardClient`'s ("You appear to be offline"). */
+const toNetworkError = (cause: TypeError): BlizzardRequestError => {
+  const error = new BlizzardRequestError(
+    "Network request failed",
+    0,
+    undefined,
+    { reason: "network" },
+  );
+  error.cause = cause;
+  return error;
+};
+
 /**
  * Fetches an auction dump with `fetch` (not `blizzardClient`, whose `json()`
  * would buffer the whole body) and hands the stream to `parseAuctionStream`.
@@ -287,11 +304,20 @@ export const fetchAuctionDump = async (
   path: string,
   { signal, ...parseOptions }: AuctionDumpOptions,
 ): Promise<AuctionDumpResult> => {
-  const response = await fetch(buildDumpUrl(path), {
-    method: "GET",
-    headers: buildDumpHeaders(),
-    signal,
-  });
+  // Built outside the try, as in blizzardClient: a malformed URL is a
+  // programming error, not a network failure.
+  const url = buildDumpUrl(path);
+  const headers = buildDumpHeaders();
+  let response: Response;
+  try {
+    response = await fetch(url, { method: "GET", headers, signal });
+  } catch (error) {
+    // Aborts propagate untouched so react-query cancels silently.
+    if (error instanceof TypeError) {
+      throw toNetworkError(error);
+    }
+    throw error;
+  }
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
@@ -299,6 +325,12 @@ export const fetchAuctionDump = async (
       `Blizzard API request failed with status ${response.status}`,
       response.status,
       body,
+      {
+        // Same as blizzardClient: a 429 honours Retry-After and names the
+        // proxy's own limiter instead of blaming Blizzard.
+        retryAfterMs: parseRetryAfter(response.headers.get("retry-after")),
+        proxyRateLimited: response.headers.get(PROXY_RATE_LIMIT_HEADER) === "1",
+      },
     );
   }
 
@@ -321,7 +353,16 @@ export const fetchAuctionDump = async (
     };
   }
 
-  return parseAuctionStream(response.body.getReader(), parseOptions);
+  try {
+    return await parseAuctionStream(response.body.getReader(), parseOptions);
+  } catch (error) {
+    // Body cut mid-stream (dropped connection): typed as a network failure so
+    // react-query retries instead of caching a truncated snapshot.
+    if (error instanceof TypeError && !signal?.aborted) {
+      throw toNetworkError(error);
+    }
+    throw error;
+  }
 };
 
 /* ------------------------------------------------------------------ */
