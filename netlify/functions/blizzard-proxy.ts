@@ -10,14 +10,16 @@ import type { BlizzardProxyResponse } from "../../server/blizzardProxy"
 
 // Netlify Functions 2.0 signature (web `Request` in, `Response` out). Unlike the
 // v1 handler, a `Response` whose body is a `ReadableStream` is streamed to the
-// client, so auction dumps are neither buffered in the function nor subject to
-// the 6 MB synchronous response limit.
+// client, so auction dumps are not buffered in the function and are bound by
+// the 20 MB / 60 s streamed-response limits, not the 6 MB buffered limit.
 
 /** Statuses that must not carry a body (`new Response` throws otherwise). */
 const NULL_BODY_STATUSES = new Set([101, 204, 205, 304])
 
 const toResponse = (proxied: BlizzardProxyResponse, method: string): Response => {
   const headers = new Headers(proxied.headers)
+  // netlify.toml [[headers]] rules are not applied to function responses.
+  headers.set("x-content-type-options", "nosniff")
 
   if (NULL_BODY_STATUSES.has(proxied.status) || method === "HEAD") {
     return new Response(null, { status: proxied.status, headers })
@@ -26,17 +28,24 @@ const toResponse = (proxied: BlizzardProxyResponse, method: string): Response =>
   return new Response(proxied.body, { status: proxied.status, headers })
 }
 
-const readClientIp = (headers: Headers): string | undefined =>
-  headers.get("x-nf-client-connection-ip") ??
-  headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+/** The part of Netlify's `Context` this function reads (avoids a @netlify/functions dependency). */
+type NetlifyContext = { ip?: string }
+
+// `context.ip` is the documented client address; the headers are fallbacks.
+const readClientIp = (headers: Headers, context?: NetlifyContext): string | undefined =>
+  context?.ip ||
+  headers.get("x-nf-client-connection-ip") ||
+  headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
   undefined
 
-export default async (request: Request): Promise<Response> => {
+export default async (request: Request, context?: NetlifyContext): Promise<Response> => {
   const method = request.method.toUpperCase()
 
   try {
     const url = new URL(request.url)
-    // Reached through the netlify.toml rewrite (function path) or directly.
+    // Routed by `config.path` below. Netlify stops serving the function at
+    // NETLIFY_PROXY_FUNCTION_PATH once `path` is set, so that branch only
+    // matters if `path` is removed.
     const path =
       getProxySubpath(url.pathname, NETLIFY_PROXY_FUNCTION_PATH) ??
       getProxySubpath(url.pathname, DEFAULT_PROXY_PATH)
@@ -47,6 +56,7 @@ export default async (request: Request): Promise<Response> => {
         headers: {
           "cache-control": "no-store",
           "content-type": "application/json; charset=utf-8",
+          "x-content-type-options": "nosniff",
         },
       })
     }
@@ -62,7 +72,7 @@ export default async (request: Request): Promise<Response> => {
       search: url.search,
       method,
       requestHeaders,
-      clientIp: readClientIp(request.headers),
+      clientIp: readClientIp(request.headers, context),
       signal: request.signal,
     })
 
@@ -70,4 +80,19 @@ export default async (request: Request): Promise<Response> => {
   } catch (error) {
     return toResponse(toProxyErrorResponse(error), method)
   }
+}
+
+// Routed here directly instead of through a netlify.toml rewrite: functions
+// with a `path` run before redirects (the SPA fallback cannot shadow them) and
+// are no longer reachable at /.netlify/functions/blizzard-proxy, so the edge
+// rate limit below has no bypass. It counts CDN cache hits too and is enforced
+// across all instances, unlike the in-memory limiter in server/blizzardProxy.ts.
+// Keep `path` in sync with DEFAULT_PROXY_PATH (src/lib/region.ts).
+export const config = {
+  path: "/api/blizzard/*",
+  rateLimit: {
+    windowLimit: 600,
+    windowSize: 60,
+    aggregateBy: ["ip", "domain"],
+  },
 }
