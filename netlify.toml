@@ -3,14 +3,25 @@
   publish = "dist"
   functions = "netlify/functions"
 
-# Order matters: the API proxy rule must come before the SPA fallback.
-# The `from` here must match the browser's proxy prefix; if you customise
-# VITE_BNET_PROXY_PATH for a production build, change this `from` to match.
+# The Node.js version comes from .nvmrc. Netlify skips devDependencies when
+# NODE_ENV=production, but `npm run build` needs typescript and vite from them.
+[build.environment]
+  NPM_FLAGS = "--include=dev"
+
+# /api/blizzard/* has no rule here: netlify/functions/blizzard-proxy.ts routes
+# itself there with `config.path` (plus an edge rate limit), and Netlify runs
+# path-routed functions before these redirects, so the SPA fallback cannot
+# shadow it. Keep the default /api/blizzard prefix in production: any other
+# VITE_BNET_PROXY_PATH misses config.path and falls through to the SPA
+# fallback, so the app gets index.html (200 text/html) instead of JSON.
+
+# A hashed file that a newer deploy removed (an open tab asking for its old
+# lazy chunk) gets a real 404 instead of index.html as 200. Not forced, so files
+# that exist under /assets/ keep serving. Must stay above the SPA fallback.
 [[redirects]]
-  from = "/api/blizzard/*"
-  to = "/.netlify/functions/blizzard-proxy/:splat"
-  status = 200
-  force = true
+  from = "/assets/*"
+  to = "/index.html"
+  status = 404
 
 # SPA fallback so deep links (/category/items, /achievements, ...) load
 # index.html and react-router takes over. No `force`: real files under
@@ -20,5 +31,22 @@
   to = "/index.html"
   status = 200
 
-[functions]
-  node_bundler = "esbuild"
+# Security headers for every static response. Netlify does not apply these to
+# function responses, so the proxy sets its own nosniff. No Cache-Control here:
+# HTML keeps Netlify's revalidating default, and a long-lived /assets/* rule
+# would also cover the 404 above (a rollback would then stay broken for
+# browsers that cached it). No Strict-Transport-Security: Netlify sends it.
+# The CSP is report-only until a Deploy Preview shows no violations in the
+# browser console; then rename the key to Content-Security-Policy. Its script
+# hash allows only the Google Fonts onload="this.media='all'" handler in
+# index.html (recompute it if that attribute changes), and frame-src lets the
+# Netlify Drawer on Deploy Previews frame app.netlify.com. The Drawer's own
+# loader script may still be reported on previews; judge the app's violations.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self' 'unsafe-hashes' 'sha256-MhtPZXr7+LpJUY5qtMutB+qWfQtMaPccfe7QXtCcEYc='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https:; connect-src 'self'; manifest-src 'self'; frame-src https://app.netlify.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
