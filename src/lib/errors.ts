@@ -93,10 +93,12 @@ export const describeBlizzardError = (
       const wait = error.retryAfterMs
         ? `Try again in ${formatSeconds(error.retryAfterMs)}.`
         : "Try again in a moment.";
-      // The proxy caps requests per client address; that is not Blizzard's doing.
+      // The proxy caps requests per client address; that is not Blizzard's
+      // doing. A 429 without the proxy header is either Blizzard's quota or
+      // Netlify's edge rate limit, so it names neither.
       const cause = error.isProxyRateLimited
         ? "Too many requests from your network."
-        : "Blizzard is throttling requests right now.";
+        : "Too many requests are being made right now.";
       return {
         title: error.isProxyRateLimited
           ? "Too many requests"
