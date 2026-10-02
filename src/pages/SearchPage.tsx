@@ -1,7 +1,7 @@
 import SearchRounded from "@mui/icons-material/SearchRounded";
 import { Chip, Stack } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useSearchParams } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import type { To } from "react-router-dom";
 
 import {
@@ -43,9 +43,13 @@ export interface SearchPageProps {
   hideHeader?: boolean;
 }
 
-/** `cat` is canonical; `category` is accepted as an alias for inbound links. */
+/**
+ * `cat` is canonical; `category` is accepted as an alias for inbound links.
+ * No tab in the URL lets the landing tab choose (see SearchPage), so a tab
+ * the user picks is always written out, Items included.
+ */
 const PARAM_DEFAULTS: Record<"cat" | "category" | "page", string> = {
-  cat: DEFAULT_SEARCH_CATEGORY,
+  cat: "",
   category: "",
   page: "",
 };
@@ -140,13 +144,13 @@ const SearchPage = ({
   const { pathname } = useLocation();
   const [params, setParams] = useSearchParamsRecord(PARAM_DEFAULTS);
 
-  const rawCat =
-    params.cat === DEFAULT_SEARCH_CATEGORY && params.category
-      ? params.category
-      : params.cat;
-  const cat = resolveCategoryId(rawCat, categoryIds);
+  const rawCat = params.cat || params.category;
+  /** The tab the URL asks for (the default tab when it names none). */
+  const requestedCat = resolveCategoryId(rawCat, categoryIds);
   const page = parsePage(params.page);
   const singleCategory = Boolean(categoryIds && categoryIds.length === 1);
+  /** No tab in the URL: the landing tab below may choose one. */
+  const tabUnset = !singleCategory && !rawCat && page === 1;
   const singleCategoryConfig = singleCategory
     ? findSearchCategory(categoryIds?.[0])
     : undefined;
@@ -166,14 +170,56 @@ const SearchPage = ({
 
   const search = useBlizzardSearch(query, {
     categoryIds,
-    pages: { [cat]: page },
+    pages: { [requestedCat]: page },
     debounceMs: 0,
   });
   const { categoryStates } = search;
 
-  const activeState =
-    categoryStates.find((state) => state.category.id === cat) ??
-    categoryStates[0];
+  /*
+   * Landing tab. A term searched without a tab (hero or header Enter, a
+   * shared link) opens on the first tab with results when the default tab
+   * has none ("Chaos Bolt": 0 items, 3 spells). Derived here and never
+   * written to the URL, so the next term decides afresh and history is left
+   * alone; a tab click or a page change writes an explicit `?cat=`. It waits
+   * for every category to settle so the tab never jumps between late
+   * answers, and the default tab reads as still searching meanwhile. No
+   * extra requests: all four categories are fetched for the tab badges.
+   */
+  const activeState = useMemo((): SearchCategoryState | undefined => {
+    const requested =
+      categoryStates.find((state) => state.category.id === requestedCat) ??
+      categoryStates[0];
+    if (
+      !tabUnset ||
+      !requested ||
+      requested.isError ||
+      requested.isLoading ||
+      requested.isPlaceholderData ||
+      requested.data.length > 0
+    ) {
+      return requested;
+    }
+    if (
+      categoryStates.some((state) => state.isLoading || state.isPlaceholderData)
+    ) {
+      return { ...requested, isLoading: true };
+    }
+    return (
+      categoryStates.find((state) => !state.isError && state.data.length > 0) ??
+      requested
+    );
+  }, [categoryStates, requestedCat, tabUnset]);
+  const cat = activeState?.category.id ?? requestedCat;
+  /** The tabs see the same "still searching" override, so the selected badge never reads a final 0 meanwhile. */
+  const tabStates = useMemo(
+    () =>
+      categoryStates.map((state) =>
+        activeState && state.category.id === activeState.category.id
+          ? activeState
+          : state,
+      ),
+    [categoryStates, activeState],
+  );
 
   // Clamp a stale page once the page count is known (Blizzard reports
   // pageCount 0 for an empty search, so page 1 is never rewritten).
@@ -218,61 +264,6 @@ const SearchPage = ({
     pushRecentSearch,
   ]);
 
-  /*
-   * Landing tab: a term searched without a tab (the hero or header Enter, a
-   * shared link) opens on the first tab with results when the default tab
-   * has none ("Chaos Bolt": 0 items, 3 spells). Decided once per query and
-   * never against an explicit ?cat= or a tab the user clicked. Costs no
-   * requests: all four categories are already fetched for the tab badges.
-   * Raw params, because useSearchParamsRecord fills in cat's default and
-   * cannot tell "no tab asked for" from "Items asked for".
-   */
-  const [rawParams] = useSearchParams();
-  const catRequested = rawParams.has("cat") || rawParams.has("category");
-  /** Query whose landing tab is already decided; never second-guess it. */
-  const landedQueryRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (
-      singleCategory ||
-      catRequested ||
-      page > 1 ||
-      search.tooShort ||
-      !search.query
-    ) {
-      return;
-    }
-    if (landedQueryRef.current === search.query) {
-      return;
-    }
-    if (search.isAnyLoading || hasPlaceholder) {
-      return;
-    }
-    landedQueryRef.current = search.query;
-    if (!activeState || activeState.isError || activeState.data.length > 0) {
-      return;
-    }
-    const firstWithResults = categoryStates.find(
-      (state) => !state.isError && state.data.length > 0,
-    );
-    if (firstWithResults) {
-      setParams(
-        { cat: firstWithResults.category.id, category: null, page: null },
-        { replace: true },
-      );
-    }
-  }, [
-    singleCategory,
-    catRequested,
-    page,
-    search.tooShort,
-    search.query,
-    search.isAnyLoading,
-    hasPlaceholder,
-    activeState,
-    categoryStates,
-    setParams,
-  ]);
-
   const summary = useMemo(
     () =>
       summarize(activeState, search.query, {
@@ -289,17 +280,20 @@ const SearchPage = ({
   );
 
   const handleCategoryChange = (id: SearchCategoryId): void => {
-    // Clicking Items removes ?cat=; the landing effect must not undo the choice.
-    landedQueryRef.current = search.query;
-    setParams({
-      cat: id === DEFAULT_SEARCH_CATEGORY ? null : id,
-      category: null,
-      page: null,
-    });
+    // Always explicit, Items included: an empty `cat` lets the landing tab choose.
+    setParams({ cat: id, category: null, page: null });
   };
 
   const handlePageChange = (next: number): void => {
-    setParams({ page: next === 1 ? null : String(next) });
+    // Pins a tab the URL names or the landing tab chose, so it carries over
+    // to page 2; the implicit default stays implicit, so the next term can
+    // still land elsewhere.
+    const pin = !singleCategory && (Boolean(rawCat) || cat !== requestedCat);
+    setParams({
+      cat: pin ? cat : null,
+      category: null,
+      page: next === 1 ? null : String(next),
+    });
   };
 
   const handleClear = (): void => {
@@ -372,7 +366,7 @@ const SearchPage = ({
       <Stack spacing={3}>
         {singleCategory ? null : (
           <SearchCategoryTabs
-            states={categoryStates}
+            states={tabStates}
             value={cat}
             onChange={handleCategoryChange}
           />
