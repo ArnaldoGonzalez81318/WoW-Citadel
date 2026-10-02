@@ -2,7 +2,6 @@ import CloseRounded from "@mui/icons-material/CloseRounded";
 import SearchRounded from "@mui/icons-material/SearchRounded";
 import {
   Box,
-  ClickAwayListener,
   Dialog,
   IconButton,
   Toolbar,
@@ -11,390 +10,16 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { isTypingTarget } from "@/components/layout/navigation/navUtils";
+import SearchCombobox, {
+  SEARCH_KEY_SHORTCUTS,
+} from "@/components/search/SearchCombobox";
 import {
-  Suspense,
-  lazy,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
-import type { KeyboardEvent } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-
-import { SearchField } from "@/components/common/ExplorerFilterBar";
-import { LiveStatus } from "@/components/common/StateBlocks";
-import {
-  buildSearchUrl,
-  isTypingTarget,
-} from "@/components/layout/navigation/navUtils";
-import { useSearchState } from "@/features/search/context/SearchContext";
-import type { ItemQuality } from "@/features/search/types";
-
-/* ------------------------------------------------------------------ */
-/* Types shared with the lazily loaded suggestion list                 */
-/* ------------------------------------------------------------------ */
-
-export type SuggestionOption = {
-  id: string;
-  name: string;
-  /** Search category; absent for the "See all results" row. */
-  categoryId?: string;
-  categoryLabel?: string;
-  subtitle?: string;
-  mediaUrl?: string;
-  quality?: ItemQuality;
-};
-
-export type HeaderSearchAutocompleteProps = {
-  query: string;
-  anchorEl: HTMLElement | null;
-  open: boolean;
-  activeIndex: number;
-  listboxId: string;
-  onOptionsChange: (options: SuggestionOption[]) => void;
-  onSelect: (option: SuggestionOption) => void;
-  onHoverIndex: (index: number) => void;
-  /**
-   * Reports whether the `<ul role="listbox">` is actually in the DOM, so the
-   * input's aria-expanded / aria-controls never reference a missing element
-   * (lazy chunk still loading, first fetch in flight, or list closed).
-   */
-  onVisibleChange: (visible: boolean) => void;
-};
-
-/* ------------------------------------------------------------------ */
-/* Constants                                                           */
-/* ------------------------------------------------------------------ */
-
-/**
- * Static on purpose: features/search/categories.ts lives in the
- * "search-experience" manual chunk and importing it here would make that
- * chunk an eager dependency of the shell.
- */
-const PLACEHOLDER = "Search items, spells, mounts, creatures";
-const MIN_QUERY_LENGTH = 2;
-const DEBOUNCE_MS = 350;
-
-/**
- * The suggestion list pulls in useBlizzardSearch (search-experience chunk),
- * so it is only ever imported dynamically; the field itself never unmounts.
- */
-const loadAutocomplete = () =>
-  import("@/components/layout/HeaderSearchAutocomplete");
-const HeaderSearchAutocomplete = lazy(loadAutocomplete);
-
-const qualifies = (value: string): boolean =>
-  value.trim().length >= MIN_QUERY_LENGTH;
-
-/* ------------------------------------------------------------------ */
-/* SearchCombobox                                                      */
-/* ------------------------------------------------------------------ */
-
-type SearchComboboxProps = {
-  id: string;
-  /** Only the search dialog takes focus on mount. */
-  autoFocus?: boolean;
-  onNavigated?: () => void;
-  size?: "small" | "medium";
-};
-
-const SearchCombobox = ({
-  id,
-  autoFocus = false,
-  onNavigated,
-  size = "small",
-}: SearchComboboxProps): JSX.Element => {
-  const navigate = useNavigate();
-  const { pathname } = useLocation();
-  const { query, submitQuery, clearQuery, pushRecentSearch } = useSearchState();
-
-  const [draft, setDraft] = useState(query);
-  const [debounced, setDebounced] = useState(qualifies(query) ? query : "");
-  const [enhanced, setEnhanced] = useState(false);
-  const [listOpen, setListOpen] = useState(false);
-  /** True only while the suggestion `<ul role="listbox">` exists in the DOM. */
-  const [listVisible, setListVisible] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(-1);
-  const [options, setOptions] = useState<SuggestionOption[]>([]);
-  const [wrapperEl, setWrapperEl] = useState<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const listboxId = `${id}-listbox`;
-
-  /**
-   * Mirror of SearchField's own "last emitted" value: it never re-emits a
-   * value equal to its last emission or to a value the parent set
-   * programmatically, so every programmatic draft change goes through
-   * `adoptDraft` to keep the two in step.
-   */
-  const fieldEmittedRef = useRef(query);
-  const adoptDraft = useCallback((value: string): void => {
-    fieldEmittedRef.current = value;
-    setDraft(value);
-  }, []);
-
-  /* Adopt an external query change (URL -> SearchProvider) without opening the list. */
-  const lastQueryRef = useRef(query);
-  useEffect(() => {
-    if (query === lastQueryRef.current) {
-      return;
-    }
-    lastQueryRef.current = query;
-    adoptDraft(query);
-    setDebounced("");
-    setListOpen(false);
-  }, [query, adoptDraft]);
-
-  const closeList = useCallback((): void => {
-    setListOpen(false);
-    setActiveIndex(-1);
-  }, []);
-
-  /* Route change closes the list. */
-  useEffect(() => {
-    closeList();
-  }, [pathname, closeList]);
-
-  const handleDebouncedChange = (value: string): void => {
-    fieldEmittedRef.current = value;
-    setDebounced(value);
-    setActiveIndex(-1);
-    setListOpen(qualifies(value));
-  };
-
-  /**
-   * SearchField only debounces values that qualify, so a draft shrinking
-   * below the minimum never reaches `handleDebouncedChange`: drop the stale
-   * suggestions here, immediately. When the user retypes exactly the last
-   * emitted value, SearchField stays silent; reopen at once (react-query
-   * already holds those results).
-   */
-  const handleDraftChange = (value: string): void => {
-    setDraft(value);
-    if (!qualifies(value)) {
-      setDebounced("");
-      closeList();
-      return;
-    }
-    if (value === fieldEmittedRef.current && value !== debounced) {
-      setDebounced(value);
-      setActiveIndex(-1);
-      setListOpen(true);
-    }
-  };
-
-  const enhance = (): void => {
-    if (!enhanced) {
-      setEnhanced(true);
-    }
-  };
-
-  const preload = (): void => {
-    enhance();
-    loadAutocomplete().catch(() => undefined);
-  };
-
-  /**
-   * Enter / "See all results": SearchContext owns where a submitted term
-   * lands (`/search?q=`, or the current search route's own `?q=`), records it
-   * in recent searches and clears any pending header draft.
-   */
-  const submit = useCallback(
-    (value: string = draft): void => {
-      const trimmed = value.trim();
-      if (trimmed.length < MIN_QUERY_LENGTH) {
-        return;
-      }
-      closeList();
-      lastQueryRef.current = trimmed;
-      adoptDraft(trimmed);
-      submitQuery(trimmed);
-      onNavigated?.();
-    },
-    [draft, adoptDraft, closeList, onNavigated, submitQuery],
-  );
-
-  /**
-   * A category suggestion opens the results page on that category's tab.
-   * SearchPage reads the tab from `?cat=`; on `/search` the URL is the
-   * source of truth for `query`, so no context write is needed.
-   */
-  const handleSelect = useCallback(
-    (option: SuggestionOption): void => {
-      if (!option.categoryId) {
-        submit(option.name);
-        return;
-      }
-      closeList();
-      lastQueryRef.current = option.name;
-      adoptDraft(option.name);
-      pushRecentSearch(option.name);
-      navigate(
-        `${buildSearchUrl(option.name)}&cat=${encodeURIComponent(option.categoryId)}`,
-      );
-      onNavigated?.();
-    },
-    [adoptDraft, closeList, navigate, onNavigated, pushRecentSearch, submit],
-  );
-
-  const handleClear = (): void => {
-    adoptDraft("");
-    setDebounced("");
-    lastQueryRef.current = "";
-    clearQuery();
-    closeList();
-  };
-
-  /*
-   * Combobox ARIA on the input (SearchField has no attribute passthrough).
-   * Driven by `listVisible`, not `listOpen`: the listbox element only exists
-   * once the lazy chunk has mounted and the Popper is showing, and
-   * aria-controls must never point at an id that is not in the DOM.
-   */
-  useLayoutEffect(() => {
-    const input = inputRef.current;
-    if (!input) {
-      return;
-    }
-    input.setAttribute("role", "combobox");
-    input.setAttribute("aria-autocomplete", "list");
-    input.setAttribute("aria-haspopup", "listbox");
-    input.setAttribute("aria-expanded", listVisible ? "true" : "false");
-    if (listVisible) {
-      input.setAttribute("aria-controls", listboxId);
-    } else {
-      input.removeAttribute("aria-controls");
-    }
-    if (listVisible && activeIndex >= 0 && activeIndex < options.length) {
-      input.setAttribute(
-        "aria-activedescendant",
-        `${listboxId}-opt-${activeIndex}`,
-      );
-    } else {
-      input.removeAttribute("aria-activedescendant");
-    }
-  }, [listVisible, activeIndex, options.length, listboxId]);
-
-  /* Capture phase: runs before SearchField's own Enter / Escape handling. */
-  const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      if (!listOpen) {
-        if (!qualifies(debounced)) {
-          return;
-        }
-        event.preventDefault();
-        enhance();
-        setListOpen(true);
-        setActiveIndex(event.key === "ArrowDown" ? 0 : options.length - 1);
-        return;
-      }
-      if (options.length === 0) {
-        return;
-      }
-      event.preventDefault();
-      const delta = event.key === "ArrowDown" ? 1 : -1;
-      setActiveIndex((previous) => {
-        const base = previous < 0 ? (delta > 0 ? -1 : 0) : previous;
-        return (base + delta + options.length) % options.length;
-      });
-      return;
-    }
-
-    if (event.key === "Enter" && listOpen && activeIndex >= 0) {
-      const option = options[activeIndex];
-      if (option) {
-        event.preventDefault();
-        event.stopPropagation();
-        handleSelect(option);
-      }
-      return;
-    }
-
-    if (event.key === "Escape" && listOpen) {
-      // First Escape closes the list; the next one reaches SearchField and clears.
-      event.preventDefault();
-      event.stopPropagation();
-      closeList();
-      return;
-    }
-
-    if (event.key === "Tab") {
-      closeList();
-    }
-  };
-
-  /* Bubble phase: SearchField has already cleared the field on this Escape. */
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === "Escape" && draft.length > 0) {
-      // Keep the search dialog open while there was text to clear.
-      event.stopPropagation();
-    }
-  };
-
-  /* The list is portaled, so a click inside it counts as "away" for the wrapper. */
-  const handleClickAway = (event: Event): void => {
-    const target = event.target;
-    if (
-      target instanceof Element &&
-      target.closest(`[data-search-popup="${listboxId}"]`)
-    ) {
-      return;
-    }
-    closeList();
-  };
-
-  const showSuggestions = enhanced && qualifies(debounced);
-
-  return (
-    <ClickAwayListener onClickAway={handleClickAway}>
-      <Box
-        ref={setWrapperEl}
-        onKeyDownCapture={handleKeyDownCapture}
-        onKeyDown={handleKeyDown}
-        onFocus={enhance}
-        onPointerEnter={preload}
-        sx={{ position: "relative", minWidth: 0 }}
-      >
-        <SearchField
-          id={id}
-          value={draft}
-          onChange={handleDraftChange}
-          onDebouncedChange={handleDebouncedChange}
-          debounceMs={DEBOUNCE_MS}
-          minLength={MIN_QUERY_LENGTH}
-          label="Search the game data"
-          placeholder={PLACEHOLDER}
-          autoFocus={autoFocus}
-          inputRef={inputRef}
-          onSubmit={submit}
-          onClear={handleClear}
-          size={size}
-          sx={{ flex: "1 1 auto", minWidth: 0 }}
-        />
-        {/* Always mounted: a live region inserted together with its first text is not reliably announced. */}
-        <LiveStatus visuallyHidden>
-          {listVisible ? `${options.length} suggestions` : ""}
-        </LiveStatus>
-        {showSuggestions ? (
-          <Suspense fallback={null}>
-            <HeaderSearchAutocomplete
-              query={debounced}
-              anchorEl={wrapperEl}
-              open={listOpen}
-              activeIndex={activeIndex}
-              listboxId={listboxId}
-              onOptionsChange={setOptions}
-              onSelect={handleSelect}
-              onHoverIndex={setActiveIndex}
-              onVisibleChange={setListVisible}
-            />
-          </Suspense>
-        ) : null}
-      </Box>
-    </ClickAwayListener>
-  );
-};
+  focusPrimarySearch,
+  usePrimarySearchInView,
+} from "@/components/search/primarySearch";
 
 /* ------------------------------------------------------------------ */
 /* HeaderSearch                                                        */
@@ -404,11 +29,14 @@ const DIALOG_TITLE_ID = "site-search-dialog-title";
 
 /**
  * Inline combobox at md+, a full-screen search dialog below. `/` and
- * Ctrl/Cmd+K focus the field (or open the dialog).
+ * Ctrl/Cmd+K focus the field (or open the dialog). On a page that registers
+ * a primary search (the home hero), they focus that field instead while it
+ * is on screen, and the inline field steps aside so only one search shows.
  */
 const HeaderSearch = (): JSX.Element => {
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up("md"));
+  const heroInView = usePrimarySearchInView();
   const [dialogOpen, setDialogOpen] = useState(false);
   const inlineRef = useRef<HTMLDivElement | null>(null);
   const dialogBodyRef = useRef<HTMLDivElement | null>(null);
@@ -446,6 +74,10 @@ const HeaderSearch = (): JSX.Element => {
       }
       event.preventDefault();
 
+      if (focusPrimarySearch()) {
+        return;
+      }
+
       if (isDesktop) {
         inlineRef.current?.querySelector("input")?.focus();
         return;
@@ -461,14 +93,29 @@ const HeaderSearch = (): JSX.Element => {
     <>
       <Box
         role="search"
+        aria-label="Site search"
         ref={inlineRef}
-        sx={{
+        sx={(t) => ({
           display: { xs: "none", md: "block" },
           flex: "1 1 auto",
           minWidth: { md: 200, lg: 240 },
           maxWidth: 440,
           ml: "auto",
-        }}
+          transition: t.transitions.create(["opacity", "visibility"], {
+            duration: t.wc.motion.base,
+            easing: t.wc.motion.easing,
+          }),
+          // `visibility`, not `display`: the toolbar keeps its layout, and the
+          // hidden landmark leaves the accessibility tree and the tab order.
+          // A field that already holds focus is never hidden under the user.
+          ...(heroInView
+            ? {
+                opacity: 0,
+                visibility: "hidden",
+                "&:focus-within": { opacity: 1, visibility: "visible" },
+              }
+            : {}),
+        })}
       >
         <Tooltip
           title="Press / to search"
@@ -477,7 +124,7 @@ const HeaderSearch = (): JSX.Element => {
           enterDelay={600}
         >
           <Box>
-            <SearchCombobox id="site-search" />
+            <SearchCombobox id="site-search" keyShortcuts={SEARCH_KEY_SHORTCUTS} />
           </Box>
         </Tooltip>
       </Box>
@@ -523,7 +170,12 @@ const HeaderSearch = (): JSX.Element => {
             <CloseRounded />
           </IconButton>
         </Toolbar>
-        <Box role="search" ref={dialogBodyRef} sx={{ p: 2 }}>
+        <Box
+          role="search"
+          aria-label="Site search"
+          ref={dialogBodyRef}
+          sx={{ p: 2 }}
+        >
           <SearchCombobox
             id="site-search-dialog"
             autoFocus
