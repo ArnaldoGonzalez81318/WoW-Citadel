@@ -56,6 +56,13 @@ export const focusPrimarySearch = (): boolean => {
   if (!current || !inView) {
     return false;
   }
+  // An open modal (search dialog, nav drawer) owns focus: focusing the page
+  // behind it would run the hero's focus side effects before the modal's
+  // FocusTrap pulls focus back.
+  const active = document.activeElement;
+  if (active instanceof Element && active.closest(".MuiModal-root")) {
+    return false;
+  }
   current.focus();
   return current.target.contains(document.activeElement);
 };
