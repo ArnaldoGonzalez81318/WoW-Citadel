@@ -9,7 +9,7 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { FocusEvent, FormEvent } from "react";
 import type { To } from "react-router-dom";
 
@@ -62,7 +62,7 @@ const EXAMPLE_CATEGORY = new Map(
   EXAMPLES.map((example) => [example.term, example.categoryId] as const),
 );
 
-/** The default tab (items) is left out so URLs stay canonical (SearchPage strips cat=items). */
+/** The default tab (items) is left out: SearchPage lands there anyway when it has results. */
 const exampleTo = (term: string): To => {
   const categoryId = EXAMPLE_CATEGORY.get(term);
   return searchUrl(
@@ -121,6 +121,35 @@ const HomeHero = (): JSX.Element => {
   const comboRef = useRef<SearchComboboxHandle>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const [hint, setHint] = useState("");
+  /**
+   * Controlled so any key dismisses it (WCAG 1.4.13; the combobox stops
+   * Escape before MUI sees it), and a hint for pointer users about to
+   * search: it never opens while focus is in the form, which also covers
+   * MUI's hover delay firing after the user has started typing.
+   */
+  const [tipOpen, setTipOpen] = useState(false);
+  const handleTipOpen = (): void => {
+    if (!formRef.current?.contains(document.activeElement)) {
+      setTipOpen(true);
+    }
+  };
+  const tipAnchorRef = useRef<HTMLDivElement>(null);
+  /*
+   * MUI writes the native `title` back on every close and strips it only on
+   * the next mouseover; closing on focus while the pointer stays put would
+   * let the browser's own tooltip show over the field.
+   */
+  useLayoutEffect(() => {
+    if (!tipOpen) {
+      tipAnchorRef.current?.removeAttribute("title");
+    }
+  }, [tipOpen]);
+  /**
+   * When a tap or click in the form last began. Only a focus right after it
+   * counts as pointer-initiated: a window regaining focus, a caret re-tap or
+   * a drag-scroll must not scroll the page.
+   */
+  const pointerDownAtRef = useRef(Number.NEGATIVE_INFINITY);
 
   const focusField = useCallback(
     () => comboRef.current?.focus({ select: true }),
@@ -148,8 +177,16 @@ const HomeHero = (): JSX.Element => {
    * has room above the on-screen keyboard. Instant, like the skip link.
    */
   const handleFocus = (event: FocusEvent<HTMLFormElement>): void => {
+    setTipOpen(false);
+    const fromPointer = performance.now() - pointerDownAtRef.current < 1000;
+    pointerDownAtRef.current = Number.NEGATIVE_INFINITY;
     const form = formRef.current;
-    if (!isPhone || !form || !(event.target instanceof HTMLInputElement)) {
+    if (
+      !isPhone ||
+      !fromPointer ||
+      !form ||
+      !(event.target instanceof HTMLInputElement)
+    ) {
       return;
     }
     const resting = theme.wc.layout.headerHeight.xs + 8;
@@ -183,6 +220,10 @@ const HomeHero = (): JSX.Element => {
             onSubmit={handleSubmit}
             onInput={() => setHint("")}
             onFocus={handleFocus}
+            onPointerDown={() => {
+              pointerDownAtRef.current = performance.now();
+            }}
+            onKeyDownCapture={() => setTipOpen(false)}
             sx={(t) => ({
               display: "flex",
               flexDirection: { xs: "column", sm: "row" },
@@ -194,6 +235,9 @@ const HomeHero = (): JSX.Element => {
           >
             <Tooltip
               title="Press / to search"
+              open={tipOpen}
+              onOpen={handleTipOpen}
+              onClose={() => setTipOpen(false)}
               describeChild
               disableFocusListener
               disableTouchListener
@@ -201,7 +245,7 @@ const HomeHero = (): JSX.Element => {
               placement="top"
             >
               {/* The flex item; the combobox inside anchors the panel, so it matches the field and never covers the button. */}
-              <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Box ref={tipAnchorRef} sx={{ flex: 1, minWidth: 0 }}>
                 <SearchCombobox
                   id={SEARCH_ID}
                   handleRef={comboRef}
