@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { KeyboardEvent, Ref } from "react";
+import type { FocusEvent, KeyboardEvent, Ref } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { SearchField } from "@/components/common/ExplorerFilterBar";
@@ -202,6 +202,9 @@ const SearchCombobox = ({
    */
   const handleDraftChange = (value: string): void => {
     setDraft(value);
+    // Editing hands focus back to the text: Enter now searches what was
+    // typed, not a suggestion highlighted for an earlier term.
+    setActiveIndex(-1);
     if (!qualifies(value)) {
       setDebounced("");
       closeList();
@@ -209,7 +212,6 @@ const SearchCombobox = ({
     }
     if (value === fieldEmittedRef.current && value !== debounced) {
       setDebounced(value);
-      setActiveIndex(-1);
       setListOpen(true);
     }
   };
@@ -292,6 +294,31 @@ const SearchCombobox = ({
     clearQuery();
     closeList();
   };
+
+  /*
+   * Categories answer independently, so a late one inserts rows ahead of the
+   * highlighted option. Follow that option by identity; otherwise the same
+   * index (and aria-activedescendant id) would silently point at another row.
+   */
+  const previousOptionsRef = useRef<SuggestionOption[]>(options);
+  useLayoutEffect(() => {
+    const previous = previousOptionsRef.current;
+    previousOptionsRef.current = options;
+    if (previous === options) {
+      return;
+    }
+    setActiveIndex((index) => {
+      // Nothing highlighted, or ArrowDown/ArrowUp opened a list whose rows
+      // had not arrived yet: keep that intent.
+      if (index < 0 || previous.length === 0) {
+        return index;
+      }
+      const activeId = previous[index]?.id;
+      return activeId === undefined
+        ? -1
+        : options.findIndex((option) => option.id === activeId);
+    });
+  }, [options]);
 
   /*
    * Combobox ARIA on the input (SearchField has no attribute passthrough).
@@ -397,6 +424,24 @@ const SearchCombobox = ({
     }
   };
 
+  /*
+   * Focus moved to another element without a key or click here (the `/` or
+   * Ctrl+K shortcut jumping between the header and the hero): close the list
+   * so it is not left floating. A null relatedTarget (window switch, click on
+   * nothing focusable) is ClickAwayListener's call; option rows and the
+   * footer swallow mousedown, so clicks inside the panel never blur.
+   */
+  const handleBlur = (event: FocusEvent<HTMLDivElement>): void => {
+    const next = event.relatedTarget;
+    if (
+      next instanceof Element &&
+      !event.currentTarget.contains(next) &&
+      !next.closest(`[data-search-popup="${listboxId}"]`)
+    ) {
+      closeList();
+    }
+  };
+
   /* The list is portaled, so a click inside it counts as "away" for the wrapper. */
   const handleClickAway = (event: Event): void => {
     const target = event.target;
@@ -428,6 +473,7 @@ const SearchCombobox = ({
         onKeyDownCapture={handleKeyDownCapture}
         onKeyDown={handleKeyDown}
         onFocus={preload}
+        onBlur={handleBlur}
         onPointerEnter={preload}
         sx={{ position: "relative", minWidth: 0 }}
       >
