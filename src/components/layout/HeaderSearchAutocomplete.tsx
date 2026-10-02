@@ -1,16 +1,18 @@
+import CloudOffRounded from "@mui/icons-material/CloudOffRounded";
 import { Box, Button, Grow, Paper, Popper, Typography } from "@mui/material";
 import type { PopperProps } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { useQueries } from "@tanstack/react-query";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import MediaTile from "@/components/common/MediaTile";
 import { EmptyState, InlineProgress } from "@/components/common/StateBlocks";
 import type {
   HeaderSearchAutocompleteProps,
   SuggestionOption,
-} from "@/components/layout/HeaderSearch";
+  SuggestionStatus,
+} from "@/components/search/SearchCombobox";
 import { fetchItemMediaUrl } from "@/features/items/services/itemService";
 import { useBlizzardSearch } from "@/features/search/hooks/useBlizzardSearch";
 import type { SearchResult } from "@/features/search/types";
@@ -72,9 +74,11 @@ const mediaKeyFor = (categoryId: string, resultId: number): string =>
   `${categoryId}-${resultId}`;
 
 /**
- * Grouped suggestion listbox for the header combobox. Only ever imported
- * dynamically by HeaderSearch: it pulls useBlizzardSearch (the
- * search-experience chunk) in, and the shell must not depend on that eagerly.
+ * Grouped suggestion listbox for SearchCombobox (header field, search dialog
+ * and home hero). Only ever imported dynamically by SearchCombobox: it pulls
+ * in useBlizzardSearch, which ships with categories.ts and searchService in
+ * the shared useBlizzardSearch-*.js chunk, and the shell must not depend on
+ * that eagerly.
  *
  * The input keeps focus the whole time; this list is a sibling, so option
  * rows swallow mousedown to avoid stealing focus and the parent tracks the
@@ -90,11 +94,12 @@ const HeaderSearchAutocomplete = ({
   onSelect,
   onHoverIndex,
   onVisibleChange,
+  onStatusChange,
 }: HeaderSearchAutocompleteProps): JSX.Element => {
   const theme = useTheme();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   // The parent already debounced the query; do not debounce again.
-  const { categoryStates, isFetching, isAnyLoading } = useBlizzardSearch(
+  const { categoryStates, isFetching, isAnyLoading, isAllError } = useBlizzardSearch(
     query,
     { debounceMs: 0 },
   );
@@ -201,7 +206,32 @@ const HeaderSearchAutocomplete = ({
   // nothing, "thunder" does), so that answer is worth showing.
   const settled = !isFetching && !isAnyLoading;
   const hasContent = options.length > 0 || settled;
-  const visible = open && hasContent;
+  const status: SuggestionStatus =
+    options.length > 0
+      ? "results"
+      : !settled
+        ? "loading"
+        : isAllError
+          ? "error"
+          : "empty";
+
+  useEffect(() => {
+    onStatusChange(status);
+  }, [status, onStatusChange]);
+  useEffect(() => () => onStatusChange("idle"), [onStatusChange]);
+
+  /*
+   * Stay up while a refined term loads. useQueries matches observers by query
+   * hash (@tanstack/query-core 5.90), so keepPreviousData never carries rows
+   * across terms and `options` drops to [] on every new term; without this
+   * the panel would close and reopen on each pause. No stale rows are shown:
+   * just the progress bar and the footer until the new rows arrive.
+   */
+  const [keepOpen, setKeepOpen] = useState(false);
+  const visible = open && (hasContent || keepOpen);
+  useEffect(() => {
+    setKeepOpen(visible);
+  }, [visible]);
   const trimmedQuery = query.trim();
 
   /* The listbox is in the DOM exactly while the Popper is open. */
@@ -366,7 +396,17 @@ const HeaderSearchAutocomplete = ({
               ))}
             </Box>
 
-            {options.length === 0 && settled ? (
+            {status === "error" ? (
+              <EmptyState
+                compact
+                icon={<CloudOffRounded />}
+                title="Couldn't load suggestions"
+                description="Press Enter to open the results page"
+                sx={{ m: 1 }}
+              />
+            ) : null}
+
+            {status === "empty" ? (
               <EmptyState
                 compact
                 title="No matches"
@@ -375,7 +415,8 @@ const HeaderSearchAutocomplete = ({
               />
             ) : null}
 
-            {trimmedQuery.length > 0 ? (
+            {/* A settled empty answer could only lead to four empty tabs. */}
+            {trimmedQuery.length > 0 && status !== "empty" ? (
               <Box
                 sx={{
                   borderTop: `1px solid ${theme.palette.border.subtle}`,
