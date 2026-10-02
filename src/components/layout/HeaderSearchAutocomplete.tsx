@@ -99,7 +99,7 @@ const HeaderSearchAutocomplete = ({
   const theme = useTheme();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   // The parent already debounced the query; do not debounce again.
-  const { categoryStates, isFetching, isAnyLoading, isAllError } = useBlizzardSearch(
+  const { categoryStates, isFetching, isAnyLoading } = useBlizzardSearch(
     query,
     { debounceMs: 0 },
   );
@@ -206,12 +206,14 @@ const HeaderSearchAutocomplete = ({
   // nothing, "thunder" does), so that answer is worth showing.
   const settled = !isFetching && !isAnyLoading;
   const hasContent = options.length > 0 || settled;
+  // One failed category makes "No matches" a guess, not an answer.
+  const anyError = categoryStates.some((state) => state.isError);
   const status: SuggestionStatus =
     options.length > 0
       ? "results"
       : !settled
         ? "loading"
-        : isAllError
+        : anyError
           ? "error"
           : "empty";
 
