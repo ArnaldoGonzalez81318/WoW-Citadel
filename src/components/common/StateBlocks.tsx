@@ -402,6 +402,8 @@ export type LiveStatusProps = {
   /** Keep the text for assistive tech only. */
   visuallyHidden?: boolean;
   component?: ElementType;
+  /** For aria-describedby on a related control. */
+  id?: string;
   sx?: SxProps<Theme>;
 };
 
@@ -411,9 +413,11 @@ export const LiveStatus = ({
   busy = false,
   visuallyHidden = false,
   component = "p",
+  id,
   sx,
 }: LiveStatusProps): JSX.Element => (
   <Typography
+    id={id}
     component={component}
     role="status"
     aria-live="polite"
