@@ -7,6 +7,11 @@ export const SEARCH_ROUTES = [SEARCH_RESULTS_PATH, "/category/creatures"] as con
 export const isSearchRoutePath = (pathname: string): boolean =>
   (SEARCH_ROUTES as readonly string[]).includes(pathname);
 
-/** `/search?q=term` */
-export const searchUrl = (term: string): string =>
-  `${SEARCH_RESULTS_PATH}?q=${encodeURIComponent(term)}`;
+/**
+ * `/search?q=term`, plus `&cat=` when given. Callers omit the default
+ * category (items) when they want canonical URLs.
+ */
+export const searchUrl = (term: string, cat?: string): string =>
+  `${SEARCH_RESULTS_PATH}?q=${encodeURIComponent(term)}${
+    cat ? `&cat=${encodeURIComponent(cat)}` : ""
+  }`;
