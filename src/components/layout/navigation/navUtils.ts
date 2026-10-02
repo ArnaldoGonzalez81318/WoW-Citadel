@@ -83,9 +83,6 @@ export const preloadRouteChunk = (path: string): void => {
 export const API_REFERENCE_URL =
   "https://community.developer.battle.net/documentation/world-of-warcraft/game-data-apis";
 
-export const buildSearchUrl = (q: string): string =>
-  `/search?q=${encodeURIComponent(q.trim())}`;
-
 const TYPING_TAGS: ReadonlySet<string> = new Set([
   "INPUT",
   "TEXTAREA",
