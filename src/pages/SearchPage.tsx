@@ -1,7 +1,7 @@
 import SearchRounded from "@mui/icons-material/SearchRounded";
 import { Chip, Stack } from "@mui/material";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import type { To } from "react-router-dom";
 
 import {
@@ -218,6 +218,61 @@ const SearchPage = ({
     pushRecentSearch,
   ]);
 
+  /*
+   * Landing tab: a term searched without a tab (the hero or header Enter, a
+   * shared link) opens on the first tab with results when the default tab
+   * has none ("Chaos Bolt": 0 items, 3 spells). Decided once per query and
+   * never against an explicit ?cat= or a tab the user clicked. Costs no
+   * requests: all four categories are already fetched for the tab badges.
+   * Raw params, because useSearchParamsRecord fills in cat's default and
+   * cannot tell "no tab asked for" from "Items asked for".
+   */
+  const [rawParams] = useSearchParams();
+  const catRequested = rawParams.has("cat") || rawParams.has("category");
+  /** Query whose landing tab is already decided; never second-guess it. */
+  const landedQueryRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      singleCategory ||
+      catRequested ||
+      page > 1 ||
+      search.tooShort ||
+      !search.query
+    ) {
+      return;
+    }
+    if (landedQueryRef.current === search.query) {
+      return;
+    }
+    if (search.isAnyLoading || hasPlaceholder) {
+      return;
+    }
+    landedQueryRef.current = search.query;
+    if (!activeState || activeState.isError || activeState.data.length > 0) {
+      return;
+    }
+    const firstWithResults = categoryStates.find(
+      (state) => !state.isError && state.data.length > 0,
+    );
+    if (firstWithResults) {
+      setParams(
+        { cat: firstWithResults.category.id, category: null, page: null },
+        { replace: true },
+      );
+    }
+  }, [
+    singleCategory,
+    catRequested,
+    page,
+    search.tooShort,
+    search.query,
+    search.isAnyLoading,
+    hasPlaceholder,
+    activeState,
+    categoryStates,
+    setParams,
+  ]);
+
   const summary = useMemo(
     () =>
       summarize(activeState, search.query, {
@@ -234,6 +289,8 @@ const SearchPage = ({
   );
 
   const handleCategoryChange = (id: SearchCategoryId): void => {
+    // Clicking Items removes ?cat=; the landing effect must not undo the choice.
+    landedQueryRef.current = search.query;
     setParams({
       cat: id === DEFAULT_SEARCH_CATEGORY ? null : id,
       category: null,
