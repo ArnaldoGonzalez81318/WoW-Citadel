@@ -12,12 +12,18 @@ import {
   localized,
   mapWithConcurrency,
   nameParam,
+  nameParamFromTerms,
   namespace,
   optional404,
   sortByName,
 } from "@/lib/blizzardHelpers";
 import { env } from "@/lib/env";
 import { getExternalLink } from "@/lib/externalLinks";
+import {
+  MAX_SEARCH_PAGE_SIZE,
+  narrowByTypedName,
+  relaxedNameTerms,
+} from "@/lib/nameSearch";
 import { describeResultCount } from "@/lib/resultCount";
 import type { ResultCount, SearchPageMeta } from "@/lib/resultCount";
 import { isQualityKey } from "@/theme";
@@ -285,36 +291,87 @@ export const fetchItemGalleryPage = async (
 ): Promise<ItemGalleryPage> => {
   const trimmedQuery = query?.trim() ?? "";
 
-  const result = await optional404(async (): Promise<ItemGalleryPage> => {
-    const response = await blizzardClient.get<SearchResponse<ItemSearchResult>>(
-      "/data/wow/search/item",
-      {
-        namespace: namespace("static"),
-        orderby: "level:desc,id:desc",
-        _pageSize: pageSize,
-        _page: page,
-        "item_class.id": itemClassId,
-        ...(itemSubclassId !== undefined
-          ? { "item_subclass.id": itemSubclassId }
-          : {}),
-        ...(trimmedQuery ? nameParam(trimmedQuery) : {}),
-      },
-      { signal },
-    );
+  const emptyResult: ItemGalleryPage = {
+    items: [],
+    page,
+    pageCount: 1,
+    total: 0,
+    capped: false,
+  };
 
-    const items = (response.results ?? [])
+  const toItems = (
+    response: SearchResponse<ItemSearchResult>,
+  ): SearchResult[] =>
+    (response.results ?? [])
       .map(toItemSearchResult)
       .filter((item) => item.name.length > 0);
 
+  const fetchPage = (
+    nameParams: Record<string, readonly string[]>,
+    requestPage: number,
+    requestPageSize: number,
+    sort: string | undefined,
+  ): Promise<SearchResponse<ItemSearchResult> | undefined> =>
+    optional404(() =>
+      blizzardClient.get<SearchResponse<ItemSearchResult>>(
+        "/data/wow/search/item",
+        {
+          namespace: namespace("static"),
+          ...(sort ? { orderby: sort } : {}),
+          _pageSize: requestPageSize,
+          _page: requestPage,
+          "item_class.id": itemClassId,
+          ...(itemSubclassId !== undefined
+            ? { "item_subclass.id": itemSubclassId }
+            : {}),
+          ...nameParams,
+        },
+        { signal },
+      ),
+    );
+
+  const strict = await fetchPage(
+    trimmedQuery ? nameParam(trimmedQuery) : {},
+    page,
+    pageSize,
+    "level:desc,id:desc",
+  );
+  const items = strict ? toItems(strict) : [];
+
+  if (strict && (items.length > 0 || !trimmedQuery)) {
     return {
       items,
-      page: response.page ?? page,
-      pageCount: response.pageCount ?? 1,
-      ...describeResultCount(response, items.length),
+      page: strict.page ?? page,
+      pageCount: strict.pageCount ?? 1,
+      ...describeResultCount(strict, items.length),
     };
-  });
+  }
 
-  return result ?? { items: [], page, pageCount: 1, total: 0, capped: false };
+  // A half-typed last word matches no whole token, so retry on the completed
+  // words ranked by relevance and narrow the candidates by what was typed.
+  const relaxed = trimmedQuery ? relaxedNameTerms(trimmedQuery) : undefined;
+  const candidates = relaxed
+    ? await fetchPage(
+        nameParamFromTerms(relaxed),
+        1,
+        MAX_SEARCH_PAGE_SIZE,
+        undefined,
+      )
+    : undefined;
+  if (!candidates) {
+    return emptyResult;
+  }
+
+  const narrowed = narrowByTypedName(
+    toItems(candidates),
+    trimmedQuery,
+    (item) => item.name,
+    { page, pageSize },
+  );
+
+  return narrowed.total > 0
+    ? { items: narrowed.results, ...narrowed, capped: false }
+    : emptyResult;
 };
 
 /**
