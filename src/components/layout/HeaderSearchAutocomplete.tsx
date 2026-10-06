@@ -14,7 +14,11 @@ import type {
   SuggestionStatus,
 } from "@/components/search/SearchCombobox";
 import { fetchItemMediaUrl } from "@/features/items/services/itemService";
+import type { CatalogKind } from "@/features/search/catalog/catalogSources";
+import type { SearchCategoryConfig } from "@/features/search/categories";
 import { useBlizzardSearch } from "@/features/search/hooks/useBlizzardSearch";
+import { useCatalogSuggestions } from "@/features/search/hooks/useCatalogSuggestions";
+import type { CatalogSuggestion } from "@/features/search/hooks/useCatalogSuggestions";
 import type { SearchResult } from "@/features/search/types";
 import { fetchSpellIcon } from "@/features/spells/services/spellService";
 import { env } from "@/lib/env";
@@ -25,6 +29,19 @@ const PER_CATEGORY = 4;
 const POPPER_OFFSET = 6;
 const VIEWPORT_MARGIN = 16;
 const MEDIA_GC_TIME_MS = 24 * 60 * 60_000;
+
+/**
+ * What a catalogue row is, for someone scanning the list. The catalogue holds
+ * nothing but names, so this stands in for the type line the live results
+ * carry — and it is the only thing separating a toy from an item under the
+ * Items header, or a battle pet from a creature.
+ */
+const KIND_SUBTITLE: Record<CatalogKind, string> = {
+  item: "Legendary or artifact item",
+  mount: "Mount",
+  toy: "Toy",
+  pet: "Battle pet",
+};
 
 /**
  * Sizes the panel from Popper's own measured reference rect: no layout read
@@ -52,7 +69,32 @@ type SuggestionGroup = {
   options: SuggestionOption[];
 };
 
-type MediaTarget = Pick<SearchResult, "id" | "kind">;
+/**
+ * One row before its icon has resolved. A catalogue name and a live result for
+ * the same name are a single row: `live` is how the icon, the quality tint and
+ * the real type line reach a row the catalogue put on screen first.
+ */
+type SuggestionRow = {
+  /**
+   * Fixed for the row's lifetime — a catalogue row keeps its own id when
+   * `live` arrives, so the keyboard highlight the parent follows by id is not
+   * dropped mid-search.
+   */
+  id: string;
+  name: string;
+  subtitle?: string;
+  live?: SearchResult;
+};
+
+/** A row the live half has answered for. */
+type AnsweredRow = SuggestionRow & { live: SearchResult };
+
+type ShownCategory = {
+  category: SearchCategoryConfig;
+  rows: SuggestionRow[];
+};
+
+type MediaTarget = Pick<SearchResult, "id" | "kind"> & { key: string };
 type MediaUrl = string | null | undefined;
 type MediaMap = Map<string, MediaUrl>;
 
@@ -70,8 +112,83 @@ const combineMediaUrls = (results: UseQueryResult<MediaUrl>[]): MediaUrl[] =>
 const needsMedia = (result: SearchResult): boolean =>
   !result.mediaUrl && (result.kind === "item" || result.kind === "spell");
 
+const needsIcon = (row: SuggestionRow): row is AnsweredRow =>
+  row.live !== undefined && needsMedia(row.live);
+
 const mediaKeyFor = (categoryId: string, resultId: number): string =>
   `${categoryId}-${resultId}`;
+
+const liveSubtitle = (result: SearchResult): string | undefined =>
+  result.subtitle ?? result.typeLabel ?? result.tag;
+
+/**
+ * One category's rows: the catalogue's matches first — they are instant and
+ * they match half-typed names — then the live results that are not already on
+ * screen, capped the same as before.
+ *
+ * Names are compared case-insensitively, so a name both halves know appears
+ * once: it keeps the catalogue's position (and so its option id) and takes the
+ * live result's icon, quality and type line as they arrive.
+ */
+const mergeRows = (
+  categoryId: string,
+  local: readonly CatalogSuggestion[],
+  live: readonly SearchResult[],
+): SuggestionRow[] => {
+  const liveByName = new Map<string, SearchResult>();
+  live.forEach((result) => {
+    const key = result.name.toLowerCase();
+    if (!liveByName.has(key)) {
+      liveByName.set(key, result);
+    }
+  });
+
+  const rows: SuggestionRow[] = [];
+  const used = new Set<string>();
+
+  // Two catalogue sources can hold one name (a toy that is also an item), and
+  // both land in the same category.
+  for (const suggestion of local) {
+    if (rows.length >= PER_CATEGORY) {
+      break;
+    }
+    const key = suggestion.name.toLowerCase();
+    if (used.has(key)) {
+      continue;
+    }
+    used.add(key);
+
+    const twin = liveByName.get(key);
+    rows.push({
+      id: suggestion.id,
+      name: suggestion.name,
+      subtitle:
+        (twin ? liveSubtitle(twin) : undefined) ??
+        KIND_SUBTITLE[suggestion.kind],
+      live: twin,
+    });
+  }
+
+  for (const result of live) {
+    if (rows.length >= PER_CATEGORY) {
+      break;
+    }
+    const key = result.name.toLowerCase();
+    if (used.has(key)) {
+      continue;
+    }
+    used.add(key);
+
+    rows.push({
+      id: mediaKeyFor(categoryId, result.id),
+      name: result.name,
+      subtitle: liveSubtitle(result),
+      live: result,
+    });
+  }
+
+  return rows;
+};
 
 /**
  * Grouped suggestion listbox for SearchCombobox (header field, search dialog
@@ -79,6 +196,11 @@ const mediaKeyFor = (categoryId: string, resultId: number): string =>
  * in useBlizzardSearch, which ships with categories.ts and searchService in
  * the shared useBlizzardSearch-*.js chunk, and the shell must not depend on
  * that eagerly.
+ *
+ * Each group is two halves merged: the local catalogue, which answers a
+ * half-typed or misspelled name from memory, and the live search, which knows
+ * everything but only matches whole, correctly spelled words. The catalogue
+ * goes first because it is already there.
  *
  * The input keeps focus the whole time; this list is a sibling, so option
  * rows swallow mousedown to avoid stealing focus and the parent tracks the
@@ -104,32 +226,48 @@ const HeaderSearchAutocomplete = ({
     { debounceMs: 0 },
   );
 
-  /** The (at most 4 per category) results the list will show. */
-  const shown = useMemo(
+  /*
+   * The catalogue is only worth holding while this list can be used, and this
+   * list is mounted only while the combobox is open — so mounting is the
+   * signal: a megabyte of names is never downloaded for a visitor who never
+   * opens the search.
+   */
+  const { suggestions: localSuggestions, ready: catalogReady } =
+    useCatalogSuggestions(query);
+
+  /** The (at most 4 per category) rows the list will show. */
+  const shown = useMemo<ShownCategory[]>(
     () =>
       categoryStates.map((state) => ({
         category: state.category,
-        results: state.data.slice(0, PER_CATEGORY),
+        rows: mergeRows(
+          state.category.id,
+          localSuggestions.filter(
+            (suggestion) => suggestion.categoryId === state.category.id,
+          ),
+          state.data,
+        ),
       })),
-    [categoryStates],
+    [categoryStates, localSuggestions],
   );
 
   /*
    * Icon fan-out for the shown items and spells, on the same query keys the
    * explorers and SearchResultGrid use (`["item-media", id, region]` /
    * `["spell-media-card", id, region]`), so the cache is shared both ways.
+   * Keyed by row id, so a catalogue row picks up the icon of the live result
+   * that confirmed it.
    */
   const mediaTargets = useMemo(
     () =>
-      shown.flatMap(({ category, results }) =>
-        results
-          .filter(needsMedia)
-          .map((result): MediaTarget & { key: string } => ({
-            id: result.id,
-            kind: result.kind,
-            key: mediaKeyFor(category.id, result.id),
-          })),
-      ),
+      shown
+        .flatMap(({ rows }) => rows)
+        .filter(needsIcon)
+        .map((row): MediaTarget => ({
+          id: row.live.id,
+          kind: row.live.kind,
+          key: row.id,
+        })),
     [shown],
   );
 
@@ -165,19 +303,21 @@ const HeaderSearchAutocomplete = ({
     const result: SuggestionGroup[] = [];
     let startIndex = 0;
 
-    for (const { category, results } of shown) {
-      const options = results.map((item): SuggestionOption => {
-        const id = mediaKeyFor(category.id, item.id);
-        return {
-          id,
-          name: item.name,
+    for (const { category, rows } of shown) {
+      // A catalogue row has no icon and no quality of its own; both stay
+      // undefined until its live twin answers, which MediaTile renders as the
+      // initial-letter tile rather than a broken image.
+      const options = rows.map(
+        (row): SuggestionOption => ({
+          id: row.id,
+          name: row.name,
           categoryId: category.id,
           categoryLabel: category.label,
-          subtitle: item.subtitle ?? item.typeLabel ?? item.tag,
-          mediaUrl: item.mediaUrl ?? mediaByKey.get(id) ?? undefined,
-          quality: item.quality,
-        };
-      });
+          subtitle: row.subtitle,
+          mediaUrl: row.live?.mediaUrl ?? mediaByKey.get(row.id) ?? undefined,
+          quality: row.live?.quality,
+        }),
+      );
       if (options.length > 0) {
         result.push({
           categoryId: category.id,
@@ -201,10 +341,17 @@ const HeaderSearchAutocomplete = ({
     onOptionsChange(options);
   }, [options, onOptionsChange]);
 
-  // Open once there is something to show: suggestions, or the settled
-  // "No matches" answer. Blizzard matches whole words only ("thund" finds
-  // nothing, "thunder" does), so that answer is worth showing.
-  const settled = !isFetching && !isAnyLoading;
+  /*
+   * Open once there is something to show: suggestions, or the settled
+   * "No matches" answer.
+   *
+   * The catalogue settles on a clock of its own, so a live half that comes
+   * back empty is not yet an answer: without `catalogReady` a cold visitor
+   * would be told "No matches" a moment before the names that match arrive.
+   * A catalogue match needs no such wait — `options` is already non-empty, so
+   * the panel opens on the keystroke that produced it, live queries or not.
+   */
+  const settled = !isFetching && !isAnyLoading && catalogReady;
   const hasContent = options.length > 0 || settled;
   // One failed category makes "No matches" a guess, not an answer.
   const anyError = categoryStates.some((state) => state.isError);
@@ -412,7 +559,7 @@ const HeaderSearchAutocomplete = ({
               <EmptyState
                 compact
                 title="No matches"
-                description="Blizzard matches whole words: try the full word or another spelling"
+                description="Partial names find famous items, mounts, toys and pets; spells and other items need a whole word"
                 sx={{ m: 1 }}
               />
             ) : null}
