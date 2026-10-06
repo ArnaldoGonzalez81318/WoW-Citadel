@@ -113,8 +113,15 @@ export const searchNameTerms = (value: string): readonly string[] => {
 export const nameParam = (
   value: string,
   locale: string = env.locale,
+): Record<string, readonly string[]> =>
+  nameParamFromTerms(searchNameTerms(value), locale);
+
+/** `nameParam` for terms that were already worked out, such as a retry. */
+export const nameParamFromTerms = (
+  terms: readonly string[],
+  locale: string = env.locale,
 ): Record<string, readonly string[]> => ({
-  [`name.${locale}`]: searchNameTerms(value),
+  [`name.${locale}`]: terms,
 });
 
 /**
