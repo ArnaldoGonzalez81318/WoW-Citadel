@@ -9,10 +9,16 @@ import {
   cleanMarkup,
   localized,
   nameParam,
+  nameParamFromTerms,
   namespace,
   optional404,
 } from "@/lib/blizzardHelpers";
 import { env } from "@/lib/env";
+import {
+  MAX_SEARCH_PAGE_SIZE,
+  narrowByTypedName,
+  relaxedNameTerms,
+} from "@/lib/nameSearch";
 import { describeResultCount } from "@/lib/resultCount";
 import type { ResultCount, SearchPageMeta } from "@/lib/resultCount";
 
@@ -114,39 +120,80 @@ export const searchMountsDetailed = async (
     return EMPTY_SEARCH_PAGE;
   }
 
-  const result = await optional404(async (): Promise<MountSearchPage> => {
-    const response = await blizzardClient.get<SearchResponse<MountSearchEntry>>(
-      "/data/wow/search/mount",
-      {
-        namespace: namespace("static"),
-        orderby: "id:desc",
-        _pageSize: pageSize,
-        _page: page,
-        ...nameParam(trimmedQuery),
-      },
-      { signal },
+  const toMounts = (
+    response: SearchResponse<MountSearchEntry>,
+  ): MountSummary[] =>
+    (response.results ?? []).map(({ key, data }) => ({
+      id: data.id,
+      name: localized(data.name),
+      description: cleanMarkup(localized(data.description)) || undefined,
+      source: localized(data.source?.name) || undefined,
+      href: key.href,
+      displayId: data.creature_displays?.[0]?.id,
+    }));
+
+  const fetchPage = (
+    nameParams: Record<string, readonly string[]>,
+    requestPage: number,
+    requestPageSize: number,
+    sort: string | undefined,
+  ): Promise<SearchResponse<MountSearchEntry> | undefined> =>
+    optional404(() =>
+      blizzardClient.get<SearchResponse<MountSearchEntry>>(
+        "/data/wow/search/mount",
+        {
+          namespace: namespace("static"),
+          ...(sort ? { orderby: sort } : {}),
+          _pageSize: requestPageSize,
+          _page: requestPage,
+          ...nameParams,
+        },
+        { signal },
+      ),
     );
 
-    const mounts: MountSummary[] = (response.results ?? []).map(
-      ({ key, data }) => ({
-        id: data.id,
-        name: localized(data.name),
-        description: cleanMarkup(localized(data.description)) || undefined,
-        source: localized(data.source?.name) || undefined,
-        href: key.href,
-        displayId: data.creature_displays?.[0]?.id,
-      }),
-    );
+  const strict = await fetchPage(
+    nameParam(trimmedQuery),
+    page,
+    pageSize,
+    "id:desc",
+  );
+  const mounts = strict ? toMounts(strict) : [];
 
+  if (strict && mounts.length > 0) {
     return {
       mounts,
-      page: response.page ?? page,
-      pageCount: response.pageCount ?? 1,
-      ...describeResultCount(response, mounts.length),
+      page: strict.page ?? page,
+      pageCount: strict.pageCount ?? 1,
+      ...describeResultCount(strict, mounts.length),
     };
-  });
+  }
 
-  return result ?? EMPTY_SEARCH_PAGE;
+  // A half-typed last word matches no whole token, so retry on the completed
+  // words ranked by relevance and narrow the candidates by what was typed.
+  const relaxed = relaxedNameTerms(trimmedQuery);
+  const candidates = relaxed
+    ? await fetchPage(
+        nameParamFromTerms(relaxed),
+        1,
+        MAX_SEARCH_PAGE_SIZE,
+        undefined,
+      )
+    : undefined;
+  if (!candidates) {
+    return EMPTY_SEARCH_PAGE;
+  }
+
+  const narrowed = narrowByTypedName(
+    toMounts(candidates),
+    trimmedQuery,
+    (mount) => mount.name,
+    { page, pageSize },
+  );
+
+  return narrowed.total > 0
+    ? { mounts: narrowed.results, ...narrowed, capped: false }
+    : EMPTY_SEARCH_PAGE;
 };
 
 export const fetchMountDetail = async (
