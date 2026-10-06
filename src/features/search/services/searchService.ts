@@ -4,11 +4,17 @@ import {
   cleanMarkup,
   localized,
   nameParam,
+  nameParamFromTerms,
   namespace,
   optional404,
 } from "@/lib/blizzardHelpers";
 import type { LocalizedString } from "@/lib/blizzardHelpers";
 import { getExternalLink } from "@/lib/externalLinks";
+import {
+  MAX_SEARCH_PAGE_SIZE,
+  narrowByTypedName,
+  relaxedNameTerms,
+} from "@/lib/nameSearch";
 import { isQualityKey } from "@/theme";
 
 /** Results per page; the Pagination and the "Showing 1–24" summary derive from it. */
@@ -115,32 +121,73 @@ const runSearch = async <T>(
     return emptyPage();
   }
 
-  const response = await optional404(() =>
-    blizzardClient.get<SearchResponse<T>>(
-      path,
-      {
-        namespace: namespace("static"),
-        orderby,
-        _page: page,
-        _pageSize: SEARCH_PAGE_SIZE,
-        ...nameParam(trimmed),
-      },
-      { signal },
-    ),
-  );
+  const fetchPage = (
+    nameParams: Record<string, readonly string[]>,
+    requestPage: number,
+    pageSize: number,
+    sort: string | undefined,
+  ): Promise<SearchResponse<T> | undefined> =>
+    optional404(() =>
+      blizzardClient.get<SearchResponse<T>>(
+        path,
+        {
+          namespace: namespace("static"),
+          ...(sort ? { orderby: sort } : {}),
+          _page: requestPage,
+          _pageSize: pageSize,
+          ...nameParams,
+        },
+        { signal },
+      ),
+    );
 
-  if (!response) {
+  const toResults = (response: SearchResponse<T>): SearchResult[] =>
+    (response.results ?? []).map(mapper).filter((item) => Boolean(item.name));
+
+  const strict = await fetchPage(
+    nameParam(trimmed),
+    page,
+    SEARCH_PAGE_SIZE,
+    orderby,
+  );
+  const results = strict ? toResults(strict) : [];
+
+  if (strict && results.length > 0) {
+    return {
+      results,
+      page: strict.page ?? page,
+      pageCount: strict.pageCount ?? 1,
+      total: strict.resultCountTotal,
+    };
+  }
+
+  // Nothing matched every word, which is what a half-typed last word looks
+  // like to Blizzard. Ask for the completed words ranked by relevance (no
+  // `orderby`, so the closest names come first rather than the highest item
+  // level) and keep the ones that still match what was typed.
+  const relaxed = relaxedNameTerms(trimmed);
+  if (!relaxed) {
     return emptyPage();
   }
 
-  return {
-    results: (response.results ?? [])
-      .map(mapper)
-      .filter((item) => Boolean(item.name)),
-    page: response.page ?? page,
-    pageCount: response.pageCount ?? 1,
-    total: response.resultCountTotal,
-  };
+  const candidates = await fetchPage(
+    nameParamFromTerms(relaxed),
+    1,
+    MAX_SEARCH_PAGE_SIZE,
+    undefined,
+  );
+  if (!candidates) {
+    return emptyPage();
+  }
+
+  const narrowed = narrowByTypedName(
+    toResults(candidates),
+    trimmed,
+    (item) => item.name,
+    { page, pageSize: SEARCH_PAGE_SIZE },
+  );
+
+  return narrowed.total > 0 ? narrowed : emptyPage();
 };
 
 export const searchItems: SearchFetcher = (query, options = {}) =>
