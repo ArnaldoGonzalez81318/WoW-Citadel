@@ -9,11 +9,17 @@ import {
   cleanMarkup,
   localized,
   nameParam,
+  nameParamFromTerms,
   namespace,
   optional404,
 } from "@/lib/blizzardHelpers";
 import { env } from "@/lib/env";
 import { getExternalLink } from "@/lib/externalLinks";
+import {
+  MAX_SEARCH_PAGE_SIZE,
+  narrowByTypedName,
+  relaxedNameTerms,
+} from "@/lib/nameSearch";
 import { describeResultCount } from "@/lib/resultCount";
 import type { ResultCount, SearchPageMeta } from "@/lib/resultCount";
 
@@ -85,45 +91,86 @@ export const searchSpellsDetailed = async (
     return emptyPage(1);
   }
 
-  const result = await optional404(async (): Promise<SpellGalleryPage> => {
-    const response = await blizzardClient.get<SearchResponse<SpellSearchEntry>>(
-      "/data/wow/search/spell",
-      {
-        namespace: namespace("static"),
-        orderby: "id:desc",
-        _pageSize: pageSize,
-        _page: page,
-        ...nameParam(trimmedQuery),
-      },
-      { signal },
+  const toSpells = (
+    response: SearchResponse<SpellSearchEntry>,
+  ): SpellSummary[] =>
+    (response.results ?? []).map(({ key, data }) => {
+      const name = localized(data.name);
+      const external = getExternalLink("spell", data.id, name);
+
+      return {
+        id: data.id,
+        name,
+        description: cleanMarkup(localized(data.description)),
+        href: key.href,
+        kind: "spell",
+        externalUrl: external?.url,
+        externalLabel: external?.label,
+      };
+    });
+
+  const fetchPage = (
+    nameParams: Record<string, readonly string[]>,
+    requestPage: number,
+    requestPageSize: number,
+    sort: string | undefined,
+  ): Promise<SearchResponse<SpellSearchEntry> | undefined> =>
+    optional404(() =>
+      blizzardClient.get<SearchResponse<SpellSearchEntry>>(
+        "/data/wow/search/spell",
+        {
+          namespace: namespace("static"),
+          ...(sort ? { orderby: sort } : {}),
+          _pageSize: requestPageSize,
+          _page: requestPage,
+          ...nameParams,
+        },
+        { signal },
+      ),
     );
 
-    const spells: SpellSummary[] = (response.results ?? []).map(
-      ({ key, data }) => {
-        const name = localized(data.name);
-        const external = getExternalLink("spell", data.id, name);
+  const strict = await fetchPage(
+    nameParam(trimmedQuery),
+    page,
+    pageSize,
+    "id:desc",
+  );
+  const spells = strict ? toSpells(strict) : [];
 
-        return {
-          id: data.id,
-          name,
-          description: cleanMarkup(localized(data.description)),
-          href: key.href,
-          kind: "spell",
-          externalUrl: external?.url,
-          externalLabel: external?.label,
-        };
-      },
-    );
-
+  if (strict && spells.length > 0) {
     return {
       spells,
-      page: response.page ?? page,
-      pageCount: response.pageCount ?? 1,
-      ...describeResultCount(response, spells.length),
+      page: strict.page ?? page,
+      pageCount: strict.pageCount ?? 1,
+      ...describeResultCount(strict, spells.length),
     };
-  });
+  }
 
-  return result ?? emptyPage(page);
+  // A half-typed last word matches no whole token, so retry on the completed
+  // words ranked by relevance and narrow the candidates by what was typed.
+  const relaxed = relaxedNameTerms(trimmedQuery);
+  const candidates = relaxed
+    ? await fetchPage(
+        nameParamFromTerms(relaxed),
+        1,
+        MAX_SEARCH_PAGE_SIZE,
+        undefined,
+      )
+    : undefined;
+  if (!candidates) {
+    return emptyPage(page);
+  }
+
+  const narrowed = narrowByTypedName(
+    toSpells(candidates),
+    trimmedQuery,
+    (spell) => spell.name,
+    { page, pageSize },
+  );
+
+  return narrowed.total > 0
+    ? { spells: narrowed.results, ...narrowed, capped: false }
+    : emptyPage(page);
 };
 
 export const fetchSpellDetail = async (
