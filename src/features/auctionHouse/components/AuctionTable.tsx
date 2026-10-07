@@ -16,7 +16,7 @@ import {
   Typography,
 } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import type { ReactNode } from "react";
 
 import GoldAmount from "@/components/common/GoldAmount";
@@ -158,10 +158,21 @@ const TimeLeftCell = ({ row }: { row: AuctionTableRow }): JSX.Element => {
   );
 };
 
-const ItemCell = ({ row }: { row: AuctionTableRow }): JSX.Element => {
+const ItemCell = ({
+  row,
+  showId = false,
+}: {
+  row: AuctionTableRow;
+  /** Rows sharing a name (crafting-quality tiers are separate items) need the id to tell apart. */
+  showId?: boolean;
+}): JSX.Element => {
   const name = row.name ?? `Item #${row.itemId}`;
   const link = getExternalLink("item", row.itemId, row.name);
-  const classLine = [row.itemClass, row.itemSubclass]
+  const classLine = [
+    row.itemClass,
+    row.itemSubclass,
+    showId ? `Item #${row.itemId}` : undefined,
+  ]
     .filter(
       (part, index, parts): part is string =>
         typeof part === "string" && part.length > 0 && parts.indexOf(part) === index,
@@ -295,6 +306,20 @@ const AuctionTable = ({
   emptyState,
 }: AuctionTableProps): JSX.Element => {
   const commodities = view === "commodities";
+  /** Names that several distinct items share (crafting-quality tiers). */
+  const sharedNames = useMemo(() => {
+    const idsByName = new Map<string, Set<number>>();
+    rows.forEach((row) => {
+      if (row.name) {
+        idsByName.set(row.name, (idsByName.get(row.name) ?? new Set<number>()).add(row.itemId));
+      }
+    });
+    return new Set(
+      Array.from(idsByName)
+        .filter(([, ids]) => ids.size > 1)
+        .map(([name]) => name),
+    );
+  }, [rows]);
   const columnCount = commodities ? 5 : 4;
   const priceLabel = commodities ? "Unit price" : "Buyout";
 
@@ -360,7 +385,10 @@ const AuctionTable = ({
             rows.map((row) => (
               <TableRow key={row.key} hover>
                 <TableCell sx={itemCell}>
-                  <ItemCell row={row} />
+                  <ItemCell
+                    row={row}
+                    showId={row.name !== undefined && sharedNames.has(row.name)}
+                  />
                 </TableCell>
                 <TableCell align="right" sx={{ ...hideBelowSm, ...numericCell }}>
                   {formatNumber(row.quantity)}
