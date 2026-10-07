@@ -137,6 +137,10 @@ export const CATEGORY_REGISTRY: Record<string, CategoryEntry> = {
     "azerite-essence",
     () => import("@/features/azeriteEssences/components/AzeriteEssencePage"),
   ),
+  "mythic-keystone-dungeon": explorer(
+    "mythic-keystone-dungeon",
+    () => import("@/features/mythicKeystone/components/MythicKeystoneDungeonsPage"),
+  ),
   "wow-token": explorer("wow-token", () => import("@/pages/WowTokenRoute")),
 };
 
