@@ -15,6 +15,8 @@ export type KeystoneSeason = {
   startTimestamp?: number;
   /** This season's rotation, by name. */
   dungeons: KeystoneDungeonSummary[];
+  /** The season's weekly periods so far, oldest first (the last is this week). */
+  periodIds: number[];
 };
 
 /** A keystone upgrade threshold: finish under `durationMs` for `+level`. */
