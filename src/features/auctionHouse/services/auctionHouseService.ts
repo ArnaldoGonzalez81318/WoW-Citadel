@@ -26,7 +26,15 @@ import {
   blizzardClient,
   parseRetryAfter,
 } from "@/lib/blizzardClient";
-import { localized, namespace, optional404 } from "@/lib/blizzardHelpers";
+import {
+  fulfilledValues,
+  localized,
+  mapWithConcurrency,
+  nameParam,
+  nameParamFromTerms,
+  namespace,
+  optional404,
+} from "@/lib/blizzardHelpers";
 import type { LocalizedString } from "@/lib/blizzardHelpers";
 import {
   env,
@@ -35,11 +43,19 @@ import {
   shouldUseBlizzardProxy,
 } from "@/lib/env";
 import { humanizeEnum } from "@/lib/format";
+import {
+  MAX_SEARCH_PAGE_SIZE,
+  matchesTypedName,
+  relaxedNameTerms,
+} from "@/lib/nameSearch";
 import { isQualityKey } from "@/theme";
 import type {
   AuctionHouseResponse,
+  AuctionIndex,
+  AuctionItemMatches,
   AuctionItemSummary,
   AuctionListing,
+  AuctionMarketView,
   AuctionRow,
   AuctionScanProgress,
   AuctionSnapshot,
@@ -60,7 +76,43 @@ export const AUCTION_DUMP_BYTE_CAP = 6 * 1024 * 1024;
 /** Rows the table shows after sorting (the snapshot keeps every priced row). */
 export const AUCTION_ROW_LIMIT = 50;
 
+/**
+ * Bytes read when indexing a whole dump for search. Netlify ends streamed
+ * function responses at 20 MB (the proxy itself ends them at 19.9 MB so the
+ * cut is clean), and the cap is checked per chunk, so a read can run up to
+ * one chunk past it. Measured on US data: the largest connected realm (Area
+ * 52) is about 19.4 MB and fits; the regional commodities dump is about
+ * 22.8 MB, so roughly the first 90% of it is searched.
+ */
+export const AUCTION_INDEX_BYTE_CAP = 19_500_000;
+/**
+ * Item-search pages (100 items each) a name is resolved against, newest
+ * items first: current-expansion goods dominate the auction house, and a
+ * broad word ("potion") can match well over a thousand items.
+ */
+export const AUCTION_SEARCH_ITEM_PAGES = 5;
+
 const PROGRESS_INTERVAL_MS = 200;
+/** Parsing stretch before the browser gets to render and handle input. */
+const PARSE_SLICE_MS = 12;
+/** About 1.5 ms of scanning on a desktop: the unit a slice is made of. */
+const PARSE_PIECE_BYTES = 64 * 1024;
+
+/**
+ * A task boundary. While the network keeps the body buffered, every
+ * `reader.read()` resolves as a microtask, so a 20 MB index would otherwise
+ * parse as one long task (about 300 ms on a desktop, far more on a phone).
+ * MessageChannel, unlike setTimeout, is not throttled in background tabs.
+ */
+const yieldToBrowser = (): Promise<void> =>
+  new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      resolve();
+    };
+    channel.port2.postMessage(null);
+  });
 const COMMODITIES_PATH = "/data/wow/auctions/commodities";
 const AUCTIONS_KEY = '"auctions"';
 /** Longest text that could hide a split `"auctions"` key across two chunks. */
@@ -103,6 +155,11 @@ export type AuctionDumpOptions = {
   maxListings: number;
   maxBytes: number;
   onProgress?: (progress: AuctionScanProgress) => void;
+  /**
+   * Receives each listing instead of the result's `listings` array (which
+   * then stays empty), so a whole-dump index never holds raw listings.
+   */
+  onListing?: (listing: AuctionListing) => void;
 };
 
 export type AuctionDumpResult = {
@@ -140,7 +197,12 @@ type ScanPhase = "seek-key" | "seek-array" | "scan" | "done";
  */
 export const parseAuctionStream = async (
   reader: ReadableStreamDefaultReader<Uint8Array>,
-  { maxListings, maxBytes, onProgress }: Omit<AuctionDumpOptions, "signal">,
+  {
+    maxListings,
+    maxBytes,
+    onProgress,
+    onListing,
+  }: Omit<AuctionDumpOptions, "signal">,
 ): Promise<AuctionDumpResult> => {
   const decoder = new TextDecoder();
   const listings: AuctionListing[] = [];
@@ -174,7 +236,11 @@ export const parseAuctionStream = async (
     try {
       const parsed: unknown = JSON.parse(text);
       if (isListing(parsed)) {
-        listings.push(parsed);
+        if (onListing) {
+          onListing(parsed);
+        } else {
+          listings.push(parsed);
+        }
       }
     } catch {
       // A malformed object is skipped; the rest of the dump is still useful.
@@ -256,23 +322,51 @@ export const parseAuctionStream = async (
     return true;
   };
 
+  let sliceStart = performance.now();
+
   try {
     while (phase !== "done") {
-      const { done, value } = await reader.read();
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        chunk = await reader.read();
+      } catch (error) {
+        // An index read that is cut late (a platform limit dropping the
+        // stream rather than ending it) keeps what it already folded:
+        // `complete` stays false, so the page says how much was searched.
+        if (onListing && error instanceof TypeError && bytesRead >= maxBytes / 2) {
+          break;
+        }
+        throw error;
+      }
+      const { done, value } = chunk;
       if (done) {
         break;
       }
 
-      bytesRead += value.byteLength;
-      buffer += decoder.decode(value, { stream: true });
+      // A parser that fell behind is handed megabytes at once; working
+      // through them in small pieces lets it yield inside one chunk too.
+      for (
+        let offset = 0;
+        offset < value.byteLength && phase !== "done";
+        offset += PARSE_PIECE_BYTES
+      ) {
+        const piece = value.subarray(offset, offset + PARSE_PIECE_BYTES);
+        bytesRead += piece.byteLength;
+        buffer += decoder.decode(piece, { stream: true });
 
-      if (locateArray() && scanBuffer()) {
-        phase = "done";
-      } else if (bytesRead >= maxBytes) {
-        phase = "done";
+        if (locateArray() && scanBuffer()) {
+          phase = "done";
+        } else if (bytesRead >= maxBytes) {
+          phase = "done";
+        }
+
+        report(false);
+
+        if (performance.now() - sliceStart >= PARSE_SLICE_MS) {
+          await yieldToBrowser();
+          sliceStart = performance.now();
+        }
       }
-
-      report(false);
     }
   } finally {
     // Stops the download when a cap was hit; harmless after a natural end.
@@ -407,6 +501,55 @@ type CommodityAccumulator = {
   timeLeft: AuctionTimeLeft;
 };
 
+/** Folds one commodity listing into its item: lowest unit price, summed quantity, SHORT wins. */
+const foldCommodity = (
+  byItem: Map<number, CommodityAccumulator>,
+  listing: AuctionListing,
+): void => {
+  if (!isPrice(listing.unit_price)) {
+    return;
+  }
+  const current = byItem.get(listing.item.id);
+  if (!current) {
+    byItem.set(listing.item.id, {
+      quantity: listing.quantity,
+      unitPrice: listing.unit_price,
+      listingCount: 1,
+      timeLeft: listing.time_left,
+    });
+    return;
+  }
+  current.quantity += listing.quantity;
+  current.unitPrice = Math.min(current.unitPrice, listing.unit_price);
+  current.listingCount += 1;
+  if (listing.time_left === "SHORT") {
+    current.timeLeft = "SHORT";
+  }
+};
+
+const commodityRow = (itemId: number, entry: CommodityAccumulator): AuctionRow =>
+  toRow(
+    `commodity-${itemId}`,
+    itemId,
+    entry.quantity,
+    entry.unitPrice,
+    entry.listingCount,
+    entry.timeLeft,
+  );
+
+const realmRow = (listing: AuctionListing): AuctionRow =>
+  toRow(
+    `listing-${listing.id}`,
+    listing.item.id,
+    listing.quantity,
+    listing.buyout ?? 0,
+    1,
+    listing.time_left,
+  );
+
+const byPriceDesc = (left: AuctionRow, right: AuctionRow): number =>
+  right.priceCopper - left.priceCopper;
+
 /**
  * Regional commodities: every scanned listing is folded by item id (lowest
  * unit price, summed quantity, listing count, SHORT wins), most expensive
@@ -427,40 +570,11 @@ export const fetchCommoditySnapshot = async ({
   });
 
   const byItem = new Map<number, CommodityAccumulator>();
-  dump.listings.forEach((listing) => {
-    if (!isPrice(listing.unit_price)) {
-      return;
-    }
-    const current = byItem.get(listing.item.id);
-    if (!current) {
-      byItem.set(listing.item.id, {
-        quantity: listing.quantity,
-        unitPrice: listing.unit_price,
-        listingCount: 1,
-        timeLeft: listing.time_left,
-      });
-      return;
-    }
-    current.quantity += listing.quantity;
-    current.unitPrice = Math.min(current.unitPrice, listing.unit_price);
-    current.listingCount += 1;
-    if (listing.time_left === "SHORT") {
-      current.timeLeft = "SHORT";
-    }
-  });
+  dump.listings.forEach((listing) => foldCommodity(byItem, listing));
 
   const rows = Array.from(byItem.entries())
-    .map(([itemId, entry]) =>
-      toRow(
-        `commodity-${itemId}`,
-        itemId,
-        entry.quantity,
-        entry.unitPrice,
-        entry.listingCount,
-        entry.timeLeft,
-      ),
-    )
-    .sort((left, right) => right.priceCopper - left.priceCopper);
+    .map(([itemId, entry]) => commodityRow(itemId, entry))
+    .sort(byPriceDesc);
 
   return {
     rows,
@@ -493,16 +607,7 @@ export const fetchConnectedRealmAuctionSnapshot = async (
   const rows = dump.listings
     .filter((listing) => isPrice(listing.buyout))
     .sort((left, right) => (right.buyout ?? 0) - (left.buyout ?? 0))
-    .map((listing) =>
-      toRow(
-        `listing-${listing.id}`,
-        listing.item.id,
-        listing.quantity,
-        listing.buyout ?? 0,
-        1,
-        listing.time_left,
-      ),
-    );
+    .map(realmRow);
 
   return {
     rows,
@@ -512,6 +617,111 @@ export const fetchConnectedRealmAuctionSnapshot = async (
     limit,
   };
 };
+
+/* ------------------------------------------------------------------ */
+/* Search index (a whole dump, folded once per view)                    */
+/* ------------------------------------------------------------------ */
+
+const TIME_LEFT_ORDER: readonly AuctionTimeLeft[] = [
+  "SHORT",
+  "MEDIUM",
+  "LONG",
+  "VERY_LONG",
+];
+/** Realm listings are kept as flat `[auctionId, quantity, buyout, timeLeft]` runs. */
+const REALM_STRIDE = 4;
+
+/**
+ * Reads as much of a dump as Netlify can stream (`AUCTION_INDEX_BYTE_CAP`)
+ * and folds it into a compact per-item index, so every later search in this
+ * view filters memory instead of downloading again. Commodities fold to one
+ * entry per item, as in the snapshot; realm listings are stored as flat
+ * number runs (about a hundred thousand of them on a large realm) and only
+ * become rows for the items a search asks for.
+ */
+export const fetchAuctionIndex = async (
+  view: AuctionMarketView,
+  connectedRealmId: number | null,
+  { signal, onProgress }: Omit<AuctionSnapshotOptions, "limit"> = {},
+): Promise<AuctionIndex> => {
+  const isRealm = view === "realm" && connectedRealmId !== null;
+  const commodities = new Map<number, CommodityAccumulator>();
+  const realm = new Map<number, number[]>();
+
+  const indexRealmListing = (listing: AuctionListing): void => {
+    if (!isPrice(listing.buyout)) {
+      return;
+    }
+    let runs = realm.get(listing.item.id);
+    if (!runs) {
+      runs = [];
+      realm.set(listing.item.id, runs);
+    }
+    runs.push(
+      listing.id,
+      listing.quantity,
+      listing.buyout,
+      TIME_LEFT_ORDER.indexOf(listing.time_left),
+    );
+  };
+
+  const dump = await fetchAuctionDump(
+    isRealm
+      ? `/data/wow/connected-realm/${connectedRealmId}/auctions`
+      : COMMODITIES_PATH,
+    {
+      signal,
+      onProgress,
+      maxListings: Number.POSITIVE_INFINITY,
+      maxBytes: AUCTION_INDEX_BYTE_CAP,
+      onListing: isRealm
+        ? indexRealmListing
+        : (listing) => foldCommodity(commodities, listing),
+    },
+  );
+
+  const rowsFor = isRealm
+    ? (itemId: number): AuctionRow[] => {
+        const runs = realm.get(itemId);
+        if (!runs) {
+          return [];
+        }
+        const rows: AuctionRow[] = [];
+        for (let at = 0; at < runs.length; at += REALM_STRIDE) {
+          rows.push(
+            toRow(
+              `listing-${runs[at]}`,
+              itemId,
+              runs[at + 1],
+              runs[at + 2],
+              1,
+              // An unrecognised value was stored as -1; toRow labels it "Unknown".
+              TIME_LEFT_ORDER[runs[at + 3]] ?? ("" as AuctionTimeLeft),
+            ),
+          );
+        }
+        return rows;
+      }
+    : (itemId: number): AuctionRow[] => {
+        const entry = commodities.get(itemId);
+        return entry ? [commodityRow(itemId, entry)] : [];
+      };
+
+  return {
+    view: isRealm ? "realm" : "commodities",
+    rowsFor,
+    itemCount: isRealm ? realm.size : commodities.size,
+    scannedListings: dump.scannedListings,
+    bytesRead: dump.bytesRead,
+    complete: dump.complete,
+  };
+};
+
+/** Every indexed row for `itemIds`, most expensive first (the snapshot's order). */
+export const selectIndexRows = (
+  index: AuctionIndex,
+  itemIds: readonly number[],
+): AuctionRow[] => itemIds.flatMap((id) => index.rowsFor(id)).sort(byPriceDesc);
 
 /* ------------------------------------------------------------------ */
 /* Item summary (per-row enrichment)                                   */
@@ -532,6 +742,24 @@ type ItemDetailResponse = {
  * the icon is fetched separately (`fetchItemMediaUrl`) so it shares the
  * Items explorer's cache.
  */
+const toAuctionItemSummary = (
+  data: ItemDetailResponse,
+  href: string | undefined,
+): AuctionItemSummary => {
+  const qualityType = data.quality?.type?.toLowerCase();
+
+  return {
+    id: data.id,
+    href: href ?? `${getApiBaseUrl()}/data/wow/item/${data.id}`,
+    name: localized(data.name) || `Item #${data.id}`,
+    quality: localized(data.quality?.name) || undefined,
+    qualityKey: isQualityKey(qualityType) ? qualityType : undefined,
+    itemClass: localized(data.item_class?.name) || undefined,
+    itemSubclass: localized(data.item_subclass?.name) || undefined,
+    inventoryType: localized(data.inventory_type?.name) || undefined,
+  };
+};
+
 export const fetchAuctionItemSummary = async (
   itemId: number,
   signal?: AbortSignal,
@@ -542,19 +770,109 @@ export const fetchAuctionItemSummary = async (
       { namespace: namespace("static") },
       { signal },
     );
-
-    const qualityType = response.quality?.type?.toLowerCase();
-
-    return {
-      id: response.id,
-      href:
-        response._links?.self?.href ??
-        `${getApiBaseUrl()}/data/wow/item/${itemId}`,
-      name: localized(response.name) || `Item #${itemId}`,
-      quality: localized(response.quality?.name) || undefined,
-      qualityKey: isQualityKey(qualityType) ? qualityType : undefined,
-      itemClass: localized(response.item_class?.name) || undefined,
-      itemSubclass: localized(response.item_subclass?.name) || undefined,
-      inventoryType: localized(response.inventory_type?.name) || undefined,
-    };
+    return toAuctionItemSummary(response, response._links?.self?.href);
   });
+
+/* ------------------------------------------------------------------ */
+/* Item search (a typed name to the item ids a search filters on)       */
+/* ------------------------------------------------------------------ */
+
+const ITEM_SEARCH_PATH = "/data/wow/search/item";
+/** Polite to the shared rate limit: five pages land in two round trips. */
+const ITEM_SEARCH_CONCURRENCY = 3;
+
+type ItemSearchPage = {
+  pageCount?: number;
+  results?: Array<{ key?: { href?: string }; data?: ItemDetailResponse }>;
+};
+
+const fetchItemSearchPage = (
+  nameParams: Record<string, readonly string[]>,
+  page: number,
+  signal?: AbortSignal,
+): Promise<ItemSearchPage | undefined> =>
+  optional404(() =>
+    blizzardClient.get<ItemSearchPage>(
+      ITEM_SEARCH_PATH,
+      {
+        namespace: namespace("static"),
+        orderby: "id:desc",
+        _page: page,
+        _pageSize: MAX_SEARCH_PAGE_SIZE,
+        ...nameParams,
+      },
+      { signal },
+    ),
+  );
+
+/**
+ * The items a typed name stands for, newest first, up to
+ * `AUCTION_SEARCH_ITEM_PAGES` pages. Like the site search, a half-typed last
+ * word ("draconium o") is retried without it and the candidates are narrowed
+ * here by prefix, because Blizzard only matches whole words.
+ */
+export const searchAuctionItems = async (
+  query: string,
+  signal?: AbortSignal,
+): Promise<AuctionItemMatches> => {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return { items: [], truncated: false };
+  }
+
+  const collect = async (
+    nameParams: Record<string, readonly string[]>,
+    narrow: boolean,
+  ): Promise<AuctionItemMatches> => {
+    const first = await fetchItemSearchPage(nameParams, 1, signal);
+    if (!first) {
+      return { items: [], truncated: false };
+    }
+    const pageCount = first.pageCount ?? 1;
+    const lastPage = Math.min(pageCount, AUCTION_SEARCH_ITEM_PAGES);
+    const laterPages = Array.from(
+      { length: Math.max(0, lastPage - 1) },
+      (_, offset) => offset + 2,
+    );
+    const settled = await mapWithConcurrency(
+      laterPages,
+      ITEM_SEARCH_CONCURRENCY,
+      (page) => fetchItemSearchPage(nameParams, page, signal),
+      signal,
+    );
+    const failed = settled.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failed) {
+      // Let react-query retry rather than cache a list with a band missing.
+      throw failed.reason;
+    }
+    const pages = [first, ...fulfilledValues(settled)];
+
+    const seen = new Set<number>();
+    const items: AuctionItemSummary[] = [];
+    pages.forEach((page) => {
+      page?.results?.forEach((result) => {
+        const data = result.data;
+        if (!data || typeof data.id !== "number" || seen.has(data.id)) {
+          return;
+        }
+        const summary = toAuctionItemSummary(data, result.key?.href);
+        if (narrow && !matchesTypedName(summary.name, trimmed)) {
+          return;
+        }
+        seen.add(data.id);
+        items.push(summary);
+      });
+    });
+
+    return { items, truncated: pageCount > lastPage };
+  };
+
+  const strict = await collect(nameParam(trimmed), false);
+  if (strict.items.length > 0) {
+    return strict;
+  }
+  const relaxed = relaxedNameTerms(trimmed);
+  return relaxed ? collect(nameParamFromTerms(relaxed), true) : strict;
+};
