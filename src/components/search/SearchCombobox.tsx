@@ -37,7 +37,14 @@ export type SuggestionOption = {
 export type SuggestionStatus = "idle" | "loading" | "results" | "empty" | "error";
 
 export type HeaderSearchAutocompleteProps = {
+  /** Debounced term the live search is allowed to spend requests on. */
   query: string;
+  /**
+   * What is in the field right now, undebounced. Ranking the local catalogue
+   * costs a millisecond and no request, so its suggestions answer the
+   * keystroke rather than waiting out the debounce the network needs.
+   */
+  typedQuery: string;
   anchorEl: HTMLElement | null;
   open: boolean;
   activeIndex: number;
@@ -210,9 +217,11 @@ const SearchCombobox = ({
       closeList();
       return;
     }
+    // The catalogue half can answer this keystroke from memory, so the list
+    // opens now instead of waiting for the debounce that gates the live half.
+    setListOpen(true);
     if (value === fieldEmittedRef.current && value !== debounced) {
       setDebounced(value);
-      setListOpen(true);
     }
   };
 
@@ -372,7 +381,9 @@ const SearchCombobox = ({
   const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       if (!listOpen) {
-        if (!qualifies(debounced)) {
+        // The typed text, not the debounced one: the catalogue already has
+        // rows for it, so ArrowDown must not be dead during the debounce.
+        if (!qualifies(draft)) {
           return;
         }
         event.preventDefault();
@@ -454,7 +465,16 @@ const SearchCombobox = ({
     closeList();
   };
 
-  const showSuggestions = enhanced && qualifies(debounced);
+  /**
+   * Mounted as soon as a keystroke opens the list, one debounce ahead of the
+   * live half, so the catalogue's rows are ready for it; a list with nothing
+   * to show stays hidden on its own (`hasContent`).
+   *
+   * `listOpen` rather than `qualifies(draft)`: a draft adopted from the URL
+   * (`/search?q=`) is text nobody typed here, and it must not pull down a
+   * catalogue for someone who never opened the search.
+   */
+  const showSuggestions = enhanced && (listOpen || qualifies(debounced));
 
   const announcement = !listVisible
     ? ""
@@ -500,6 +520,7 @@ const SearchCombobox = ({
           <Suspense fallback={null}>
             <HeaderSearchAutocomplete
               query={debounced}
+              typedQuery={draft}
               anchorEl={wrapperEl}
               open={listOpen}
               activeIndex={activeIndex}
