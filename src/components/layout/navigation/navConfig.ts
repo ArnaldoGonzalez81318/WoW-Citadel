@@ -293,7 +293,8 @@ export const NAV_SECTIONS: NavFlyoutSection[] = [
         id: "mythic-keystone-dungeon",
         slug: "mythic-keystone-dungeon",
         label: "Mythic Keystone Dungeons",
-        description: "Current keystone dungeon pool and info",
+        description: "This season's rotation with art and timers, plus every past dungeon",
+        status: "live",
       }),
       defineItem({
         id: "mythic-keystone-leaderboard",
