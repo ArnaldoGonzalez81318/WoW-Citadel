@@ -94,6 +94,9 @@ type ShownCategory = {
   rows: SuggestionRow[];
 };
 
+/** Shared so a term the live half has not reached never allocates an array. */
+const NO_LIVE_RESULTS: SearchResult[] = [];
+
 type MediaTarget = Pick<SearchResult, "id" | "kind"> & { key: string };
 type MediaUrl = string | null | undefined;
 type MediaMap = Map<string, MediaUrl>;
@@ -208,6 +211,7 @@ const mergeRows = (
  */
 const HeaderSearchAutocomplete = ({
   query,
+  typedQuery,
   anchorEl,
   open,
   activeIndex,
@@ -221,10 +225,12 @@ const HeaderSearchAutocomplete = ({
   const theme = useTheme();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   // The parent already debounced the query; do not debounce again.
-  const { categoryStates, isFetching, isAnyLoading } = useBlizzardSearch(
-    query,
-    { debounceMs: 0 },
-  );
+  const {
+    categoryStates,
+    isFetching,
+    isAnyLoading,
+    query: liveQuery,
+  } = useBlizzardSearch(query, { debounceMs: 0 });
 
   /*
    * The catalogue is only worth holding while this list can be used, and this
@@ -233,7 +239,15 @@ const HeaderSearchAutocomplete = ({
    * opens the search.
    */
   const { suggestions: localSuggestions, ready: catalogReady } =
-    useCatalogSuggestions(query);
+    useCatalogSuggestions(typedQuery);
+
+  /*
+   * The catalogue answers every keystroke and the live half only answers the
+   * debounced one, so between the two `categoryStates` still holds the
+   * previous term's results. They are held back until the live half catches
+   * up rather than shown under text they do not match.
+   */
+  const liveIsCurrent = liveQuery === typedQuery.trim();
 
   /** The (at most 4 per category) rows the list will show. */
   const shown = useMemo<ShownCategory[]>(
@@ -245,10 +259,10 @@ const HeaderSearchAutocomplete = ({
           localSuggestions.filter(
             (suggestion) => suggestion.categoryId === state.category.id,
           ),
-          state.data,
+          liveIsCurrent ? state.data : NO_LIVE_RESULTS,
         ),
       })),
-    [categoryStates, localSuggestions],
+    [categoryStates, localSuggestions, liveIsCurrent],
   );
 
   /*
@@ -350,8 +364,12 @@ const HeaderSearchAutocomplete = ({
    * would be told "No matches" a moment before the names that match arrive.
    * A catalogue match needs no such wait — `options` is already non-empty, so
    * the panel opens on the keystroke that produced it, live queries or not.
+   *
+   * `liveIsCurrent` is the same guarantee for the debounce window: a search
+   * that has not been asked for the typed text yet cannot be reported as
+   * having found nothing.
    */
-  const settled = !isFetching && !isAnyLoading && catalogReady;
+  const settled = !isFetching && !isAnyLoading && catalogReady && liveIsCurrent;
   const hasContent = options.length > 0 || settled;
   // One failed category makes "No matches" a guess, not an answer.
   const anyError = categoryStates.some((state) => state.isError);
@@ -381,7 +399,8 @@ const HeaderSearchAutocomplete = ({
   useEffect(() => {
     setKeepOpen(visible);
   }, [visible]);
-  const trimmedQuery = query.trim();
+  // The typed text, since that is what Enter would submit.
+  const trimmedQuery = typedQuery.trim();
 
   /* The listbox is in the DOM exactly while the Popper is open. */
   useEffect(() => {
@@ -441,7 +460,11 @@ const HeaderSearchAutocomplete = ({
               boxShadow: theme.palette.glow.popover,
             }}
           >
-            <InlineProgress active={isFetching} label="Searching" />
+            {/* Also while the live half is still a debounce behind the text. */}
+            <InlineProgress
+              active={isFetching || !liveIsCurrent}
+              label="Searching"
+            />
 
             {/* Always present while open so aria-controls never dangles; empty on "No matches". */}
             <Box
