@@ -300,7 +300,8 @@ export const NAV_SECTIONS: NavFlyoutSection[] = [
         id: "mythic-keystone-leaderboard",
         slug: "mythic-keystone-leaderboard",
         label: "Mythic Keystone Leaderboards",
-        description: "Top runs per dungeon and connected realm",
+        description: "Top runs per realm, dungeon and week, with every party's specs",
+        status: "live",
       }),
       defineItem({
         id: "mythic-raid-leaderboard",
