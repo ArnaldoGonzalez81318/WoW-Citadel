@@ -16,6 +16,35 @@ import type { BlizzardProxyResponse } from "../../server/blizzardProxy"
 /** Statuses that must not carry a body (`new Response` throws otherwise). */
 const NULL_BODY_STATUSES = new Set([101, 204, 205, 304])
 
+/**
+ * Netlify cuts a streamed response at 20 MB, and the browser then reports a
+ * network error and drops bytes it had already received. Ending the stream
+ * just short of that instead gives a clean (truncated) end, which the auction
+ * index reader treats as "searched the first N listings". Only the regional
+ * commodities dump (about 23 MB) is this large.
+ */
+const STREAM_BYTE_LIMIT = 19_900_000
+
+const capStream = (body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> => {
+  let sent = 0
+  return body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        const room = STREAM_BYTE_LIMIT - sent
+        if (chunk.byteLength < room) {
+          sent += chunk.byteLength
+          controller.enqueue(chunk)
+          return
+        }
+        controller.enqueue(chunk.subarray(0, room))
+        sent = STREAM_BYTE_LIMIT
+        // Closes the readable side and cancels the upstream body.
+        controller.terminate()
+      },
+    })
+  )
+}
+
 const toResponse = (proxied: BlizzardProxyResponse, method: string): Response => {
   const headers = new Headers(proxied.headers)
   // netlify.toml [[headers]] rules are not applied to function responses.
@@ -25,7 +54,8 @@ const toResponse = (proxied: BlizzardProxyResponse, method: string): Response =>
     return new Response(null, { status: proxied.status, headers })
   }
 
-  return new Response(proxied.body, { status: proxied.status, headers })
+  const body = typeof proxied.body === "string" ? proxied.body : capStream(proxied.body)
+  return new Response(body, { status: proxied.status, headers })
 }
 
 /** The part of Netlify's `Context` this function reads (avoids a @netlify/functions dependency). */
