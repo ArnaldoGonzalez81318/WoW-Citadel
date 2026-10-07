@@ -1,13 +1,19 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 
 import {
+  AUCTION_ROW_LIMIT,
+  fetchAuctionIndex,
   fetchAuctionItemSummary,
   fetchCommoditySnapshot,
   fetchConnectedRealmAuctionSnapshot,
+  searchAuctionItems,
+  selectIndexRows,
 } from "@/features/auctionHouse/services/auctionHouseService";
 import type {
+  AuctionIndex,
+  AuctionItemMatches,
   AuctionItemSummary,
   AuctionMarketView,
   AuctionRow,
@@ -31,6 +37,10 @@ export const COMMODITY_STALE_MS = 15 * 60_000;
 export const REALM_STALE_MS = 5 * 60_000;
 
 const ITEM_GC_MS = 24 * 60 * 60_000;
+/** Item names change with patches, not hours; a resolved name stays an hour. */
+const ITEM_MATCH_STALE_MS = 60 * 60_000;
+/** Same floor as the site search: one letter matches far too much. */
+export const AUCTION_SEARCH_MIN_LENGTH = 2;
 const ENRICH_INITIAL = 16;
 const ENRICH_BATCH = 16;
 
@@ -48,6 +58,10 @@ export const auctionKeys = {
     ["auction-realm-listings", connectedRealmId, env.region] as const,
   itemSummary: (itemId: number) =>
     ["auction-item-summary", itemId, env.region] as const,
+  index: (view: AuctionMarketView, connectedRealmId: number | null) =>
+    ["auction-index", view, connectedRealmId, env.region] as const,
+  itemMatches: (term: string) =>
+    ["auction-item-matches", term, env.region, env.locale] as const,
 };
 
 /* ------------------------------------------------------------------ */
@@ -156,14 +170,35 @@ const combineIcons = (
 /* Hook                                                                */
 /* ------------------------------------------------------------------ */
 
+/** The parts of a query the page and filter bar read; search composes two queries into one. */
+export type AuctionQueryState = {
+  isPending: boolean;
+  isFetching: boolean;
+  isError: boolean;
+  error: Error | null;
+  refetch: () => Promise<unknown>;
+};
+
+export type AuctionSearchState = {
+  /** A qualifying term is being searched (rows come from the index). */
+  active: boolean;
+  term: string;
+  /** Items whose name matched, once resolved. */
+  matches: AuctionItemMatches | undefined;
+  /** Resolving the name to item ids. */
+  resolving: boolean;
+};
+
 export type UseAuctionSnapshotResult = {
+  /** The snapshot, or while searching, the index filtered to the matched items. */
   snapshot: AuctionSnapshot | undefined;
   /** The `limit` rows to show, merged with item summaries and icons, sorted. */
   rows: AuctionTableRow[];
-  /** Bytes / listings read so far while the dump downloads. */
+  /** Bytes / listings read so far while a dump downloads. */
   progress: AuctionScanProgress;
-  query: UseQueryResult<AuctionSnapshot>;
+  query: AuctionQueryState;
   dataUpdatedAt: number;
+  search: AuctionSearchState;
 };
 
 /**
@@ -171,13 +206,23 @@ export type UseAuctionSnapshotResult = {
  * per-item enrichment of the rows on screen. Item lookups never gate the
  * table: a failed summary leaves the row as "Item #id" with the icon
  * fallback.
+ *
+ * With a search term the snapshot is set aside: the name is resolved to item
+ * ids (Blizzard's item search), the whole dump is indexed once per view
+ * (`fetchAuctionIndex`, only when some item matched), and the rows are that
+ * index filtered to those ids, through the same sort and enrichment.
  */
 export const useAuctionSnapshot = (
   view: AuctionMarketView,
   connectedRealmId: number | null,
   sort: AuctionSortKey = "price-desc",
+  searchTerm = "",
 ): UseAuctionSnapshotResult => {
+  const queryClient = useQueryClient();
   const [progress, setProgress] = useState<AuctionScanProgress>(EMPTY_PROGRESS);
+  /** Its own line: an index read can outlive a cleared search beside a snapshot read. */
+  const [indexProgress, setIndexProgress] =
+    useState<AuctionScanProgress>(EMPTY_PROGRESS);
 
   const onProgress = useCallback((next: AuctionScanProgress): void => {
     setProgress(next);
@@ -185,12 +230,16 @@ export const useAuctionSnapshot = (
 
   const isRealm = view === "realm";
   const enabled = isRealm ? connectedRealmId !== null : true;
+  const staleTime = isRealm ? REALM_STALE_MS : COMMODITY_STALE_MS;
+
+  const term = searchTerm.trim();
+  const searching = enabled && term.length >= AUCTION_SEARCH_MIN_LENGTH;
 
   const queryKey = isRealm
     ? auctionKeys.realmListings(connectedRealmId)
     : auctionKeys.commodities();
 
-  const query = useQuery({
+  const snapshotQuery = useQuery({
     queryKey,
     queryFn: ({ signal }) => {
       setProgress(EMPTY_PROGRESS);
@@ -201,21 +250,103 @@ export const useAuctionSnapshot = (
           })
         : fetchCommoditySnapshot({ signal, onProgress });
     },
-    enabled,
-    staleTime: isRealm ? REALM_STALE_MS : COMMODITY_STALE_MS,
+    // A search reads the index instead; the snapshot loads when it is cleared.
+    enabled: enabled && !searching,
+    staleTime,
     // Keep the previous rows visible while refetching or switching realms,
     // but never show commodity rows under a "Buyout" header (or vice versa).
     placeholderData: (previousData, previousQuery) =>
       previousQuery?.queryKey[0] === queryKey[0] ? previousData : undefined,
   });
 
-  const snapshot = query.data;
+  // Case only changes how a name is typed, not which items it finds.
+  const matchKey = term.toLowerCase();
+  const matchesQuery = useQuery({
+    queryKey: auctionKeys.itemMatches(matchKey),
+    queryFn: async ({ signal }) => {
+      const matches = await searchAuctionItems(term, signal);
+      // The search already returned each item's name, quality and class:
+      // seed the per-row summaries so matched rows need no lookup of their own.
+      matches.items.forEach((item) => {
+        if (queryClient.getQueryData(auctionKeys.itemSummary(item.id)) === undefined) {
+          queryClient.setQueryData(auctionKeys.itemSummary(item.id), item);
+        }
+      });
+      return matches;
+    },
+    enabled: searching,
+    staleTime: ITEM_MATCH_STALE_MS,
+    // Keep the last answer on screen while the next term resolves.
+    placeholderData: (previousData) => previousData,
+  });
 
-  const baseRows = useMemo<AuctionRow[] | undefined>(
-    () =>
-      snapshot ? selectRows(snapshot.rows, sort, snapshot.limit) : undefined,
-    [snapshot, sort],
+  const matches = searching ? matchesQuery.data : undefined;
+  const matchesSettled = searching && matchesQuery.isSuccess && !matchesQuery.isPlaceholderData;
+  const matchedIds = useMemo<number[]>(
+    () => (matches ? matches.items.map((item) => item.id) : EMPTY_IDS),
+    [matches],
   );
+
+  // Commodities are regional: a realm left in the URL must not split the cache.
+  const indexRealmId = isRealm ? connectedRealmId : null;
+  const indexQuery = useQuery({
+    queryKey: auctionKeys.index(view, indexRealmId),
+    queryFn: ({ signal }) => {
+      setIndexProgress(EMPTY_PROGRESS);
+      return fetchAuctionIndex(view, indexRealmId, {
+        signal,
+        onProgress: setIndexProgress,
+      });
+    },
+    // Nothing to look for, nothing to download: a name with no items never
+    // costs the 20 MB read.
+    enabled: searching && matchesSettled && matchedIds.length > 0,
+    staleTime,
+  });
+
+  const index: AuctionIndex | undefined = searching ? indexQuery.data : undefined;
+
+  const searchSnapshot = useMemo<AuctionSnapshot | undefined>(
+    () =>
+      index && matches
+        ? {
+            rows: selectIndexRows(index, matchedIds),
+            scannedListings: index.scannedListings,
+            bytesRead: index.bytesRead,
+            complete: index.complete,
+            limit: AUCTION_ROW_LIMIT,
+          }
+        : undefined,
+    [index, matches, matchedIds],
+  );
+
+  const snapshot = searching ? searchSnapshot : snapshotQuery.data;
+
+  /** Every matched item's name is already known, so a name sort can cover them all. */
+  const matchNames = useMemo(
+    () => new Map((matches?.items ?? []).map((item) => [item.id, item.name])),
+    [matches],
+  );
+
+  const baseRows = useMemo<AuctionRow[] | undefined>(() => {
+    if (!snapshot) {
+      return undefined;
+    }
+    if (searching && (sort === "name-asc" || sort === "name-desc")) {
+      const direction = sort === "name-asc" ? 1 : -1;
+      return [...snapshot.rows]
+        .sort(
+          (left, right) =>
+            direction *
+              compareText(
+                matchNames.get(left.itemId) ?? "",
+                matchNames.get(right.itemId) ?? "",
+              ) || byPriceDesc(left, right),
+        )
+        .slice(0, snapshot.limit);
+    }
+    return selectRows(snapshot.rows, sort, snapshot.limit);
+  }, [matchNames, searching, snapshot, sort]);
 
   // Realm snapshots list the same item several times: enrich each item once
   // (react-query warns about duplicate keys inside one `useQueries`).
@@ -231,7 +362,9 @@ export const useAuctionSnapshot = (
     totalCount: itemIds.length,
     initialCount: ENRICH_INITIAL,
     batchSize: ENRICH_BATCH,
-    resetKey: isRealm ? `realm:${connectedRealmId ?? ""}` : "commodities",
+    resetKey: `${isRealm ? `realm:${connectedRealmId ?? ""}` : "commodities"}|${
+      searching ? matchKey : ""
+    }`,
   });
 
   // `combine` with stable callbacks returns referentially stable results, so
@@ -286,12 +419,39 @@ export const useAuctionSnapshot = (
     return sortByName(merged, sort);
   }, [baseRows, icons.data, itemIds, sort, summaries.data, summaries.settled]);
 
+  /*
+   * One state for the page: while searching, resolving the name comes first
+   * (its error or pending wins), then the index. A name with no matching
+   * items is settled, not pending, though the index never ran.
+   */
+  const query = useMemo<AuctionQueryState>(() => {
+    if (!searching) {
+      return snapshotQuery;
+    }
+    if (matchesQuery.isError || !matchesSettled || matchedIds.length === 0) {
+      return {
+        isPending: !matchesQuery.isError && !matchesSettled,
+        isFetching: matchesQuery.isFetching,
+        isError: matchesQuery.isError,
+        error: matchesQuery.error,
+        refetch: matchesQuery.refetch,
+      };
+    }
+    return indexQuery;
+  }, [searching, snapshotQuery, matchesQuery, matchesSettled, matchedIds.length, indexQuery]);
+
   return {
     snapshot,
     rows,
-    progress,
+    progress: searching ? indexProgress : progress,
     query,
-    dataUpdatedAt: query.dataUpdatedAt,
+    dataUpdatedAt: searching ? indexQuery.dataUpdatedAt : snapshotQuery.dataUpdatedAt,
+    search: {
+      active: searching,
+      term,
+      matches: matchesSettled ? matches : undefined,
+      resolving: searching && !matchesSettled && !matchesQuery.isError,
+    },
   };
 };
 
