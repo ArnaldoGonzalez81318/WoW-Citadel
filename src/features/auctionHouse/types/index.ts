@@ -78,6 +78,29 @@ export type AuctionSnapshot = {
   limit: number;
 };
 
+/**
+ * One whole dump folded for search (see `fetchAuctionIndex`): rows are built
+ * on demand for the items a search asks for, so the index stays compact.
+ */
+export type AuctionIndex = {
+  view: AuctionMarketView;
+  /** Commodities: one aggregated row. Realm: one row per listing with a buyout. */
+  rowsFor: (itemId: number) => AuctionRow[];
+  /** Distinct items with at least one priced listing. */
+  itemCount: number;
+  scannedListings: number;
+  bytesRead: number;
+  /** The whole dump was read (no cap was hit). */
+  complete: boolean;
+};
+
+/** Items whose name matches a search, newest first. */
+export type AuctionItemMatches = {
+  items: AuctionItemSummary[];
+  /** More items matched than were resolved (page cap or a failed page). */
+  truncated: boolean;
+};
+
 export type AuctionScanProgress = {
   bytesRead: number;
   scannedListings: number;
