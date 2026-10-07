@@ -62,6 +62,7 @@ type SeasonResponse = {
   id: number;
   season_name?: LocalizedString | null;
   start_timestamp?: number;
+  periods?: Array<{ id?: number }>;
 };
 
 type ConnectedRealmIndexResponse = {
@@ -178,6 +179,10 @@ export const fetchCurrentKeystoneSeason = async (
         ? season.start_timestamp
         : undefined,
     dungeons,
+    periodIds: (season.periods ?? [])
+      .map((period) => period.id)
+      .filter((id): id is number => typeof id === "number")
+      .sort((left, right) => left - right),
   };
 };
 
