@@ -10,15 +10,19 @@ import {
 } from "@mui/material";
 import type { SelectChangeEvent } from "@mui/material";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import {
   ExplorerFilterBar,
+  SearchField,
   SegmentedControl,
 } from "@/components/common/ExplorerFilterBar";
 import type { SegmentedOption } from "@/components/common/ExplorerFilterBar";
 import { ErrorState } from "@/components/common/StateBlocks";
-import { AUCTION_SORT_SCOPES } from "@/features/auctionHouse/hooks/useAuctionSnapshot";
+import {
+  AUCTION_SEARCH_MIN_LENGTH,
+  AUCTION_SORT_SCOPES,
+} from "@/features/auctionHouse/hooks/useAuctionSnapshot";
 import type { UseAuctionSnapshotResult } from "@/features/auctionHouse/hooks/useAuctionSnapshot";
 import type {
   AuctionMarketView,
@@ -46,6 +50,8 @@ const SORT_OPTIONS: ReadonlyArray<{ value: AuctionSortKey; label: string }> = [
 ];
 
 const REALM_PICKER_MIN_WIDTH = 280;
+const SEARCH_MIN_WIDTH = 220;
+const SEARCH_DEBOUNCE_MS = 400;
 const SORT_MIN_WIDTH = 180;
 const RELATIVE_TIME_TICK_MS = 30_000;
 const KILOBYTE = 1024;
@@ -86,6 +92,9 @@ const realmMatches = (
   option.shortLabel.toLowerCase().includes(needle) ||
   option.realmSlugs.some((slug) => slug.toLowerCase().includes(needle));
 
+const plural = (count: number, one: string, many: string): string =>
+  `${formatNumber(count)} ${count === 1 ? one : many}`;
+
 /** Re-renders on an interval so "fetched 5 minutes ago" stays honest. */
 const useRelativeTimeTick = (active: boolean): number => {
   const [now, setNow] = useState(() => Date.now());
@@ -112,11 +121,14 @@ export type AuctionFiltersProps = {
   /** Connected-realm catalog; only enabled in realm view by the page. */
   catalogQuery: UseQueryResult<ConnectedRealmCatalog>;
   snapshot: UseAuctionSnapshotResult;
+  /** The committed search (`?q=`); the field keeps its own draft while typing. */
+  searchValue: string;
+  onSearchChange: (value: string) => void;
 };
 
 /**
- * Filter strip: market view, connected-realm picker (realm view), sort,
- * Refresh and a live summary of the download / snapshot.
+ * Filter strip: market view, connected-realm picker (realm view), item
+ * search, sort, Refresh and a live summary of the download / snapshot.
  */
 const AuctionFilters = ({
   view,
@@ -127,8 +139,27 @@ const AuctionFilters = ({
   onSortChange,
   catalogQuery,
   snapshot,
+  searchValue,
+  onSearchChange,
 }: AuctionFiltersProps): JSX.Element => {
-  const { query, rows, progress, dataUpdatedAt } = snapshot;
+  const { query, rows, progress, dataUpdatedAt, search } = snapshot;
+
+  // The field commits through its own debounce, so the URL (and the search)
+  // moves once per settled term; a URL change from elsewhere is adopted.
+  const [draft, setDraft] = useState(searchValue);
+  const lastSearchRef = useRef(searchValue);
+  useEffect(() => {
+    if (searchValue !== lastSearchRef.current) {
+      lastSearchRef.current = searchValue;
+      setDraft(searchValue);
+    }
+  }, [searchValue]);
+  const commitSearch = (value: string): void => {
+    // The page stores the trimmed term; comparing against that keeps a
+    // trailing space the user is still typing past.
+    lastSearchRef.current = value.trim();
+    onSearchChange(value);
+  };
   const sortLabelId = `auction-sort-${useId()}`;
   const isRealm = view === "realm";
   const now = useRelativeTimeTick(dataUpdatedAt > 0);
@@ -153,9 +184,55 @@ const AuctionFilters = ({
     }
   };
 
+  const searchSummary = (): string | undefined => {
+    const quoted = `“${search.term}”`;
+    if (search.resolving) {
+      return `Looking up items named ${quoted}…`;
+    }
+    const matches = search.matches;
+    if (!matches) {
+      return undefined;
+    }
+    if (matches.items.length === 0) {
+      return `No items named ${quoted}`;
+    }
+    if (query.isFetching) {
+      return progress.bytesRead > 0
+        ? `Reading the ${isRealm ? "realm" : "commodity"} snapshot to search - ${formatBytes(
+            progress.bytesRead,
+          )}, ${formatNumber(progress.scannedListings)} listings scanned`
+        : "Waiting for Blizzard's auction snapshot…";
+    }
+    const data = snapshot.snapshot;
+    if (!data) {
+      return undefined;
+    }
+    const total = data.rows.length;
+    const found = isRealm
+      ? plural(total, "listing", "listings")
+      : plural(total, "item", "items");
+    const shown =
+      rows.length < total
+        ? `Top ${formatNumber(rows.length)} by ${
+            sort === "name-asc" || sort === "name-desc" ? "name" : AUCTION_SORT_SCOPES[sort]
+          } of `
+        : "";
+    const coverage = `${data.complete ? "searched all" : "searched the first"} ${formatNumber(
+      data.scannedListings,
+    )} listings`;
+    const fetched =
+      dataUpdatedAt > 0
+        ? ` · fetched ${formatRelativeTime(dataUpdatedAt, now)}`
+        : "";
+    return `${shown}${found} for ${quoted} · ${coverage}${fetched}`;
+  };
+
   const summary = ((): string | undefined => {
     if (isRealm && realmId === null) {
       return undefined;
+    }
+    if (search.active) {
+      return searchSummary();
     }
     if (query.isFetching) {
       // No bytes arrive until the proxy has a token and Blizzard's response
@@ -235,6 +312,23 @@ const AuctionFilters = ({
           ) : null}
         </>
       ) : null}
+
+      <SearchField
+        label="Search items"
+        placeholder={
+          isRealm ? "Item name, e.g. Arcanite Reaper" : "Item name, e.g. Draconium Ore"
+        }
+        value={draft}
+        onChange={setDraft}
+        onDebouncedChange={commitSearch}
+        debounceMs={SEARCH_DEBOUNCE_MS}
+        onSubmit={commitSearch}
+        onClear={() => commitSearch("")}
+        minLength={AUCTION_SEARCH_MIN_LENGTH}
+        loading={search.active && query.isFetching}
+        size="small"
+        sx={{ flex: "1 1 260px", minWidth: SEARCH_MIN_WIDTH }}
+      />
 
       <FormControl size="small" sx={{ minWidth: SORT_MIN_WIDTH }}>
         <InputLabel id={sortLabelId}>Sort</InputLabel>
