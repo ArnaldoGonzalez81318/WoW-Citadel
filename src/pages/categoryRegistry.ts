@@ -141,6 +141,10 @@ export const CATEGORY_REGISTRY: Record<string, CategoryEntry> = {
     "mythic-keystone-dungeon",
     () => import("@/features/mythicKeystone/components/MythicKeystoneDungeonsPage"),
   ),
+  "mythic-keystone-leaderboard": explorer(
+    "mythic-keystone-leaderboard",
+    () => import("@/features/mythicLeaderboard/components/MythicLeaderboardPage"),
+  ),
   "wow-token": explorer("wow-token", () => import("@/pages/WowTokenRoute")),
 };
 
