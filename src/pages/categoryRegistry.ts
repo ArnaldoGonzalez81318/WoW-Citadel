@@ -145,6 +145,22 @@ export const CATEGORY_REGISTRY: Record<string, CategoryEntry> = {
     "mythic-keystone-leaderboard",
     () => import("@/features/mythicLeaderboard/components/MythicLeaderboardPage"),
   ),
+  "mythic-raid-leaderboard": explorer(
+    "mythic-raid-leaderboard",
+    () => import("@/features/mythicRaidLeaderboard/components/MythicRaidLeaderboardPage"),
+  ),
+  "pvp-season": explorer(
+    "pvp-season",
+    () => import("@/features/pvpSeasons/components/PvpSeasonsPage"),
+  ),
+  "pvp-tier": explorer(
+    "pvp-tier",
+    () => import("@/features/pvpTiers/components/PvpTiersPage"),
+  ),
+  profession: explorer(
+    "profession",
+    () => import("@/features/professions/components/ProfessionsPage"),
+  ),
   "wow-token": explorer("wow-token", () => import("@/pages/WowTokenRoute")),
 };
 
