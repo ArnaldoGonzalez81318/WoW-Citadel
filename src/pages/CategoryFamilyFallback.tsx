@@ -23,19 +23,11 @@ const ApiDatasetGalleryPage = lazy(
   () => import("@/features/apiExplorer/components/ApiDatasetGalleryPage"),
 );
 
-const SearchExperience = lazy(
-  () => import("@/features/search/components/SearchExperience"),
-);
-
-type Presentation = "dataset" | "family" | "search" | "none";
+type Presentation = "dataset" | "family" | "none";
 
 const resolvePresentation = (
-  slug: string,
   family: ApiFamilyConfig | undefined,
 ): Presentation => {
-  if (slug === "creatures") {
-    return "search";
-  }
   if (!family) {
     return "none";
   }
@@ -53,7 +45,7 @@ const CategoryFamilyFallback = ({
   breadcrumbs,
 }: FamilyFallbackProps): JSX.Element => {
   const family = getApiFamilyConfigBySlug(item.slug);
-  const presentation = resolvePresentation(item.slug, family);
+  const presentation = resolvePresentation(family);
 
   if (presentation === "dataset") {
     // The nav entry is the category's player-facing identity ("Battle Pets",
@@ -84,9 +76,6 @@ const CategoryFamilyFallback = ({
       {header}
       {presentation === "family" && family ? (
         <ApiFamilyGallery family={family} />
-      ) : null}
-      {presentation === "search" ? (
-        <SearchExperience focusCategoryId="creatures" />
       ) : null}
       {presentation === "none" ? (
         <EmptyState

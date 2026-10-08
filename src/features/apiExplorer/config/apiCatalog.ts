@@ -1206,14 +1206,14 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
         "Neighborhood Map Index",
         "Load neighborhood maps.",
         "/data/wow/neighborhood-map/index",
-        "static",
+        "dynamic",
       ),
       endpoint(
         "neighborhood-map",
         "Neighborhood Map",
         "Fetch a neighborhood map by id.",
         "/data/wow/neighborhood-map/{neighborhoodMapId}",
-        "static",
+        "dynamic",
         [
           pathParam(
             "neighborhoodMapId",
@@ -1228,7 +1228,7 @@ export const API_FAMILY_CONFIGS: ApiFamilyConfig[] = [
         "Neighborhood",
         "Fetch a neighborhood by map and neighborhood id.",
         "/data/wow/neighborhood-map/{neighborhoodMapId}/neighborhood/{neighborhoodId}",
-        "static",
+        "dynamic",
         [
           pathParam(
             "neighborhoodMapId",

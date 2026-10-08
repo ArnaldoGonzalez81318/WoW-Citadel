@@ -161,13 +161,44 @@ export const CATEGORY_REGISTRY: Record<string, CategoryEntry> = {
     "profession",
     () => import("@/features/professions/components/ProfessionsPage"),
   ),
+  region: explorer(
+    "region",
+    () => import("@/features/regions/components/RegionsPage"),
+  ),
+  neighborhood: explorer(
+    "neighborhood",
+    () => import("@/features/neighborhoods/components/NeighborhoodsPage"),
+  ),
+  reputations: explorer(
+    "reputations",
+    () => import("@/features/reputations/components/ReputationsPage"),
+  ),
+  quest: explorer(
+    "quest",
+    () => import("@/features/quests/components/QuestsPage"),
+  ),
+  creatures: explorer(
+    "creatures",
+    () => import("@/features/creatures/components/CreaturesPage"),
+  ),
+  "guild-crest": explorer(
+    "guild-crest",
+    () => import("@/features/guildCrests/components/GuildCrestsPage"),
+  ),
+  journal: explorer(
+    "journal",
+    () => import("@/features/journal/components/JournalPage"),
+  ),
+  "media-search": explorer(
+    "media-search",
+    () => import("@/features/mediaSearch/components/MediaSearchPage"),
+  ),
   "wow-token": explorer("wow-token", () => import("@/pages/WowTokenRoute")),
 };
 
 /**
  * Catch-all for nav slugs without a dedicated explorer: API dataset gallery,
- * endpoint family gallery, the creatures search view, or an "in progress"
- * empty state. It is the only module in this graph that imports the catalog.
+ * endpoint family gallery, or an "in progress" empty state. It is the only module in this graph that imports the catalog.
  */
 export const FAMILY_FALLBACK: FamilyFallbackEntry = define(
   "fallback",
@@ -186,9 +217,6 @@ const preloadCache = new Map<string, Promise<unknown>>();
  * the fallback chunk so the route pays one round trip instead of three.
  */
 const preloadFallbackContent = (slug: string): Promise<unknown> | undefined => {
-  if (slug === "creatures") {
-    return import("@/features/search/components/SearchExperience");
-  }
   if (findRoutableCategoryItem(slug)?.status === "gallery") {
     return import("@/features/apiExplorer/components/ApiDatasetGalleryPage");
   }
