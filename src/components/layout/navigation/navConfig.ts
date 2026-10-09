@@ -1,6 +1,6 @@
 /**
  * Primary navigation catalogue. Consumed by the header menubar, the mobile
- * drawer, the footer sitemap, CategoryPage and CategoryShowcase.
+ * drawer, the footer sitemap, CategoryPage and the home directory.
  *
  * `slug` matches the apiCatalog slug for the entry; `path` is the route the
  * entry opens; `status` says whether the route has a dedicated explorer
@@ -23,7 +23,7 @@ export type NavFlyoutItem = {
 
 export type NavFlyoutSection = {
   id: string;
-  /** Full label (CategoryPage / CategoryShowcase / flyout heading). */
+  /** Full label (CategoryPage / home directory / flyout heading). */
   label: string;
   /** Short label for the single-row header menubar. */
   shortLabel: string;

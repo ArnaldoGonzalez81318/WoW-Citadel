@@ -14,12 +14,15 @@ import type { FocusEvent, FormEvent } from "react";
 import type { To } from "react-router-dom";
 
 import PageHeader from "@/components/common/PageHeader";
+import { AppErrorBoundary } from "@/components/common/RouteErrorBoundary";
 import { LiveStatus } from "@/components/common/StateBlocks";
 import SearchCombobox, {
   SEARCH_KEY_SHORTCUTS,
 } from "@/components/search/SearchCombobox";
 import type { SearchComboboxHandle } from "@/components/search/SearchCombobox";
 import { usePrimarySearch } from "@/components/search/primarySearch";
+import HeroSeasonArt from "@/features/home/components/HeroSeasonArt";
+import { EXPLORER_COUNT } from "@/features/home/config/directory";
 import {
   DEFAULT_SEARCH_CATEGORY,
   SEARCH_CATEGORIES,
@@ -28,11 +31,15 @@ import RecentSearchChips from "@/features/search/components/RecentSearchChips";
 import { searchUrl } from "@/features/search/config/searchRoutes";
 import { useSearchState } from "@/features/search/context/SearchContext";
 import type { SearchCategoryId } from "@/features/search/types";
+import { formatNumber } from "@/lib/format";
 
 const SEARCH_ID = "home-search";
 const STATUS_ID = `${SEARCH_ID}-status`;
 const TIP_ID = `${SEARCH_ID}-tip`;
 const EXAMPLE_COUNT = 6;
+const DESCRIPTION = `Search items, spells, mounts and creatures by name, or open any of ${formatNumber(
+  EXPLORER_COUNT,
+)} explorers built on Blizzard's game-data API.`;
 
 type Example = { term: string; categoryId: SearchCategoryId };
 
@@ -112,11 +119,14 @@ const ChipRow = ({
  * same live suggestions as the header; this host owns the Search button,
  * the hint lines and the registration that makes the header yield to it.
  * Every chip is a real link to `/search`; removing a recent term is a
- * sibling button, never nested in the link.
+ * sibling button, never nested in the link. From lg up, a raid's zone art
+ * fills the empty right side (HeroSeasonArt); smaller screens never mount
+ * it, so phones and tablets pay no request or image for it.
  */
 const HomeHero = (): JSX.Element => {
   const theme = useTheme();
   const isPhone = useMediaQuery(theme.breakpoints.down("sm"));
+  const showArt = useMediaQuery(theme.breakpoints.up("lg"));
   const { recentSearches, removeRecentSearch } = useSearchState();
   const comboRef = useRef<SearchComboboxHandle>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -201,13 +211,20 @@ const HomeHero = (): JSX.Element => {
       sx={(t) => ({
         borderRadius: `${t.wc.radius.xl}px`,
         p: 3,
+        // The art is clipped to the card's corners. The suggestion panel and
+        // the tooltip portal to the body, so nothing interactive is clipped.
+        [t.breakpoints.up("lg")]: { position: "relative", overflow: "hidden" },
       })}
     >
-      <Stack spacing={3}>
+      {/* Above the art, and never wider than the space the art leaves. */}
+      <Stack
+        spacing={3}
+        sx={{ position: "relative", zIndex: 1, maxWidth: { lg: "58%" } }}
+      >
         <PageHeader
           eyebrow="WoW Citadel"
           title="Find anything in Azeroth"
-          description="Search items, spells, mounts and creatures, then dig deeper in the dedicated explorers."
+          description={DESCRIPTION}
           documentTitle=""
         />
 
@@ -307,6 +324,13 @@ const HomeHero = (): JSX.Element => {
           ) : null}
         </Stack>
       </Stack>
+      {/* Last in the card, so its caption link follows the chips in focus order.
+          Decoration: if it ever throws, the hero simply renders without it. */}
+      {showArt ? (
+        <AppErrorBoundary fallback={() => null}>
+          <HeroSeasonArt />
+        </AppErrorBoundary>
+      ) : null}
     </Paper>
   );
 };

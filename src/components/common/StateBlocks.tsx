@@ -320,6 +320,11 @@ export type ErrorStateProps = {
   /** A secondary Button or Link (e.g. "Go home"). */
   secondaryAction?: ReactNode;
   compact?: boolean;
+  /**
+   * False when another alert on the page already reports this same failure:
+   * the block keeps its text and Retry but is not announced a second time.
+   */
+  announce?: boolean;
   sx?: SxProps<Theme>;
 };
 
@@ -331,6 +336,7 @@ export const ErrorState = ({
   retryLabel = "Retry",
   secondaryAction,
   compact = false,
+  announce = true,
   sx,
 }: ErrorStateProps): JSX.Element => {
   const description = useMemo(
@@ -342,7 +348,8 @@ export const ErrorState = ({
 
   return (
     <Alert
-      role="alert"
+      // MUI's Alert falls back to role="alert" when given none, so "none" is explicit.
+      role={announce ? "alert" : "none"}
       severity={description.severity}
       variant="standard"
       sx={[

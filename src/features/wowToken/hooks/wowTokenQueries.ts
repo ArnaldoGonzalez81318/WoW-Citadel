@@ -7,9 +7,10 @@ const ITEM_STALE_MS = 24 * 60 * 60_000;
 
 /*
  * Prices are not keyed here: they read the Regions page's
- * `regionTokenQuery`, whose key for the app's own region is the home
- * ticker's `WOW_TOKEN_QUERY_KEY`, so all three pages share one entry per
- * region. Item names are localized, so their key carries the locale.
+ * `regionTokenQuery`, whose key for the app's own region is
+ * `WOW_TOKEN_QUERY_KEY` (the home page's token card reads it too), so all
+ * three pages share one entry per region. Item names are localized, so
+ * their key carries the locale.
  */
 export const wowTokenKeys = {
   item: (itemId: number) => ["wow-token", "item", itemId, env.region, env.locale] as const,

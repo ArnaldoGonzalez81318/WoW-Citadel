@@ -126,10 +126,10 @@ export const fetchRegionRecord = async (
 };
 
 /**
- * The region's WoW Token price. Same shape as the home ticker's
- * `fetchWowTokenPrice` (which can only ask the app's own region), because
- * both share one cache entry for that region; a 404 is an error here too,
- * since every region sells the token.
+ * The region's WoW Token price, in the `WowTokenPrice` shape every token
+ * view reads; for the app's own region it fills the entry the home page's
+ * token card shares (`WOW_TOKEN_QUERY_KEY`). A 404 is an error here, since
+ * every region sells the token.
  */
 export const fetchRegionTokenPrice = async (
   region: Region,

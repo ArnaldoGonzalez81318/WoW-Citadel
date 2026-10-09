@@ -12,8 +12,9 @@ import { env } from "@/lib/env";
  * The live token price of all four regions, with each region's name.
  *
  * Prices use the Regions page's `regionTokenQuery`, whose key for the app's
- * own region is the home ticker's `WOW_TOKEN_QUERY_KEY`: arriving from
- * either page shows its prices at once, and the three never disagree. They
+ * own region is `WOW_TOKEN_QUERY_KEY`, the one the home page's token card
+ * reads: arriving from either page shows its prices at once, and the three
+ * never disagree. They
  * poll on that query's interval; a refocused tab also refetches a price
  * past its stale time, since the poll pauses while the tab is hidden.
  *

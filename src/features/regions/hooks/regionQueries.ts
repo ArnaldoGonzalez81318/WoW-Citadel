@@ -26,7 +26,7 @@ const RECORD_STALE_MS = HOUR;
 const COUNTS_STALE_MS = HOUR;
 /** As long as the Connected Realms explorer keeps its catalog fresh. */
 const MAKEUP_STALE_MS = 30 * MINUTE;
-/** Matches the home ticker: a little under its refresh, so a remount refetches. */
+/** A little under the refresh interval, so a remount refetches. */
 const TOKEN_STALE_MS = (TOKEN_REFRESH_MINUTES - 1) * MINUTE;
 const TOKEN_REFETCH_MS = TOKEN_REFRESH_MINUTES * MINUTE;
 const ICON_STALE_MS = 24 * HOUR;
@@ -43,9 +43,10 @@ export const regionKeys = {
   makeup: (region: Region) =>
     ["regions", "realm-makeup", region, env.locale] as const,
   /**
-   * The home ticker's key shape (`["wow-token-price", region]`), so the app's
-   * own region shares that entry: arriving from the home page shows its
-   * price at once, and the two never disagree.
+   * `WOW_TOKEN_QUERY_KEY`'s shape (`["wow-token-price", region]`), so the
+   * app's own region has one entry, which the home page's token card reads
+   * too: arriving from the home page shows its price at once, and the two
+   * never disagree.
    */
   token: (region: Region) => [WOW_TOKEN_QUERY_KEY[0], region] as const,
 };
