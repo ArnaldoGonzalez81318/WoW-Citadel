@@ -193,7 +193,31 @@ export const CATEGORY_REGISTRY: Record<string, CategoryEntry> = {
     "media-search",
     () => import("@/features/mediaSearch/components/MediaSearchPage"),
   ),
-  "wow-token": explorer("wow-token", () => import("@/pages/WowTokenRoute")),
+  "item-appearance": explorer(
+    "item-appearance",
+    () => import("@/features/itemAppearances/components/ItemAppearancesPage"),
+  ),
+  heirloom: explorer(
+    "heirloom",
+    () => import("@/features/heirlooms/components/HeirloomsPage"),
+  ),
+  pet: explorer(
+    "pet",
+    () => import("@/features/battlePets/components/BattlePetsPage"),
+  ),
+  toy: explorer("toy", () => import("@/features/toys/components/ToysPage")),
+  "modified-crafting": explorer(
+    "modified-crafting",
+    () => import("@/features/modifiedCrafting/components/ModifiedCraftingPage"),
+  ),
+  "housing-decor": explorer(
+    "housing-decor",
+    () => import("@/features/housingDecor/components/HousingDecorPage"),
+  ),
+  "wow-token": explorer(
+    "wow-token",
+    () => import("@/features/wowToken/components/WowTokenPage"),
+  ),
 };
 
 /**

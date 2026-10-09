@@ -1,56 +1,77 @@
-export type LinkReference = {
-  href: string;
-};
+/** Blizzard's three specialization roles, as `role.type` spells them. */
+export type RoleType = "TANK" | "HEALER" | "DAMAGE";
 
-export type LocalizedString = string | { [locale: string]: string | undefined };
-
-export type AzeriteEssenceSummary = {
+export type NamedRef = {
   id: number;
   name: string;
-  key: LinkReference;
 };
 
-export type AzeriteEssenceIndexResponse = {
-  azerite_essences: AzeriteEssenceSummary[];
-};
-
-export type AllowedSpecialization = {
+/**
+ * One essence as Blizzard's essence search lists it: its name and the
+ * specializations allowed to use it, enough to filter and group the whole
+ * roster before any essence record loads. Spec names come without their
+ * class ("Frost" twice), so the class is read from the spec records.
+ */
+export type EssenceSummary = {
   id: number;
   name: string;
-  key: LinkReference;
+  specs: NamedRef[];
 };
 
-export type AzeriteSpellReference = {
-  id: number;
-  name: string;
-  key: LinkReference;
-};
-
-export type AzeriteEssencePower = {
+/** One rank of an essence: the spell behind its major and its minor power. */
+export type EssencePower = {
   id: number;
   rank: number;
-  mainPowerSpell?: AzeriteSpellReference;
-  passivePowerSpell?: AzeriteSpellReference;
+  major: NamedRef | null;
+  minor: NamedRef | null;
 };
 
-export type AzeriteEssenceDetail = {
+/** An essence record: its specializations and its powers, rank 1 first. */
+export type Essence = {
   id: number;
   name: string;
-  allowedSpecializations: AllowedSpecialization[];
-  powers: AzeriteEssencePower[];
+  specs: NamedRef[];
+  powers: EssencePower[];
 };
 
-export type AzeriteEssenceMediaAsset = {
+/** What the page needs from a playable specialization record. */
+export type Specialization = {
+  id: number;
+  /** "Frost" */
+  name: string;
+  /** "Mage"; null when the record names no class. */
+  playableClass: NamedRef | null;
+  role: RoleType | null;
+  /** Blizzard's localized role name ("Tank", "Heilung"). */
+  roleName: string;
+};
+
+/** A power's spell: its tooltip text and icon. */
+export type PowerSpell = {
+  id: number;
+  name: string;
+  /** The description split into paragraphs, inline markup stripped. */
+  paragraphs: string[];
+  iconUrl: string | null;
+};
+
+/** The Heart of Azeroth itself, for the intro. */
+export type HeartItem = {
+  id: number;
+  name: string;
+  /** Blizzard's quality type ("ARTIFACT"), for the item colour. */
+  qualityType: string | null;
+  qualityName: string;
+  /** Its equip line, as the item's tooltip states it. */
+  effect: string;
+};
+
+/**
+ * A section of the roster: the essences open to one combination of roles
+ * ("TANK", or "TANK+HEALER+DAMAGE" for the ones every role can use).
+ */
+export type EssenceGroup = {
   key: string;
-  value: string;
-};
-
-export type AzeriteEssenceMedia = {
-  assets: AzeriteEssenceMediaAsset[];
-};
-
-/** Everything one essence card (and its dialog) needs, fetched together. */
-export type AzeriteEssenceCardData = {
-  detail: AzeriteEssenceDetail;
-  iconUrl?: string;
+  roles: RoleType[];
+  essences: EssenceSummary[];
 };
