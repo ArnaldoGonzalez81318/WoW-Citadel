@@ -44,6 +44,14 @@ export interface SearchResult {
   mediaUrl?: string;
   mediaRequestPath?: string;
   mediaRequestNamespace?: string;
+  /**
+   * First creature display on the record, when the search hit carries one
+   * (mounts and creatures do, inline). It is the only route to their artwork:
+   * neither has a `media/mount` or `media/creature` endpoint, but every
+   * display has `media/creature-display/{id}`. See
+   * `features/search/services/resultMedia.ts`.
+   */
+  creatureDisplayId?: number;
   tag?: string;
   typeLabel?: string;
   /** Entity kind; enables the Wowhead link and kind-specific presentation. */
