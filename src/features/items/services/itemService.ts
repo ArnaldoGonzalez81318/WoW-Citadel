@@ -11,6 +11,8 @@ import {
 import type { LocalizedString } from "@/lib/blizzardHelpers";
 import { env } from "@/lib/env";
 import { formatNumber } from "@/lib/format";
+import { pickAssetUrl } from "@/lib/mediaAssets";
+import type { MediaAsset } from "@/lib/mediaAssets";
 import {
   MAX_SEARCH_PAGE_SIZE,
   narrowByTypedName,
@@ -114,11 +116,6 @@ type SearchResponse = {
   results?: Array<{ data: ItemResponse }>;
 };
 
-type MediaAsset = {
-  key: string;
-  value: string;
-};
-
 type MediaResponse = {
   assets?: MediaAsset[];
 };
@@ -169,10 +166,6 @@ export const toItemSummary = (raw: ItemResponse): ItemSummary => {
     sellPrice: positive(raw.sell_price),
   };
 };
-
-/** Prefers the `icon` asset, then the first asset of any kind. */
-const pickIconAsset = (assets: MediaAsset[] | undefined): string | undefined =>
-  assets?.find((asset) => asset.key === "icon")?.value ?? assets?.[0]?.value;
 
 /* ------------------------------------------------------------------ */
 /* Classes                                                             */
@@ -449,7 +442,7 @@ export const fetchItemMediaUrl = async (
       { signal },
     );
 
-    return pickIconAsset(response.assets);
+    return pickAssetUrl(response.assets);
   });
 
   return url ?? null;
