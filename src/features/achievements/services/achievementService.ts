@@ -9,6 +9,8 @@ import {
   sortByName,
 } from "@/lib/blizzardHelpers";
 import { getExternalLink } from "@/lib/externalLinks";
+import { pickAssetUrl } from "@/lib/mediaAssets";
+import type { MediaAsset } from "@/lib/mediaAssets";
 import type { SearchResult } from "@/features/search/types";
 import type {
   Achievement,
@@ -113,22 +115,18 @@ const fetchItemMediaAsset = async (
   signal?: AbortSignal,
 ): Promise<string | undefined> => {
   const response = await optional404(() =>
-    blizzardClient.get<{ assets?: Array<{ key: string; value: string }> }>(
+    blizzardClient.get<{ assets?: MediaAsset[] }>(
       `/data/wow/media/item/${itemId}`,
       { namespace: namespace("static") },
       { signal },
     ),
   );
 
-  return (
-    response?.assets?.find((asset) => asset.key === "icon")?.value ??
-    response?.assets?.[0]?.value
-  );
+  return pickAssetUrl(response?.assets);
 };
 
 const iconOf = (media: AchievementMedia | undefined): string | undefined =>
-  media?.assets?.find((asset) => asset.key === "icon")?.value ??
-  media?.assets?.[0]?.value;
+  pickAssetUrl(media?.assets);
 
 export type AchievementGalleryOptions = {
   /** Show each card's subcategory (when browsing a root category). */
