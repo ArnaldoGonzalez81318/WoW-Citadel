@@ -2,7 +2,7 @@ import CloudOffRounded from "@mui/icons-material/CloudOffRounded";
 import { Box, Button, Grow, Paper, Popper, Typography } from "@mui/material";
 import type { PopperProps } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -13,15 +13,15 @@ import type {
   SuggestionOption,
   SuggestionStatus,
 } from "@/components/search/SearchCombobox";
-import { fetchItemMediaUrl } from "@/features/items/services/itemService";
+import { itemKeys } from "@/features/items/services/itemService";
 import type { CatalogKind } from "@/features/search/catalog/catalogSources";
 import type { SearchCategoryConfig } from "@/features/search/categories";
 import { useBlizzardSearch } from "@/features/search/hooks/useBlizzardSearch";
 import { useCatalogSuggestions } from "@/features/search/hooks/useCatalogSuggestions";
 import type { CatalogSuggestion } from "@/features/search/hooks/useCatalogSuggestions";
+import { resultMediaQuery } from "@/features/search/services/resultMedia";
+import type { ResultMediaQuery } from "@/features/search/services/resultMedia";
 import type { SearchResult } from "@/features/search/types";
-import { fetchSpellIcon } from "@/features/spells/services/spellService";
-import { env } from "@/lib/env";
 import { qualityColor } from "@/theme";
 
 /** Suggestions shown per category (SEARCH order, first page only). */
@@ -84,10 +84,13 @@ type SuggestionRow = {
   name: string;
   subtitle?: string;
   live?: SearchResult;
+  /**
+   * The catalogue entry's item id, for catalogue `item` rows only (a toy's id
+   * is a toy id, a mount's a mount id — neither keys an item icon). Lets a
+   * row read an icon the cache already holds; never a request of its own.
+   */
+  catalogItemId?: number;
 };
-
-/** A row the live half has answered for. */
-type AnsweredRow = SuggestionRow & { live: SearchResult };
 
 type ShownCategory = {
   category: SearchCategoryConfig;
@@ -97,7 +100,8 @@ type ShownCategory = {
 /** Shared so a term the live half has not reached never allocates an array. */
 const NO_LIVE_RESULTS: SearchResult[] = [];
 
-type MediaTarget = Pick<SearchResult, "id" | "kind"> & { key: string };
+/** One row whose artwork still has to be fetched, keyed by row id. */
+type MediaTarget = { key: string; query: ResultMediaQuery };
 type MediaUrl = string | null | undefined;
 type MediaMap = Map<string, MediaUrl>;
 
@@ -110,13 +114,6 @@ type MediaMap = Map<string, MediaUrl>;
  */
 const combineMediaUrls = (results: UseQueryResult<MediaUrl>[]): MediaUrl[] =>
   results.map((result) => result.data);
-
-/** Search results carry no icon URL; items and spells resolve one lazily. */
-const needsMedia = (result: SearchResult): boolean =>
-  !result.mediaUrl && (result.kind === "item" || result.kind === "spell");
-
-const needsIcon = (row: SuggestionRow): row is AnsweredRow =>
-  row.live !== undefined && needsMedia(row.live);
 
 const mediaKeyFor = (categoryId: string, resultId: number): string =>
   `${categoryId}-${resultId}`;
@@ -169,6 +166,8 @@ const mergeRows = (
         (twin ? liveSubtitle(twin) : undefined) ??
         KIND_SUBTITLE[suggestion.kind],
       live: twin,
+      catalogItemId:
+        suggestion.kind === "item" ? suggestion.entryId : undefined,
     });
   }
 
@@ -223,6 +222,7 @@ const HeaderSearchAutocomplete = ({
   onStatusChange,
 }: HeaderSearchAutocompleteProps): JSX.Element => {
   const theme = useTheme();
+  const queryClient = useQueryClient();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   // The parent already debounced the query; do not debounce again.
   const {
@@ -266,35 +266,32 @@ const HeaderSearchAutocomplete = ({
   );
 
   /*
-   * Icon fan-out for the shown items and spells, on the same query keys the
-   * explorers and SearchResultGrid use (`["item-media", id, region]` /
-   * `["spell-media-card", id, region]`), so the cache is shared both ways.
-   * Keyed by row id, so a catalogue row picks up the icon of the live result
-   * that confirmed it.
+   * Artwork fan-out for the shown rows, on the query keys `resultMedia.ts`
+   * hands out — the explorers' and SearchResultGrid's own
+   * (`itemKeys.media(id)`, `spellKeys.icon(id)`,
+   * `creatureDisplayKeys.render(displayId)`) — so an icon or render loaded on
+   * any of those surfaces is loaded here too. At most four rows per category,
+   * and only rows the live half has already answered for, so the list never
+   * spends a request on a keystroke of its own. Keyed by row id, so a
+   * catalogue row picks up the artwork of the live result that confirmed it.
    */
-  const mediaTargets = useMemo(
-    () =>
-      shown
-        .flatMap(({ rows }) => rows)
-        .filter(needsIcon)
-        .map((row): MediaTarget => ({
-          id: row.live.id,
-          kind: row.live.kind,
-          key: row.id,
-        })),
-    [shown],
-  );
+  const mediaTargets = useMemo<MediaTarget[]>(() => {
+    const targets: MediaTarget[] = [];
+    shown.forEach(({ rows }) => {
+      rows.forEach((row) => {
+        const query = row.live ? resultMediaQuery(row.live) : undefined;
+        if (query) {
+          targets.push({ key: row.id, query });
+        }
+      });
+    });
+    return targets;
+  }, [shown]);
 
   const mediaUrls = useQueries({
     queries: mediaTargets.map((target) => ({
-      queryKey:
-        target.kind === "item"
-          ? (["item-media", target.id, env.region] as const)
-          : (["spell-media-card", target.id, env.region] as const),
-      queryFn: () =>
-        target.kind === "item"
-          ? fetchItemMediaUrl(target.id)
-          : fetchSpellIcon(target.id),
+      queryKey: target.query.queryKey,
+      queryFn: target.query.queryFn,
       retry: false,
       staleTime: Infinity,
       gcTime: MEDIA_GC_TIME_MS,
@@ -317,10 +314,26 @@ const HeaderSearchAutocomplete = ({
     const result: SuggestionGroup[] = [];
     let startIndex = 0;
 
+    /**
+     * A catalogue item row's icon when the cache already holds it (the Items
+     * explorer, an earlier search, this list a moment ago). A read, never a
+     * fetch: the catalogue must not cost a request per keystroke. A miss
+     * leaves MediaTile's letter until the live twin answers.
+     */
+    const cachedItemIcon = (row: SuggestionRow): string | undefined => {
+      if (row.catalogItemId === undefined) {
+        return undefined;
+      }
+      const cached = queryClient.getQueryData<string | null>(
+        itemKeys.media(row.catalogItemId),
+      );
+      return cached ?? undefined;
+    };
+
     for (const { category, rows } of shown) {
-      // A catalogue row has no icon and no quality of its own; both stay
-      // undefined until its live twin answers, which MediaTile renders as the
-      // initial-letter tile rather than a broken image.
+      // A catalogue row has no quality of its own; it stays undefined until
+      // the live twin answers, which MediaTile renders as the initial-letter
+      // tile rather than a broken image.
       const options = rows.map(
         (row): SuggestionOption => ({
           id: row.id,
@@ -328,7 +341,10 @@ const HeaderSearchAutocomplete = ({
           categoryId: category.id,
           categoryLabel: category.label,
           subtitle: row.subtitle,
-          mediaUrl: row.live?.mediaUrl ?? mediaByKey.get(row.id) ?? undefined,
+          mediaUrl:
+            row.live?.mediaUrl ??
+            mediaByKey.get(row.id) ??
+            cachedItemIcon(row),
           quality: row.live?.quality,
         }),
       );
@@ -344,7 +360,7 @@ const HeaderSearchAutocomplete = ({
     }
 
     return result;
-  }, [shown, mediaByKey]);
+  }, [shown, mediaByKey, queryClient]);
 
   const options = useMemo(
     () => groups.flatMap((group) => group.options),
