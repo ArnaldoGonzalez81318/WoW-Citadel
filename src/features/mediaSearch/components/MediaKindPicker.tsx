@@ -10,6 +10,7 @@ import { useEffect, useRef } from "react";
 
 import MediaTile from "@/components/common/MediaTile";
 import { MEDIA_TAGS } from "@/features/mediaSearch/config/mediaKinds";
+import { recordAssetUrl } from "@/features/mediaSearch/services/mediaSearchService";
 import type {
   MediaScope,
   MediaTagSummary,
@@ -101,7 +102,10 @@ const MediaKindPicker = ({
       {MEDIA_TAGS.map((tag) => {
         const state = summaries.get(tag.id);
         const summary = state?.summary;
-        const sample = summary?.sample?.assets[0];
+        // The sample's best asset, not its first: a kind whose sample
+        // carries several images (a journal instance's tile and its large
+        // copy) should show the one meant for a tile this size.
+        const sampleUrl = recordAssetUrl(summary?.sample);
         return (
           <ToggleButton
             key={tag.id}
@@ -144,7 +148,7 @@ const MediaKindPicker = ({
             ) : (
               <MediaTile
                 size={40}
-                src={sample?.url}
+                src={sampleUrl}
                 alt=""
                 fallbackLabel={tag.label}
                 loading={state?.pending ?? false}
