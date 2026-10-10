@@ -105,40 +105,15 @@ export const extractPreviewItems = (data: unknown): string[] => {
   return [];
 };
 
-export const extractMediaAssets = (
-  data: unknown,
-): Array<{ key: string; value: string }> => {
-  if (!data || typeof data !== "object") {
-    return [];
-  }
-
-  const record = data as Record<string, unknown>;
-  if (!Array.isArray(record.assets)) {
-    return [];
-  }
-
-  return record.assets
-    .map((asset) => {
-      if (!asset || typeof asset !== "object") {
-        return undefined;
-      }
-
-      const candidate = asset as Record<string, unknown>;
-      return typeof candidate.key === "string" &&
-        typeof candidate.value === "string"
-        ? { key: candidate.key, value: candidate.value }
-        : undefined;
-    })
-    .filter((entry): entry is { key: string; value: string } => Boolean(entry));
-};
-
-/** The `icon` asset of a media response, or its first asset. */
-export const pickIconAssetUrl = (data: unknown): string | undefined => {
-  const assets = extractMediaAssets(data);
-  return (
-    assets.find((asset) => asset.key === "icon")?.value ?? assets[0]?.value
-  );
-};
+/*
+ * Reading a media response's assets lives in one place now: `asAssetList`
+ * (gallery/normalizeRecords) narrows the wire shape and `pickAssetUrl`
+ * (@/lib/mediaAssets) chooses among the keys. The `pickIconAssetUrl` /
+ * `extractMediaAssets` pair that used to sit here looked only for
+ * `key === "icon"` and otherwise took `assets[0]`, which skipped the `tile`
+ * of a journal instance and the `zoom` of a creature display; both are gone
+ * rather than left as a second, divergent way to do the same thing.
+ */
 
 export const buildPath = (
   template: string,
