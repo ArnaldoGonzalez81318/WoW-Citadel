@@ -7,6 +7,7 @@ import {
   optional404,
 } from "@/lib/blizzardHelpers";
 import type { LocalizedString } from "@/lib/blizzardHelpers";
+import { pickAssetUrl } from "@/lib/mediaAssets";
 import {
   MEDIA_TAG_IDS,
   isMediaTag,
@@ -180,28 +181,74 @@ const idRange = (order: MediaOrder, from: number): string =>
 /* ------------------------------------------------------------------ */
 
 /**
+ * How far a tag looks past an assetless newest record for one with art.
+ * One more request, never a per-record fan-out.
+ */
+const SAMPLE_CANDIDATES = 10;
+
+/**
+ * The image a parsed record should be shown by: `pickAssetUrl`'s preference
+ * over its assets (icon first, then the wider artwork keys), translated from
+ * the record's `url` back to the wire's `value`.
+ */
+export const recordAssetUrl = (
+  record: MediaRecord | null | undefined,
+): string | undefined =>
+  pickAssetUrl(
+    record?.assets.map((asset) => ({ key: asset.key, value: asset.url })),
+  );
+
+/**
  * A tag's result count and a sample record (its newest, where the tag
  * sorts; whichever Blizzard returns first otherwise), from a one-result
  * page. Counts stop at 1,000 (`capped`).
+ *
+ * Blizzard lists some records in the media index with no asset at all — the
+ * newest keystone affix (178) and most retired glyphs among them — and the
+ * newest is exactly the one a sortable tag asks for. When that record has no
+ * image, one further request looks a few records deeper, so the tag's tile
+ * shows the kind's artwork instead of a letter. The count still comes from
+ * the one-result page, where `pageCount` *is* the result count.
+ *
+ * Three tiles (achievements, creature renders, battle pets) nevertheless show
+ * a letter, and `id:desc` is why: a kind's newest record is the one whose file
+ * Blizzard has least often published, so the asset is advertised while the
+ * image answers 403 AccessDenied until the patch ships. Dropping the sort is
+ * NOT the fix — glyphs need it exactly the other way round (1 of Blizzard's
+ * first 15 glyph records carries an asset, against 10 of the newest 10), and
+ * sampling a deeper page for everyone would cost a second request per tag on
+ * first paint to decorate a 40 px tile. An asset that 403s cannot be told from
+ * a live one without fetching the image, so the letter stays: it is the same
+ * unpublished-artwork case the record grid shows, correctly, further down.
  */
 export const fetchMediaTagSummary = async (
   tag: MediaTagId,
   signal?: AbortSignal,
 ): Promise<MediaTagSummary> => {
+  const orderby = tagConfig(tag).sortable ? "id:desc" : undefined;
   const response = await search(
-    {
-      tags: tag,
-      orderby: tagConfig(tag).sortable ? "id:desc" : undefined,
-      _page: 1,
-      _pageSize: 1,
-    },
+    { tags: tag, orderby, _page: 1, _pageSize: 1 },
     signal,
   );
-  return {
+  const newest = toRecords(response)[0] ?? null;
+  const summary: MediaTagSummary = {
     count: response.pageCount ?? 0,
     capped: response.resultCountCapped === true,
-    sample: toRecords(response)[0] ?? null,
+    sample: newest,
   };
+
+  if (newest === null || recordAssetUrl(newest) !== undefined) {
+    return summary;
+  }
+
+  const deeper = await search(
+    { tags: tag, orderby, _page: 1, _pageSize: SAMPLE_CANDIDATES },
+    signal,
+  );
+  const withArt = toRecords(deeper).find(
+    (record) => recordAssetUrl(record) !== undefined,
+  );
+  return { ...summary, sample: withArt ?? newest };
 };
 
 /* ------------------------------------------------------------------ */
