@@ -6,6 +6,7 @@ import {
   optional404,
   sortByName,
 } from "@/lib/blizzardHelpers";
+import { pickAssetUrl } from "@/lib/mediaAssets";
 import {
   CovenantAbility,
   CovenantCardData,
@@ -142,7 +143,7 @@ export const fetchCovenantIcon = async (
     ),
   );
 
-  return response?.assets?.find((asset) => asset.key === "icon")?.value ?? null;
+  return pickAssetUrl(response?.assets) ?? null;
 };
 
 /** Detail and icon together: one query per card, shared with the dialog. */
