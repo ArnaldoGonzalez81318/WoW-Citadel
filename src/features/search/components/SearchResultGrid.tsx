@@ -12,17 +12,11 @@ import {
   ErrorState,
   LoadingSkeleton,
 } from "@/components/common/StateBlocks";
-import {
-  fetchItemMediaUrl,
-  itemKeys,
-} from "@/features/items/services/itemService";
 import type { SearchCategoryState } from "@/features/search/hooks/useBlizzardSearch";
+import { resultMediaQuery } from "@/features/search/services/resultMedia";
+import type { ResultMediaQuery } from "@/features/search/services/resultMedia";
 import { SEARCH_PAGE_SIZE } from "@/features/search/services/searchService";
 import type { SearchResult } from "@/features/search/types";
-import {
-  fetchSpellIcon,
-  spellKeys,
-} from "@/features/spells/services/spellService";
 import useIdlePrefetchWindow from "@/hooks/useIdlePrefetchWindow";
 
 export type SearchResultGridLayout = "row" | "tile";
@@ -41,8 +35,8 @@ const MEDIA_INITIAL_COUNT = 6;
 const MEDIA_BATCH_SIZE = 6;
 const GRID_GAP_PX = 16;
 
-const needsMedia = (result: SearchResult): boolean =>
-  !result.mediaUrl && (result.kind === "item" || result.kind === "spell");
+/** One result whose artwork still has to be fetched. */
+type MediaTarget = { id: number; query: ResultMediaQuery };
 
 /**
  * Module-level so react-query only re-runs it when a result changes, and a
@@ -54,8 +48,8 @@ const combineMedia = <T,>(results: UseQueryResult<T>[]): (T | undefined)[] =>
 
 /**
  * One category's results as row cards, with the media fan-out staggered
- * through the idle window and keyed exactly like the explorers
- * (`itemKeys.media(id)` / `spellKeys.icon(id)`) so both share one cache.
+ * through the idle window and keyed exactly like the explorers (see
+ * `resultMedia.ts`) so both share one cache.
  */
 const SearchResultGrid = ({
   state,
@@ -67,7 +61,16 @@ const SearchResultGrid = ({
   const theme = useTheme();
   const { category, data, page, pageCount, isLoading, isError, error } = state;
 
-  const mediaTargets = useMemo(() => data.filter(needsMedia), [data]);
+  const mediaTargets = useMemo<MediaTarget[]>(() => {
+    const targets: MediaTarget[] = [];
+    data.forEach((result) => {
+      const query = resultMediaQuery(result);
+      if (query) {
+        targets.push({ id: result.id, query });
+      }
+    });
+    return targets;
+  }, [data]);
 
   const active = useIdlePrefetchWindow({
     totalCount: mediaTargets.length,
@@ -77,15 +80,9 @@ const SearchResultGrid = ({
   });
 
   const mediaUrls = useQueries({
-    queries: mediaTargets.map((result, index) => ({
-      queryKey:
-        result.kind === "item"
-          ? itemKeys.media(result.id)
-          : spellKeys.icon(result.id),
-      queryFn: ({ signal }: { signal: AbortSignal }) =>
-        result.kind === "item"
-          ? fetchItemMediaUrl(result.id, signal)
-          : fetchSpellIcon(result.id, signal),
+    queries: mediaTargets.map((target, index) => ({
+      queryKey: target.query.queryKey,
+      queryFn: target.query.queryFn,
       enabled: index < active,
       retry: false,
       staleTime: Infinity,
