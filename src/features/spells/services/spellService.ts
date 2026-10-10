@@ -15,6 +15,7 @@ import {
 } from "@/lib/blizzardHelpers";
 import { env } from "@/lib/env";
 import { getExternalLink } from "@/lib/externalLinks";
+import { pickAssetUrl } from "@/lib/mediaAssets";
 import {
   MAX_SEARCH_PAGE_SIZE,
   narrowByTypedName,
@@ -212,10 +213,7 @@ export const fetchSpellIcon = async (
       { signal },
     );
 
-    return (
-      response.assets?.find((asset) => asset.key === "icon")?.value ??
-      response.assets?.[0]?.value
-    );
+    return pickAssetUrl(response.assets);
   });
 
   return url ?? null;
