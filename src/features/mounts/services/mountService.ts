@@ -24,6 +24,8 @@ import {
 } from "@/lib/blizzardHelpers";
 import { env } from "@/lib/env";
 import { formatNumber, humanizeEnum } from "@/lib/format";
+import { pickAssetUrl } from "@/lib/mediaAssets";
+import type { MediaAsset } from "@/lib/mediaAssets";
 import { MAX_SEARCH_PAGE_SIZE } from "@/lib/nameSearch";
 
 /*
@@ -429,7 +431,7 @@ export const fetchMountDetail = async (
 };
 
 type MediaResponse = {
-  assets?: Array<{ key?: string; value?: string }>;
+  assets?: MediaAsset[];
 };
 
 /** A playable class's icon (a required class in the dialog), or null when Blizzard has none (404). */
@@ -444,8 +446,7 @@ export const fetchClassIcon = async (
       { signal },
     ),
   );
-  const assets = media?.assets ?? [];
-  return assets.find((asset) => asset.key === "icon")?.value ?? assets[0]?.value ?? null;
+  return pickAssetUrl(media?.assets) ?? null;
 };
 
 /* ------------------------------------------------------------------ */
