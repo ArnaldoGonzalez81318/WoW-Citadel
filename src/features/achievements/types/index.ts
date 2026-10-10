@@ -1,3 +1,5 @@
+import type { MediaAsset } from "@/lib/mediaAssets";
+
 import type { SearchResult } from "@/features/search/types";
 
 export type LinkReference = {
@@ -71,13 +73,8 @@ export type Achievement = {
   };
 };
 
-export type AchievementMediaAsset = {
-  key: string;
-  value: string;
-};
-
 export type AchievementMedia = {
-  assets: AchievementMediaAsset[];
+  assets?: MediaAsset[];
 };
 
 /** One gallery card: the card-ready result plus the raw record for the dialog. */
