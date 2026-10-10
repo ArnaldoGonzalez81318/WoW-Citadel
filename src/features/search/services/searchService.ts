@@ -74,6 +74,7 @@ type MountSearchResult = {
   source?: { name?: LocalizedString };
   faction?: { name?: LocalizedString };
   is_flying_mount?: boolean;
+  creature_displays?: Array<{ id?: number }>;
 };
 
 type CreatureSearchResult = {
@@ -84,6 +85,30 @@ type CreatureSearchResult = {
   type?: { name?: LocalizedString };
   creature_type?: { name?: LocalizedString };
   creature_family?: { name?: LocalizedString };
+  creature_displays?: Array<{ id?: number }>;
+};
+
+/**
+ * The record's first creature display id, when it has one.
+ *
+ * Both `search/mount` and `search/creature` return `creature_displays` inline
+ * on every hit, so the artwork takes one request (the display's media) and no
+ * detail lookup. The explorers use the first display as the card render too,
+ * so this shares their cache entry exactly.
+ */
+const firstCreatureDisplayId = (
+  displays: Array<{ id?: number }> | undefined,
+): number | undefined => {
+  if (!Array.isArray(displays)) {
+    return undefined;
+  }
+  for (const display of displays) {
+    const id = display?.id;
+    if (typeof id === "number" && Number.isFinite(id) && id > 0) {
+      return id;
+    }
+  }
+  return undefined;
 };
 
 const EMPTY_PAGE: SearchPage = { results: [], page: 1, pageCount: 1, total: 0 };
@@ -290,6 +315,7 @@ export const searchMounts: SearchFetcher = (query, options = {}) =>
         summary: source,
         details: cleanMarkup(localized(data.description)),
         typeLabel: "Mount",
+        creatureDisplayId: firstCreatureDisplayId(data.creature_displays),
         tag: tag ?? (affiliation || undefined),
         subtitle: joinParts([source, tag]) || undefined,
         meta,
@@ -331,6 +357,7 @@ export const searchCreatures: SearchFetcher = (query, options = {}) =>
         summary: joinParts([level, type, family]) || undefined,
         details: cleanMarkup(localized(data.description)),
         typeLabel: "Creature",
+        creatureDisplayId: firstCreatureDisplayId(data.creature_displays),
         subtitle: joinParts([level, type]) || undefined,
         meta,
         ...externalFields("npc", data.id, name),
