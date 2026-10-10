@@ -1,3 +1,5 @@
+import type { MediaAsset } from "@/lib/mediaAssets";
+
 export type LinkReference = {
   href: string;
 };
@@ -53,13 +55,13 @@ export type CovenantDetail = {
   renownRewards: RenownReward[];
 };
 
-export type CovenantMediaAsset = {
-  key: string;
-  value: string;
-};
-
+/**
+ * Blizzard omits `assets` entirely for the later renown covenants (Maruuk
+ * Centaur, Dragonscale Expedition): `media/covenant/12` and `/13` answer 200
+ * with nothing but `_links`, so the array is optional, not empty.
+ */
 export type CovenantMedia = {
-  assets: CovenantMediaAsset[];
+  assets?: MediaAsset[];
 };
 
 /** Everything one covenant card (and its dialog) needs, fetched together. */
