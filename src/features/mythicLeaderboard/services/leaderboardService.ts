@@ -5,6 +5,8 @@ import {
   optional404,
 } from "@/lib/blizzardHelpers";
 import type { LocalizedString } from "@/lib/blizzardHelpers";
+import { pickAssetUrl } from "@/lib/mediaAssets";
+import type { MediaAsset } from "@/lib/mediaAssets";
 import type {
   KeystoneLeaderboard,
   KeystonePeriod,
@@ -65,7 +67,7 @@ type SpecializationResponse = {
 };
 
 type MediaResponse = {
-  assets?: Array<{ key?: string; value?: string }>;
+  assets?: MediaAsset[];
 };
 
 const toCssColor = (
@@ -171,9 +173,7 @@ export const fetchKeystonePeriod = async (
 };
 
 const iconOf = (media: MediaResponse | undefined): string | null =>
-  media?.assets?.find((asset) => asset.key === "icon")?.value ??
-  media?.assets?.[0]?.value ??
-  null;
+  pickAssetUrl(media?.assets) ?? null;
 
 /** Name, class, role and icon of a specialization (two static lookups). */
 export const fetchSpecialization = async (
