@@ -5,6 +5,8 @@ import {
   namespace,
   optional404,
 } from "@/lib/blizzardHelpers";
+import { MEDIA_ASSET_PREFERENCE, pickAssetUrl } from "@/lib/mediaAssets";
+import type { MediaAsset } from "@/lib/mediaAssets";
 import type {
   KeystoneDungeon,
   KeystoneDungeonSummary,
@@ -51,8 +53,18 @@ type JournalInstanceResponse = {
 };
 
 type JournalInstanceMediaResponse = {
-  assets?: Array<{ key?: string; value?: string }>;
+  assets?: MediaAsset[];
 };
+
+/**
+ * A journal instance's artwork is a 600x300 `tile` (never an `icon`), so the
+ * wide art is preferred ahead of the shared order; the rest of the order then
+ * catches an instance Blizzard files under `image` or `zone` instead.
+ */
+const DUNGEON_ART_PREFERENCE: readonly string[] = [
+  "tile",
+  ...MEDIA_ASSET_PREFERENCE,
+];
 
 type SeasonIndexResponse = {
   current_season?: { id?: number };
@@ -249,9 +261,7 @@ export const fetchKeystoneDungeon = async (
         ])
       : [undefined, undefined];
 
-  const assets = media?.assets ?? [];
-  const tile =
-    assets.find((asset) => asset.key === "tile")?.value ?? assets[0]?.value;
+  const tile = pickAssetUrl(media?.assets, DUNGEON_ART_PREFERENCE);
 
   return {
     id: dungeon.id,
