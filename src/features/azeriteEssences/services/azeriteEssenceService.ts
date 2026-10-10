@@ -7,6 +7,8 @@ import {
 } from "@/lib/blizzardHelpers";
 import type { LocalizedString } from "@/lib/blizzardHelpers";
 import { formatNumber } from "@/lib/format";
+import { pickAssetUrl } from "@/lib/mediaAssets";
+import type { MediaAsset } from "@/lib/mediaAssets";
 import type {
   Essence,
   EssenceGroup,
@@ -32,7 +34,7 @@ import type {
 type Reference = { id?: number; name?: LocalizedString };
 
 type MediaResponse = {
-  assets?: Array<{ key?: string; value?: string }>;
+  assets?: MediaAsset[];
 };
 
 type SearchResponse = {
@@ -122,9 +124,7 @@ const toRefs = (references: Reference[] | undefined): NamedRef[] =>
     .filter((reference): reference is NamedRef => reference !== null);
 
 const iconOf = (media: MediaResponse | undefined): string | null =>
-  media?.assets?.find((asset) => asset.key === "icon")?.value ??
-  media?.assets?.[0]?.value ??
-  null;
+  pickAssetUrl(media?.assets) ?? null;
 
 /* ------------------------------------------------------------------ */
 /* Essences                                                            */
