@@ -2,21 +2,30 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import {
   POWER_TYPE_ICON_NAMES,
+  asAssetList,
   asRecord,
   buildRenderIconUrl,
   extractNumericPathSegment,
 } from "@/features/apiExplorer/gallery/normalizeRecords";
 import {
-  pickIconAssetUrl,
   resolveLocalizedString,
   resolveNamespace,
 } from "@/features/apiExplorer/utils";
+import {
+  fetchItemMediaUrl,
+  itemKeys,
+} from "@/features/items/services/itemService";
 import type { SearchResultMeta } from "@/features/search/types";
+import {
+  fetchSpellIcon,
+  spellKeys,
+} from "@/features/spells/services/spellService";
 import { BlizzardRequestError, blizzardClient } from "@/lib/blizzardClient";
 import { env } from "@/lib/env";
 import { isAbortError } from "@/lib/errors";
 import type { ExternalLinkKind } from "@/lib/externalLinks";
 import { humanizeEnum } from "@/lib/format";
+import { pickAssetUrl } from "@/lib/mediaAssets";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -29,9 +38,11 @@ export type GalleryStrategyId =
   | "race-via-racial-spell"
   | "heirloom-via-item"
   | "tech-talent-via-detail"
+  | "tech-talent-tree-via-talent"
   | "class-via-detail"
   | "affix-via-detail"
-  | "pet-via-detail";
+  | "pet-via-detail"
+  | "title-via-achievement";
 
 export type MediaRequest = {
   path: string;
@@ -211,9 +222,25 @@ export const DATASET_PROFILES: Record<string, DatasetProfile> = {
   "tech-talent": {
     buildMediaRequest: (record, endpointId) => {
       const id = idOf(record);
-      return endpointId === "tech-talent-index" && id !== undefined
-        ? detailRequest(`/data/wow/tech-talent/${id}`, "tech-talent-via-detail")
-        : undefined;
+      if (id === undefined) {
+        return undefined;
+      }
+
+      if (endpointId === "tech-talent-index") {
+        return detailRequest(
+          `/data/wow/tech-talent/${id}`,
+          "tech-talent-via-detail",
+        );
+      }
+
+      if (endpointId === "tech-talent-tree-index") {
+        return detailRequest(
+          `/data/wow/tech-talent-tree/${id}`,
+          "tech-talent-tree-via-talent",
+        );
+      }
+
+      return undefined;
     },
   },
   "power-type": {
@@ -234,10 +261,30 @@ export const DATASET_PROFILES: Record<string, DatasetProfile> = {
         : detailRequest(`/data/wow/keystone-affix/${id}`, "affix-via-detail");
     },
   },
+  title: {
+    buildMediaRequest: (record) => {
+      const id = idOf(record);
+      return id === undefined
+        ? undefined
+        : detailRequest(`/data/wow/title/${id}`, "title-via-achievement");
+    },
+  },
+  /*
+   * Blizzard publishes no artwork for modified crafting: the category and
+   * reagent slot type records carry only an id, a name and a description, and
+   * `/data/wow/media/modified-crafting/...` is a 404. The letter fallback is
+   * the whole picture here.
+   */
+  "modified-crafting": { buildMediaRequest: noMediaRequest },
+  /*
+   * These two families route to their own explorers today (see
+   * CATEGORY_REGISTRY), so their profiles only apply if the dataset gallery
+   * ever serves them again. Both reach an icon through the item that wears
+   * the look / is the toy: `/data/wow/item-appearance/{id}` → `items[0].id`
+   * and `/data/wow/toy/{id}` → `item.id`, then `/data/wow/media/item/{itemId}`.
+   */
   "item-appearance": { buildMediaRequest: noMediaRequest },
   toy: { buildMediaRequest: noMediaRequest },
-  "modified-crafting": { buildMediaRequest: noMediaRequest },
-  title: { buildMediaRequest: noMediaRequest },
 };
 
 /* ------------------------------------------------------------------ */
@@ -249,9 +296,20 @@ const SHARED_STALE_TIME_MS = 300_000;
 const NO_ICON = "";
 
 /**
- * One media hop through the query cache, so identical ids dedupe across
- * cards and pages. The cached value is the icon URL (`""` when the response
- * has no usable asset; react-query rejects `undefined` data).
+ * The best asset URL in a media response. Asset keys differ per endpoint
+ * (`icon` for items and spells, `tile` for journal instances, `bust` for
+ * classes), so the shared preference order decides instead of `key === "icon"`.
+ */
+const pickMediaUrl = (data: unknown): string | undefined =>
+  pickAssetUrl(asAssetList(asRecord(data)?.assets));
+
+/**
+ * One media hop through the query cache, so identical ids dedupe across cards
+ * and pages. The cached value is the icon URL, or `NO_ICON` when the response
+ * carries no usable asset (react-query rejects `undefined` data).
+ *
+ * `null` is tolerated on the way out because a key shared with an explorer may
+ * already hold that explorer's own `string | null` (see `fetchExplorerIcon`).
  */
 const fetchSharedIconUrl = async (
   ctx: MediaStrategyContext,
@@ -259,17 +317,43 @@ const fetchSharedIconUrl = async (
   path: string,
   namespace: string | undefined,
 ): Promise<string | undefined> => {
-  const url = await ctx.queryClient.fetchQuery<string>({
+  const url = await ctx.queryClient.fetchQuery<string | null>({
     queryKey,
     queryFn: async ({ signal }) =>
-      pickIconAssetUrl(
+      pickMediaUrl(
         await blizzardClient.get<unknown>(path, { namespace }, { signal }),
       ) ?? NO_ICON,
     staleTime: SHARED_STALE_TIME_MS,
     retry: false,
   });
 
-  return url === NO_ICON ? undefined : url;
+  return url === null || url === NO_ICON ? undefined : url;
+};
+
+/**
+ * An icon that one of the dedicated explorers already owns, through *its* key
+ * factory and *its* fetcher — so a talent's spell icon or an heirloom's item
+ * icon is the same cache entry the Spells / Items explorers, `/search` and the
+ * header search hold, instead of a second private copy of the same artwork.
+ *
+ * Passing the explorer's fetcher (not just its key) is what keeps the two
+ * sides from disagreeing: both swallow a 404 into `null`, so a record with no
+ * media leaves the card's fallback rather than marking the whole card
+ * not-found, and neither can cache a shape the other misreads.
+ */
+const fetchExplorerIcon = async (
+  ctx: MediaStrategyContext,
+  queryKey: readonly unknown[],
+  fetcher: (signal: AbortSignal) => Promise<string | null>,
+): Promise<string | undefined> => {
+  const url = await ctx.queryClient.fetchQuery<string | null>({
+    queryKey,
+    queryFn: ({ signal }) => fetcher(signal),
+    staleTime: SHARED_STALE_TIME_MS,
+    retry: false,
+  });
+
+  return url === null || url === NO_ICON ? undefined : url;
 };
 
 const fetchDetail = <T>(
@@ -323,11 +407,8 @@ const talentViaSpell: MediaStrategy = async (target, ctx) => {
   const spellId = detail?.spell?.id;
   const url =
     typeof spellId === "number"
-      ? await fetchSharedIconUrl(
-          ctx,
-          ["spell-media-card", spellId, env.region],
-          `/data/wow/media/spell/${spellId}`,
-          target.namespace,
+      ? await fetchExplorerIcon(ctx, spellKeys.icon(spellId), (signal) =>
+          fetchSpellIcon(spellId, signal),
         )
       : undefined;
 
@@ -385,11 +466,8 @@ const raceViaRacialSpell: MediaStrategy = async (target, ctx) => {
   const spellId = detail?.racial_spells?.[0]?.id;
   const url =
     typeof spellId === "number"
-      ? await fetchSharedIconUrl(
-          ctx,
-          ["spell-media-card", spellId, env.region],
-          `/data/wow/media/spell/${spellId}`,
-          target.namespace,
+      ? await fetchExplorerIcon(ctx, spellKeys.icon(spellId), (signal) =>
+          fetchSpellIcon(spellId, signal),
         )
       : undefined;
 
@@ -420,11 +498,8 @@ const heirloomViaItem: MediaStrategy = async (target, ctx) => {
     return {};
   }
 
-  const url = await fetchSharedIconUrl(
-    ctx,
-    ["item-media", itemId, env.region],
-    `/data/wow/media/item/${itemId}`,
-    target.namespace,
+  const url = await fetchExplorerIcon(ctx, itemKeys.media(itemId), (signal) =>
+    fetchItemMediaUrl(itemId, signal),
   );
 
   return { url, itemId };
@@ -468,6 +543,108 @@ const techTalentViaDetail: MediaStrategy = async (target, ctx) => {
     meta: metaRows([
       ["Tier", tier],
       ["Playstyle", playstyle],
+    ]),
+  };
+};
+
+type TechTalentTreeDetail = {
+  playable_class?: { id?: number; name?: unknown };
+  max_tiers?: number;
+  talents?: Array<{ id?: number; name?: unknown }>;
+};
+
+/**
+ * Tech talent trees have no media record of their own
+ * (`/data/wow/media/tech-talent-tree/{id}` is a 404), but every tree lists its
+ * talents and those do: the card shows its first talent's icon, through the
+ * same detail → media hop the other strategies use. The media query key is
+ * shared with `techTalentViaDetail`, so a talent fetched for both dedupes.
+ */
+const techTalentTreeViaTalent: MediaStrategy = async (target, ctx) => {
+  const detail = await fetchDetail<TechTalentTreeDetail>(target, ctx);
+  const talents = detail?.talents ?? [];
+  const firstTalentId = talents.find(
+    (talent) => typeof talent.id === "number",
+  )?.id;
+  const url =
+    typeof firstTalentId === "number"
+      ? await fetchSharedIconUrl(
+          ctx,
+          ["tech-talent-media", firstTalentId, env.region],
+          `/data/wow/media/tech-talent/${firstTalentId}`,
+          target.namespace,
+        )
+      : undefined;
+
+  const playableClass =
+    resolveLocalizedString(detail?.playable_class?.name) || undefined;
+  const talentCount = talents.length > 0 ? String(talents.length) : undefined;
+  const tiers =
+    typeof detail?.max_tiers === "number" && detail.max_tiers > 0
+      ? String(detail.max_tiers)
+      : undefined;
+
+  return {
+    url,
+    tag: playableClass,
+    summary: namesOf(talents).slice(0, 6).join(", ") || undefined,
+    details: joinDetails([
+      playableClass,
+      talentCount ? `${talentCount} talents` : undefined,
+      tiers ? `${tiers} tiers` : undefined,
+    ]),
+    meta: metaRows([
+      ["Class", playableClass],
+      ["Talents", talentCount],
+      ["Tiers", tiers],
+    ]),
+  };
+};
+
+type TitleDetail = {
+  source?: {
+    type?: { type?: string; name?: unknown };
+    achievements?: Array<{ id?: number; name?: unknown }>;
+  };
+};
+
+/**
+ * Titles have no media endpoint (`/data/wow/media/title/{id}` is a 404), and
+ * the record carries no icon. What it does carry is the achievement that
+ * grants it, which has one: the card shows that achievement's icon and names
+ * it, so the picture is the title's source rather than a guess. Titles with no
+ * source — the old PvP ranks, the newest unreleased ones — keep the letter.
+ */
+const titleViaAchievement: MediaStrategy = async (target, ctx) => {
+  const detail = await fetchDetail<TitleDetail>(target, ctx);
+  const achievements = detail?.source?.achievements ?? [];
+  const achievementId = achievements.find(
+    (achievement) => typeof achievement.id === "number",
+  )?.id;
+  const url =
+    typeof achievementId === "number"
+      ? await fetchSharedIconUrl(
+          ctx,
+          ["achievement-media", achievementId, env.region],
+          `/data/wow/media/achievement/${achievementId}`,
+          target.namespace,
+        )
+      : undefined;
+
+  const sourceType =
+    resolveLocalizedString(detail?.source?.type?.name) ||
+    (typeof detail?.source?.type?.type === "string"
+      ? humanizeEnum(detail.source.type.type)
+      : undefined);
+  const achievementNames = namesOf(achievements).join(", ") || undefined;
+
+  return {
+    url,
+    tag: sourceType,
+    summary: achievementNames,
+    meta: metaRows([
+      ["Source", sourceType],
+      ["Achievement", achievementNames],
     ]),
   };
 };
@@ -639,7 +816,7 @@ const petViaDetail: MediaStrategy = async (target, ctx) => {
 };
 
 const directMediaStrategy: MediaStrategy = async (target, ctx) => ({
-  url: pickIconAssetUrl(await fetchDetail<unknown>(target, ctx)),
+  url: pickMediaUrl(await fetchDetail<unknown>(target, ctx)),
 });
 
 export const MEDIA_STRATEGIES: Record<GalleryStrategyId, MediaStrategy> = {
@@ -649,9 +826,11 @@ export const MEDIA_STRATEGIES: Record<GalleryStrategyId, MediaStrategy> = {
   "race-via-racial-spell": raceViaRacialSpell,
   "heirloom-via-item": heirloomViaItem,
   "tech-talent-via-detail": techTalentViaDetail,
+  "tech-talent-tree-via-talent": techTalentTreeViaTalent,
   "class-via-detail": classViaDetail,
   "affix-via-detail": affixViaDetail,
   "pet-via-detail": petViaDetail,
+  "title-via-achievement": titleViaAchievement,
 };
 
 /* ------------------------------------------------------------------ */
