@@ -152,8 +152,11 @@ export default defineConfig(({ mode }) => {
               return "query-vendor";
             }
 
+            // Icons are left to Rollup so each one lands in the lazy route
+            // chunk that imports it (or a shared chunk when several routes
+            // do). A single icons chunk was preloaded on every route.
             if (id.includes("/node_modules/@mui/icons-material/")) {
-              return "mui-icons";
+              return undefined;
             }
 
             if (/node_modules\/(@mui|@emotion)\//.test(id)) {
